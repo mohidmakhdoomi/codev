@@ -82,22 +82,13 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
     const workspacePath = this.connectionManager.getWorkspacePath();
     const devTarget = workspacePath ? resolveWorkspaceDevTarget(workspacePath) : null;
 
-    const startDev = new vscode.TreeItem('Start Dev Server');
-    startDev.iconPath = new vscode.ThemeIcon('play');
-    startDev.tooltip = devTarget
-      ? `Run worktree.devCommand for this workspace (target: ${devTarget.id})`
-      : 'Run worktree.devCommand for this workspace';
-    startDev.contextValue = 'workspace-dev-start';
-    startDev.command = {
-      command: 'codev.runWorkspaceDev',
-      title: 'Start Dev Server',
-    };
-    items.push(startDev);
-
-    // Stop row only while a dev PTY for THIS workspace's target is running.
+    // Mutually exclusive: show Start when this workspace's dev is stopped,
+    // Stop when it's running. The visible control is itself the state
+    // indicator (play/stop model) — never both, no row-count jitter.
     const targetDevRunning = !!devTarget && this.terminalManager
       .listDevTerminals()
       .some(d => d.builderId === devTarget.id);
+
     if (targetDevRunning) {
       const stopDev = new vscode.TreeItem('Stop Dev Server');
       stopDev.iconPath = new vscode.ThemeIcon('debug-stop');
@@ -108,6 +99,18 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
         title: 'Stop Dev Server',
       };
       items.push(stopDev);
+    } else {
+      const startDev = new vscode.TreeItem('Start Dev Server');
+      startDev.iconPath = new vscode.ThemeIcon('play');
+      startDev.tooltip = devTarget
+        ? `Run worktree.devCommand for this workspace (target: ${devTarget.id})`
+        : 'Run worktree.devCommand for this workspace';
+      startDev.contextValue = 'workspace-dev-start';
+      startDev.command = {
+        command: 'codev.runWorkspaceDev',
+        title: 'Start Dev Server',
+      };
+      items.push(startDev);
     }
 
     return items;
