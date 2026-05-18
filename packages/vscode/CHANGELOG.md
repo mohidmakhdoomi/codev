@@ -2,6 +2,37 @@
 
 What's changed in the Codev VS Code extension, version by version, written for the developers who use it.
 
+## [Unreleased]
+
+### What's new
+
+- **Codev-managed dev server for the current workspace.** New **Start Dev Server** / **Stop Dev Server** rows in the sidebar's Workspace view run `worktree.devCommand` for whatever folder the window is rooted at — the main checkout (CLI: `afx dev main`) or, if you opened a `.builders/<id>/` worktree as its own window, that builder. One dev runs at a time across {main + all builders}; starting another prompts to swap. The two rows are mutually exclusive: **Start** when stopped, **Stop** when running.
+- **Dev server terminals open in the bottom panel** (not an editor group). A dev server is a long-running log, not a tab you switch between; `type: 'dev'` terminals now always use the panel regardless of `codev.terminalPosition`. Architect (left group) and builder/shell (right) are unchanged.
+- **Builder terminal tabs are labeled by issue** — a builder's tab now reads `Codev: #<issueId> <issueTitle>` (matching its sidebar row) instead of the internal `builder-<protocol>-<id>` agent name. The title is capped at 25 characters on a whole-word boundary (with `…`); the `#<id>` prefix is kept whole. Falls back to the agent name when overview data or a builder match is unavailable. Architect / Shell / dev tab names are unchanged.
+- **Team view is a per-member snapshot.** Expanding a teammate shows `Assigned: N` and `Open PRs: N` count summaries plus `Last 7d: X merged, Y closed` — the full issue/PR lists already live in the Backlog and Pull Requests views. A Refresh button in the Team title bar forces a re-fetch (Team otherwise only updates as a side effect of other Tower activity).
+- **A symmetric keyboard-shortcut family** — `Cmd+Alt+C` / `Ctrl+Alt+C` toggles the Codev sidebar (opens & focuses it if hidden, closes it if it's the active view); `Cmd/Ctrl+Alt+R` and `Cmd/Ctrl+Alt+S` start / stop the current workspace's dev server. The existing `Cmd/Ctrl+K` A / D / G (open architect, send message, approve gate) are unchanged.
+- **Workspace sidebar gained Spawn Builder and New Shell** rows, next to Open Architect and Open Web Interface.
+- **Gate-pending toasts with one-click Approve.** When a builder reaches a human-approval gate, a toast surfaces it with a per-gate action (View Plan / Run Dev / Review) and an **Approve** button. The approval dialog now shows the issue + gate context. Silence with the new `codev.gateToasts.enabled` setting.
+- **Inline review comments on plan/spec files** via VSCode's Comments API — leave `REVIEW(@architect):` threads in the editor, not only the text snippet.
+- **PIR protocol support** — PIR in the Spawn Builder picker, a View Plan action for PIR builders, and context-menu actions scoped per protocol.
+- **Open Worktree in New Window** — opens `.builders/<id>/` as its own VSCode window. Replaces the former "Codev: View Diff" (3.0.3), which couldn't reliably render multi-file worktree diffs; a real worktree window gives native SCM + diffs.
+- **Builder right-click menu reordered** — primary actions first (open terminal, approve), then worktree actions, then dev actions, grouped so the common ones are at the top.
+- **"Needs Attention" is merged into Builders.** Blocked builders are flagged inline in the Builders view (bell icon) instead of a separate section, and gate toasts point at the builder's pane. The standalone Needs Attention view is gone.
+- **Live item counts** in the Builders / Pull Requests / Backlog / Recently Closed view titles; Recently Closed gained a refresh button.
+- **Backlog is actionable** — "Codev: View Issue" opens an issue in the right pane, assigned-to-me issues are surfaced, and you can click-to-spawn a builder from a backlog issue.
+- **Periodic sidebar refresh while visible**, every `codev.overviewRefreshSeconds` (default 60; `0` = event-only, the previous behavior). A shared 30s Tower-side cache throttles GitHub calls across windows.
+
+### Bug fixes
+
+- The sidebar survives SSE event bursts without losing state (last-write-wins in the overview cache).
+- Builder terminal tabs close automatically on cleanup instead of lingering as dead "Process exited" tabs.
+- Tower PTY dimensions sync on terminal open, fixing wrapped/truncated output.
+- Gate-pending toast: the issue title is quoted (no longer reads like an error), and the seen-set persists across reloads so a still-blocked builder doesn't re-toast on every window reload.
+- State-change actions (Approve Gate, Cleanup Builder, …) now wait for Tower and refresh the sidebar immediately, instead of leaving it briefly stale.
+- Approving a gate from the sidebar targets the correct (canonical) gate name and runs `porch approve` in the right working directory — previously it could mis-resolve for renamed/shared gates or non-root worktrees.
+- Clicking a backlog issue reuses a single editor group for the preview instead of opening a new split group on every click after the first.
+- Team per-member counts (Assigned / Open PRs / the 7-day merged & closed) now show the true totals instead of silently capping at 20 — they read GitHub's search `issueCount` rather than the length of the (20-node-limited) result list.
+
 ## [3.0.4] - 2026-05-13
 
 ### Bug fixes

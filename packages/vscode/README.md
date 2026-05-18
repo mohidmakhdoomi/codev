@@ -4,11 +4,13 @@ Bring Codev's Agent Farm into VS Code — monitor builders, open terminals, appr
 
 ## Features
 
-- **Unified Sidebar** — Needs Attention, Builders, Pull Requests, Backlog, Team, and Status in a single pane
-- **Native Terminals** — Architect and builder terminals in the editor area with full vertical height
+- **Unified Sidebar** — Workspace, Builders, Pull Requests, Backlog, Recently Closed, Team, and Status in a single pane (blocked builders are flagged inline in Builders, with live item counts in the view titles)
+- **Native Terminals** — Architect / builder / shell terminals in the editor area with full vertical height; dev servers run in the bottom panel
+- **Managed dev servers** — start/stop the dev server for the current workspace or any builder worktree from the sidebar; one runs at a time and swaps on demand
+- **Gate review** — a toast with one-click **Approve** when a builder reaches a human-approval gate, plus inline `REVIEW(@architect):` comment threads on plan/spec files
 - **Live Spawn Notifications** — Get notified (or auto-open a terminal) the moment a new builder starts
 - **Status Bar** — Connection state, builder count, blocked gates at a glance
-- **Command Palette** — Open terminals, send messages, approve gates via keyboard
+- **Command Palette & shortcuts** — Open terminals, send messages, approve gates, toggle the sidebar
 - **Auto-Connect** — Detects Codev workspaces and connects to Tower automatically
 - **Auto-Start Tower** — Starts Tower if not running (configurable)
 
@@ -32,10 +34,11 @@ Bring Codev's Agent Farm into VS Code — monitor builders, open terminals, appr
 | Codev      | Architect      | [#42] [#43]    |
 | (sidebar)  | (terminal)     | Builder #42    |
 |            |                | (terminal)     |
-| - Attention|                |                |
+| - Workspace|                |                |
 | - Builders | Left editor    | Right editor   |
 | - PRs      | group          | group          |
 | - Backlog  |                |                |
+| - Recent   |                |                |
 | - Team     |                |                |
 | - Status   |                |                |
 +------------+----------------+----------------+
@@ -48,11 +51,17 @@ Bring Codev's Agent Farm into VS Code — monitor builders, open terminals, appr
 | Codev: Open Architect Terminal | `Cmd+K, A` | Open the architect terminal in the left editor group |
 | Codev: Send Message | `Cmd+K, D` | Pick a builder, type a message, send via Tower |
 | Codev: Approve Gate | `Cmd+K, G` | Approve a blocked builder's gate |
+| Toggle Codev Sidebar | `Cmd+Alt+C` / `Ctrl+Alt+C` | Show & focus the Codev sidebar, or close it if it's the active view |
 | Codev: Open Builder Terminal | | Pick a builder and open its terminal |
 | Codev: New Shell | | Create a new persistent shell terminal |
 | Codev: Spawn Builder | | Issue number + protocol + optional branch |
 | Codev: Cleanup Builder | | Remove a completed builder's worktree |
+| Codev: Start / Stop Dev Server (this workspace) | `Cmd/Ctrl+Alt+R` / `Cmd/Ctrl+Alt+S` | Run/stop the dev server for the current workspace (sidebar Workspace rows) |
+| Codev: Run / Stop Dev Server | | Run/stop a builder worktree's dev server (builder right-click) |
+| Codev: Open Worktree in New Window | | Open `.builders/<id>/` as its own VSCode window |
+| Codev: Run Worktree Setup | | Re-apply `worktree.symlinks` + `postSpawn` to an existing worktree |
 | Codev: Refresh Overview | | Manually refresh sidebar data |
+| Codev: Refresh Team | | Re-fetch the Team view's GitHub data |
 | Codev: Connect Tunnel | | Connect cloud tunnel for remote access |
 | Codev: Disconnect Tunnel | | Disconnect cloud tunnel |
 | Codev: Cron Tasks | | List, run, enable, or disable cron tasks |
@@ -83,3 +92,6 @@ Whenever a new builder starts (e.g. you ran `afx spawn 42`), the extension can o
 | `codev.autoConnect` | `true` | Connect to Tower on activation |
 | `codev.autoStartTower` | `true` | Auto-start Tower if not running |
 | `codev.autoOpenBuilderTerminal` | `notify` | Behavior on builder-spawned events (`off` / `notify` / `auto`) |
+| `codev.overviewRefreshSeconds` | `60` | Auto-refresh Builders/PRs/Backlog/Recently Closed every N seconds while the sidebar is visible (`0` = event-only) |
+| `codev.gateToasts.enabled` | `true` | Show a toast when a builder reaches a human-approval gate |
+| `codev.telemetry` | `false` | No telemetry collected |
