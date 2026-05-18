@@ -62,6 +62,7 @@ All criteria from `codev/specs/761-surface-multiple-architects-in.md` apply. Rol
   - Add `name: string` to `ArchitectState`.
   - Add `architects: ArchitectState[]` to `DashboardState`.
   - Existing scalar `architect: ArchitectState | null` stays exactly as it is today.
+  - **Also (small companion fix)**: change `Annotation.parent` from required to optional (`parent?: { type: string; id?: string }`) in the **shared** `packages/types/src/api.ts` interface. The handler's inline literal at `tower-routes.ts:1526-1533` builds annotations without it. Plan-time audit done: `grep -rn "annotation\.parent\|ann\.parent" packages/` returns only `agent-farm/state.ts:287-288` and `agent-farm/db/migrate.ts:99-100`, both of which use the *agent-farm-internal* `Annotation` type (`packages/codev/src/agent-farm/types.ts:29`), NOT the shared one. The shared `Annotation.parent` is currently consumed by zero callers. Making it optional aligns the shared type with reality and is a prerequisite for the clean `DashboardState` import.
 - [ ] `packages/codev/src/agent-farm/servers/tower-routes.ts:1443-1537` (`handleWorkspaceState`):
   - Replace the inline response type literal at lines 1452-1461 by importing `DashboardState` from `@cluesmith/codev-types` and typing the local `state` variable as `DashboardState`. (This is the lower-risk option than keeping two declarations and asserting equality at test time.)
   - Build the `architects` array by iterating `entry.architects` (name → terminalId) and, for each, looking up the session via `manager.getSession(terminalId)`; emit `{ name, port: 0, pid, terminalId, persistent }` per entry. Skip entries whose session is unavailable. Entries are emitted in `Map` iteration order (insertion order); the `main` entry, when present, is moved to the front so it is always `architects[0]`.
@@ -76,7 +77,14 @@ The `entry.architects: Map<string, string>` is already populated by spec #755's 
 
 **Front-of-array convention for `main`**: Iteration order for `Map` is insertion order; `main` may or may not be inserted first depending on workspace history. Surfacing `architects[0]` as a *reliable* "main pointer" simplifies the dashboard's "default-architect" picker. Implementation: build the array by appending non-`main` entries in iteration order, then `unshift` the `main` entry if present. Document this contract in the JSDoc on `DashboardState.architects`.
 
-**Type sync via import**: removing the inline literal eliminates the drift class entirely. The handler's local `state` variable becomes typed as `DashboardState`. If TypeScript complains about the in-progress shape during assembly (it might, if the JSON-serialisation pattern relies on inline-typed object literals), fall back to a hybrid: still import `DashboardState` but use `satisfies DashboardState` on the final value before serialisation. Either way, no inline duplicate type literal survives.
+**Type sync via import**: removing the inline literal eliminates the drift class entirely. The handler's local `state` variable becomes typed as `DashboardState`. The one type mismatch this exposes is `Annotation.parent`: the shared type marks it required but the handler does not populate it. The companion type fix above (making `parent` optional) resolves this. With that in place, `state: DashboardState` compiles cleanly. If a future field on `DashboardState` also drifts, the compiler will catch it at this seam — which is exactly the drift-prevention this seeks.
+
+If during implementation a different unforeseen mismatch surfaces, fall back to a typed Pick assertion at the end of the handler before serialisation:
+```ts
+const finalState = state satisfies Pick<DashboardState, 'architect' | 'architects'>;
+return res.end(JSON.stringify(finalState));
+```
+This still anchors the architect-related fields to the shared type while letting other inline-only fields stay loose. Document any such mismatch in the commit message; full alignment is the goal but partial alignment is acceptable if scope creep would otherwise grow.
 
 **Performance impact**: zero — same Map iteration that already happens for the scalar selection. The new array allocation is bounded by N (≤5 in practice).
 
@@ -127,8 +135,8 @@ Revert the single commit; this phase introduces no migrations and no runtime sid
   - Re-export `ArchitectState` from `@cluesmith/codev-types` (or update the existing re-export to ensure `name: string` is available to consumers). The dashboard already re-exports the types it consumes from this module; just confirm the new field is visible.
 - [ ] `packages/dashboard/src/hooks/useTabs.ts`:
   - Extend the `Tab` interface (lines 4-15) with an optional `architectName?: string` field so tabs carry the architect identity (the `id` and `label` already carry it implicitly, but a typed field is cleaner for downstream consumers).
-  - Replace the existing scalar-driven push (lines 27-29) with a loop over `state.architects ?? []` (with a fallback to `state.architect` populated as a one-element array if `architects` is absent — handles a momentary deploy-window where dashboard.js is newer than the server). Push one tab per architect: `{ id: \`architect:${a.name}\`, type: 'architect', label: a.name, closable: false, terminalId: a.terminalId, persistent: a.persistent, architectName: a.name }`.
-  - The first architect tab keeps `id: 'architect'` (no name suffix) ONLY when N=1, to preserve the existing DOM identity for snapshot tests. When N>1, the IDs are `architect:main`, `architect:sibling`, etc. **Plan-phase decision pinned here**: use `architect:<name>` IDs uniformly when N > 1 only; for N = 1 keep the bare `'architect'` ID. This is the simplest path to DOM-snapshot stability.
+  - Replace the existing scalar-driven push (lines 27-29) with a loop over `state.architects ?? []` (with a fallback to `state.architect` populated as a one-element array if `architects` is absent — handles a momentary deploy-window where dashboard.js is newer than the server). Push one tab per architect: `{ id, type: 'architect', label: a.name, closable: false, terminalId: a.terminalId, persistent: a.persistent, architectName: a.name }`.
+  - **Tab ID convention (revised per Gemini iter-1 review)**: The *first* architect tab always uses `id: 'architect'` (bare, no name suffix), regardless of N. Subsequent architect tabs use `id: 'architect:<name>'`. Since Phase 1 emits `main` at `architects[0]` whenever it is registered, the first tab is `main` in essentially all real workspaces — its ID is stable across the N=1→N=2 transition. The earlier draft of this plan used asymmetric N-dependent IDs (bare for N=1, prefixed for N>1) which would have re-keyed `main`'s ID on transition, breaking `activatedTerminals` tracking and auto-switch logic. The first-vs-rest convention preserves DOM-snapshot stability for N=1 AND keeps the first tab's ID stable for every workspace lifecycle.
   - Extend the `?tab=` deep-link parser in the `useEffect` at lines 79-99: add a check for `tabParam?.startsWith('architect:')` before the existing match-by-id-or-type. Extract the suffix as `name`; find the architect tab whose `architectName === name`; if not found, fall back to the existing match-by-type which lands on the first architect tab.
   - Adjust the auto-switch skip at line 115 (`tab.type !== 'architect'`): this currently suppresses auto-selection of newly-appearing architect tabs (a deliberate choice when there was only one architect tab that existed at page-load). Now that architects can be added post-load via `afx workspace add-architect`, the plan decision is: **invert the skip for architect tabs**. New architect tabs auto-switch like builder tabs do today. This matches the spec's "important question" resolution and gives external customers a useful "appears in the dashboard immediately after `add-architect`" UX.
   - **localStorage persistence**: a small helper module `packages/dashboard/src/lib/architectPersistence.ts` exporting `readActiveArchitect(workspacePath): string | null` and `writeActiveArchitect(workspacePath, name)`. Key namespace: `codev-active-architect:<workspacePath>`. Plan-pinned key name — audit confirmed only `codev-web-key` and `TipBanner` date keys exist today.
@@ -157,9 +165,11 @@ Revert the single commit; this phase introduces no migrations and no runtime sid
 
 **Persistent-terminal extraction**. The existing `renderPersistentContent` (`App.tsx:113-149`) does the lazy-mount + keep-alive pattern for the right-pane terminal tabs. The cleanest refactor is to:
 
-1. Extract a pure `renderPersistentTerminals(tabsToRender, activeTabId): JSX.Element[]` helper that returns the `<div className="terminal-tab-pane" style={{display: ...}}><Terminal ... /></div>` array. No new logic — just the existing inline loop hoisted into a named function.
-2. The right-pane caller maps to `renderPersistentTerminals(persistentRightTabs, activeTabId)` exactly as today.
-3. The left-pane caller maps to `renderPersistentTerminals(architectTabs, activeTabId)` when N > 1; when N = 1, falls through to the bare `<Terminal />` render to preserve DOM identity.
+1. Extract a pure `renderPersistentTerminals(tabsToRender, activeTabId, toolbarExtra?): JSX.Element[]` helper. Signature includes an optional `toolbarExtra` prop that is threaded through to the **active** terminal only (passing it to all would render multiple copies of the collapse buttons; only the visible terminal needs them). No new logic beyond that — the existing inline loop is hoisted into a named function.
+2. The right-pane caller maps to `renderPersistentTerminals(persistentRightTabs, activeTabId)` exactly as today (no `toolbarExtra`).
+3. The left-pane caller maps to `renderPersistentTerminals(architectTabs, activeTabId, architectToolbarExtra)` when N > 1; when N = 1, falls through to the bare `<Terminal toolbarExtra={architectToolbarExtra} ... />` render at `App.tsx:236-238` (preserves DOM identity for snapshot stability).
+
+**`toolbarExtra` threading rule (pinned per Gemini iter-1 and Claude iter-1 reviews)**: on the active terminal only. Within `renderPersistentTerminals`, when `tab.id === activeTabId`, pass `toolbarExtra` as a prop; otherwise omit it. This matches the today's single-terminal behaviour (toolbar visible on the architect terminal) and keeps the collapse buttons correctly placed when switching architects.
 
 The `activatedTerminals` Set in `App.tsx:39` is keyed by `tab.id`; since architect tab IDs are now `architect:main` etc. (N>1 only), the Set will simply gain those keys as the user visits them. The existing `useEffect` at `App.tsx:76-87` that marks the active terminal as activated continues to work — it checks `activeTab.type === 'architect' || 'builder' || 'shell'`.
 
@@ -198,18 +208,26 @@ if (tabParam) {
 // packages/dashboard/src/lib/architectPersistence.ts
 const KEY_PREFIX = 'codev-active-architect:';
 
-export function readActiveArchitect(workspacePath: string): string | null {
-  try { return localStorage.getItem(KEY_PREFIX + workspacePath); }
+function workspaceKey(): string {
+  // Use window.location.pathname (e.g. "/workspace/Users%2Fmwk%2F.../").
+  // Audit (Gemini iter-1): DashboardState.workspaceName = path.basename(workspacePath),
+  // which collides when two workspaces share a basename (e.g. ~/work/codev vs ~/personal/codev).
+  // pathname is URL-encoded and globally unique per workspace.
+  return window.location.pathname;
+}
+
+export function readActiveArchitect(): string | null {
+  try { return localStorage.getItem(KEY_PREFIX + workspaceKey()); }
   catch { return null; }
 }
 
-export function writeActiveArchitect(workspacePath: string, name: string): void {
-  try { localStorage.setItem(KEY_PREFIX + workspacePath, name); }
+export function writeActiveArchitect(name: string): void {
+  try { localStorage.setItem(KEY_PREFIX + workspaceKey(), name); }
   catch { /* quota / SSR / private-mode — silently ignore */ }
 }
 ```
 
-Workspace path is available on `DashboardState.workspaceName`? **Audit at implementation time**: if `workspaceName` is per-workspace-unique within a Tower (which it should be — workspaces are keyed by path in Tower), use it. Otherwise pull it from `window.location.pathname` (the dashboard URL is `/workspace/<encoded-path>/`). The former is preferred for stability across renames.
+**Pinned (revised per Gemini iter-1 review)**: use `window.location.pathname` for the key suffix. `DashboardState.workspaceName` is just `path.basename`, which is NOT globally unique. The pathname is the URL-encoded full workspace path the dashboard is served at, guaranteed unique per workspace within a Tower.
 
 **Auto-switch skip inversion**:
 
@@ -336,16 +354,53 @@ Both phases ship in one PR. Each is a single atomic commit.
 
 The plan keeps the scope tight per the architect's slicing directive. Phase 1 is mostly type/API plumbing; Phase 2 is the actual UI change. Splitting them gives a clean reviewable commit boundary and lets Phase 1 be merged ahead of Phase 2 if a future emergency requires the API field without the UI. Both ship in one PR for 3.0.6.
 
-Two plan-time decisions worth flagging for review:
+Plan-time decisions (revised after iter-1 review):
 
-1. **Tab ID convention**: bare `'architect'` ID for N=1, `architect:<name>` for N>1. This preserves DOM identity for the dominant single-architect case but introduces a minor inconsistency. Alternative: always use `architect:<name>` including for `main`; the cost is that single-architect snapshot tests would need a one-time update. Plan-pinned the asymmetric option for hotfix-velocity reasons.
-2. **Auto-switch behaviour for post-load architects**: removed the suppression so new architect tabs auto-switch like builders. Matches user expectation that "I just added an architect, I want to see it." Alternative: keep suppression and require explicit click. Plan-pinned the auto-switch.
+1. **Tab ID convention** — *revised*: bare `'architect'` ID for the FIRST architect always, `architect:<name>` for subsequent. Original draft asymmetric-by-N convention would have re-keyed `main`'s ID on N=1→N=2 transition. The first-vs-rest rule preserves both DOM-snapshot stability AND tab-ID stability across architect-count changes. (Gemini iter-1 finding.)
 
-Both are reversible at follow-up time.
+2. **localStorage key suffix** — *revised*: `window.location.pathname`, not `DashboardState.workspaceName`. The latter is `path.basename(workspacePath)` and collides when two workspaces share a basename. (Gemini iter-1 finding.)
+
+3. **`toolbarExtra` threading in persistent-terminal helper** — *pinned*: on the active terminal only. Both Gemini and Claude flagged this as undefined; pinned explicitly. (Iter-1.)
+
+4. **`Annotation.parent` type alignment** — *added*: make `parent` optional in the shared `Annotation` type as a small Phase 1 companion fix. The shared type has required `parent`, but the handler doesn't populate it and no dashboard consumer reads it. Required to make the clean `DashboardState` import compile. (Claude iter-1 finding.)
+
+5. **Auto-switch behaviour for post-load architects** — *pinned (unchanged from draft)*: removed the suppression so new architect tabs auto-switch like builders. Matches user expectation that "I just added an architect, I want to see it." Alternative: keep suppression and require explicit click.
+
+6. **Dead architect tab handling** — *pinned*: omit dead architects entirely. The `/api/state` builder skips architects whose `manager.getSession(terminalId)` returns no session, so they're invisible at the API layer. No grey-out indicator in v1.
+
+All decisions are reversible at follow-up time.
 
 ## Expert Consultation
 
-To be populated after the plan-phase 3-way consultation.
+**Date**: 2026-05-18
+**Models Consulted**: Gemini 3 Pro, Claude Opus 4.7. Codex unavailable in this worktree (same environmental issue as the spec phase — vendored binary missing, `pnpm rebuild` blocked by harness's permission classifier).
+
+### Verdicts (iteration 1)
+
+| Model | Verdict | Confidence |
+|-------|---------|------------|
+| Gemini | REQUEST_CHANGES (addressed) | HIGH |
+| Claude | COMMENT (addressed) | HIGH |
+| Codex | (unavailable) | — |
+
+### Convergent findings (addressed)
+
+1. **`toolbarExtra` threading undefined** (both reviews). The plan's extracted `renderPersistentTerminals` helper didn't say where the architect's collapse-button `toolbarExtra` prop goes when there are multiple architect terminals being rendered persistently. **Fix**: helper signature now takes `toolbarExtra?: ReactNode`; pinned threading rule is "on the active terminal only" — within the loop, pass it only when `tab.id === activeTabId`.
+
+### Gemini-specific findings (addressed)
+
+1. **Tab ID convention breaks N=1→N=2 transition.** Draft used bare `'architect'` for N=1 and `architect:<name>` for N>1; transitioning architects from 1 to 2 would re-key `main`'s ID, breaking `activatedTerminals` tracking and triggering spurious auto-switch. **Fix**: revised to "first architect always bare `'architect'`, subsequent prefixed". DOM snapshot for N=1 stays stable, AND `main`'s ID never changes across lifecycle.
+2. **`localStorage` key collision via `workspaceName` basename.** Two workspaces with same basename (`~/work/codev` vs `~/personal/codev`) would collide. **Fix**: helper now uses `window.location.pathname`, which is URL-encoded and globally unique per workspace.
+
+### Claude-specific findings (addressed)
+
+1. **`DashboardState` import will fail due to `Annotation.parent` mismatch.** Shared type marks `parent` required; handler at `tower-routes.ts:1526-1533` builds annotations without it. Builder following the original plan would hit a compile error. **Fix**: Phase 1 now includes a small companion type change — `Annotation.parent` becomes optional. Audit step is documented: `grep -rn "annotation\.parent\|ann\.parent" packages/` should return no consumer reads (verified at plan time; confirm at implementation). Fallback (`satisfies Pick<DashboardState, ...>`) documented for the unforeseen-mismatch case.
+
+### Persisted consultation outputs
+
+- `codev/projects/761-surface-multiple-architects-in/761-plan-iter1-gemini.txt`
+- `codev/projects/761-surface-multiple-architects-in/761-plan-iter1-claude.txt`
+- (codex output absent — same environment issue as spec phase)
 
 ## Approval
 
