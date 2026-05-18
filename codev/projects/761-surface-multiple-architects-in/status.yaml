@@ -1,9 +1,15 @@
 id: '761'
 title: surface-multiple-architects-in
 protocol: spir
-phase: plan
-plan_phases: []
-current_plan_phase: null
+phase: implement
+plan_phases:
+  - id: phase_1
+    title: 'API state: expose architects collection'
+    status: in_progress
+  - id: phase_2
+    title: 'Dashboard: per-architect tabs + left-pane persistent rendering'
+    status: pending
+current_plan_phase: phase_1
 gates:
   spec-approval:
     status: approved
@@ -18,7 +24,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-05-18T20:34:36.514Z'
-updated_at: '2026-05-18T21:11:10.217Z'
+updated_at: '2026-05-18T21:11:21.218Z'
