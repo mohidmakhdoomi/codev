@@ -542,8 +542,9 @@ This dual-source strategy (SQLite + live shellper processes) ensures sessions su
 | `GET` | `/health` | Health check (uptime, memory, active projects) |
 | `GET` | `/api/workspaces` | List all workspaces with status |
 | `GET` | `/api/workspaces/:enc/status` | Get workspace status (terminals, gates) |
-| `POST` | `/api/workspaces/:enc/activate` | Activate workspace (creates architect terminal) |
-| `POST` | `/api/workspaces/:enc/deactivate` | Deactivate workspace (kills all terminals) |
+| `POST` | `/api/workspaces/:enc/activate` | Activate workspace (creates `main` architect terminal) |
+| `POST` | `/api/workspaces/:enc/architects` | Register an additional named architect (Spec 755) |
+| `POST` | `/api/workspaces/:enc/deactivate` | Deactivate workspace (kills all architect terminals + builders + shells) |
 | `GET` | `/api/status` | Legacy: Get all instances (backward compat) |
 | `POST` | `/api/launch` | Legacy: Launch instance (backward compat) |
 | `POST` | `/api/stop` | Stop instance by workspacePath |
@@ -589,6 +590,36 @@ Clients may ignore unknown event types — older clients silently drop `builder-
 | `POST` | `/api/terminals/:id/resize` | Resize PTY session |
 | `GET` | `/api/terminals/:id/output` | Get ring buffer output |
 | `WS` | `/ws/terminal/:id` | WebSocket terminal connection |
+
+#### Multi-architect routing (Spec 755)
+
+A workspace can host more than one architect terminal. The data model:
+
+- **In-memory**: `WorkspaceTerminals.architects: Map<string, string>` (name → `terminalId`). The first architect is named `main` by default; subsequent architects auto-number to `architect-2`, `architect-3`, ... unless the user supplies a name via `afx workspace add-architect --name <name>`. Validation lives in `packages/codev/src/agent-farm/utils/architect-name.ts`.
+- **Local `state.db`**: `architect.id TEXT PRIMARY KEY` (no longer a singleton). `setArchitect(...)` writes the `main`-named row for backward-compat; `setArchitectByName(name, ...)` is the multi-architect setter.
+- **Global `~/.agent-farm/global.db`**: `terminal_sessions.role_id` stores the architect's name (previously NULL for architects). Crash recovery / reconnect uses this to re-key `entry.architects` by name.
+
+The routing chain when a builder runs `afx send architect "..."`:
+
+1. **CLI** — `commands/send.ts` populates the request body's `from` field with the builder's ID (detected from the worktree path).
+2. **handleSend** (`tower-routes.ts`) — receives the request, forwards `from` to the resolver via `resolveTarget(to, workspace, from)`. The third arg was added in Spec 755; older callers (`tower-cron.ts`, etc.) pass nothing and see unchanged behavior.
+3. **resolveTarget** (`tower-messages.ts`) — splits `architect:<name>` from `<agent>` via a special-case intercept (the `parseAddress` grammar can't distinguish `project:agent` cross-workspace addresses from `architect:<name>` per-architect addresses, so the resolver does it). For plain `architect`, calls `resolveAgentInWorkspace`.
+4. **resolveAgentInWorkspace** — applies four rules:
+   - Single-architect fast path (`size === 1 && has('main')`) returns the `main` terminal without touching `state.db`. Guarantees latency parity for solo-architect users.
+   - Builder sender with matching `spawnedByArchitect` → that architect.
+   - Builder sender with `spawnedByArchitect` no longer registered → `main` fallback; if `main` is absent, verbatim "architect-gone" error.
+   - Builder sender with NULL `spawnedByArchitect` (legacy row) → `main` fallback; if `main` is absent, verbatim "legacy-builder" error.
+   - Non-builder sender → `main` (or first registered).
+5. **architect:<name>** — same builder-context check; if the sender's `spawnedByArchitect` doesn't match `<name>`, rejected with the spoofing error.
+
+**Builder-context detection** is via SQLite row presence: `lookupBuilderSpawningArchitect(builderId, workspacePath)` returns `string | null | undefined` distinguishing "explicit name" / "legacy row" / "not a builder." Tower side opens the workspace's `state.db` readonly (mirrors the `servers/overview.ts` pattern); CLI side falls back to the singleton `getDb()`.
+
+**Backward compatibility invariants**:
+- `/api/state` response shape preserved: `state.architect` remains scalar, populated from `main` (or first registered).
+- `state.ts:loadState()` returns the `main`-first architect via the same scalar shim.
+- Single-architect workspaces show byte-for-byte identical behavior.
+
+**CI guardrail**: `spec-755-guardrail.test.ts` fails the build if `entry.architect` (singular accessor) reappears in production code.
 
 #### Dashboard UI (React + Vite, Spec 0085)
 

@@ -208,6 +208,8 @@ Generalizable wisdom extracted from review documents, ordered by impact. Updated
 - [From 0386] Run the final stale-reference sweep BEFORE the verification phase, not as part of it -- catches cross-tier issues earlier when context is fresher.
 - [From 0386] Include SPIDER-to-SPIR in stale pattern lists when doing documentation audits -- protocol renames are easy to miss.
 - [From 0364] Porch and consult should agree on file naming conventions -- porch expects `364-*.md` but consult looks for `0364-*.md`. Symlinks work as a workaround but the inconsistency is a recurring friction point.
+- [From 0755] Vestigial production code can survive for unknown durations. `setArchitect` was orphaned (only called from tests) for an unknown period; the local `architect` table it wrote to was effectively dead state. When a feature touches a long-lived API, run a "who calls this in production?" grep during planning, not after the implementation has diverged. Reviewers caught it in iter-1; planning would have caught it earlier.
+- [From 0755] When a plan references specific migration version numbers, verify against the current schema before commit -- or reference migrations by purpose ("the next available after issue_number widening") rather than fixed numbers. The plan said v5 local + v5 global; the actual code needed v9 + v13 because the project had already advanced past those.
 
 ## Testing
 
@@ -259,6 +261,9 @@ Generalizable wisdom extracted from review documents, ordered by impact. Updated
 - [From 0124] "When in doubt, keep the test" is the right default for consolidation. It is better to remove fewer tests with confidence than to hit a numeric target by removing borderline tests.
 - [From 0122] Reconciliation logic may skip temp/test paths (like /tmp and /var/folders). E2E tests for reconnection need workspace paths outside excluded directories (e.g., under `~/.agent-farm/test-workspaces/`).
 - [From 0324] Node.js async EPIPE is dangerous for daemon processes -- when a writable stream connects to a broken pipe, Node.js delivers EPIPE as an unhandled `'error'` event. Always add `stream.on('error', () => {})` handlers on process stdio streams for long-lived detached processes.
+- [From 0755] Export error messages as functions, not inline strings, when tests must assert verbatim spec text. Producer and asserter import the same function — drift between spec and code becomes a failing test rather than a silent regression. Caught a real verbatim-text drift in iter-1 of Phase 3 and made the iter-2 fix mechanical.
+- [From 0755] Test the public address grammar, not the internal resolver shape. Phase 3 iter-1 tests called `resolveTarget('sibling', ...)` directly, bypassing the `parseAddress` step. That hid a real bug (`architect:<name>` was being misparsed as `project:agent`). Tests of routing logic should send the same string the CLI sends, not the internal data shape.
+- [From 0755] A CI guardrail test for "this access pattern should never reappear" is cheap insurance for sweep-style refactors. The `entry.architect` (singular) grep test took 30 minutes to write and would catch any future re-introduction. Worth doing whenever a sweep removes a long-lived pattern.
 
 ## UI/UX
 
