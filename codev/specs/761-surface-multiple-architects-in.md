@@ -179,17 +179,17 @@ These remain as separate follow-up issues and would not be unblocked by 761.
 
 ## Solution Approach
 
-The change splits cleanly into four lateral edits, each independently shippable but combined here to give the v1 user the complete experience:
+The v1 change is two coupled edits, ordered:
 
-1. **`/api/state` collection.** Extend `DashboardState` with `architects: ArchitectState[]` (each entry adds a `name: string`). Preserve scalar `architect` populated from `main` or first registered, identical to today. Update `handleWorkspaceState` (`tower-routes.ts:1443-1537`) to iterate `entry.architects` and emit the collection. Update `getTerminalsForWorkspace` (`tower-terminals.ts:928-940`) to emit **one `TerminalEntry` per architect** instead of one fixed entry; the entry's `id` becomes `architect:<name>` (or `architect` for the default `main`-preserving backward-compat case) and `label` becomes the name. This is the foundation the other three layers consume.
+1. **`/api/state` collection.** Extend `DashboardState` in `packages/types/src/api.ts` with `architects: ArchitectState[]`, where each `ArchitectState` gains a `name: string` field. Preserve the scalar `architect` field unchanged (population logic: `main` if present, else first registered — identical to today). The implementation lives in `handleWorkspaceState` in `tower-routes.ts:1443-1537`: iterate `entry.architects` and emit one entry per name, each carrying its session-derived `pid`, `terminalId`, and `persistent`. The inline type literal at `tower-routes.ts:1452-1461` must be updated alongside (or refactored to import `DashboardState` from `@cluesmith/codev-types`).
 
-2. **Dashboard.** Extend `useTabs.ts:17-29` to push one architect tab per entry in `state.architects`. Update `App.tsx` so that when there is more than one architect, the left pane renders a small tab strip listing the architects' names; selecting one shows that terminal's body. When N = 1 the existing single-terminal rendering is unchanged. The `?tab=` deep link is extended to recognise `?tab=architect:<name>`. Active-tab persistence stores the selected name in `localStorage` keyed by `architect:<workspacePath>` (or similar; plan-phase to confirm). On mobile, architect tabs go through the existing TabBar machinery, one per architect.
+   **Do NOT modify `getTerminalsForWorkspace`** (`tower-terminals.ts:928-940`). The dashboard does not consume `TerminalEntry[]` for architect rendering; it reads from `/api/state` (which reads `entry.architects` directly). Modifying `getTerminalsForWorkspace` would change `InstanceStatus.terminals` — which flows into `afx status` via `getWorkspaceStatus()` — breaking the strict "no `afx status` changes in v1" boundary. The single `TerminalEntry` of type `'architect'` it emits today stays as-is; multi-architect `TerminalEntry` emission is a follow-up alongside the `afx status` work.
 
-3. **VS Code extension.** Replace the single `TreeItem('Open Architect')` in `workspace.ts:26-34` with a loop over `state.architects`. Each item's command is a new `codev.openArchitectByName` command (or the existing `codev.openArchitectTerminal` widened to accept a name argument — plan-phase decision); the command resolves `name → terminalId` from the cached state and calls `terminalManager.openArchitect(terminalId, ...)` with a VS Code tab name of `Codev: <name> (architect)`. The existing keybinding / command-palette entry continues to work and routes to `main` (or first) when invoked without arguments.
+2. **Dashboard.** Extend `useTabs.ts:17-29` to push one architect tab per entry in `state.architects` (replacing the current scalar-driven push at lines 27-29). Update `App.tsx` so that when there is more than one architect, the left pane renders a small tab strip listing the architects' names; selecting one shows that terminal's body. When N = 1 the existing single-terminal rendering is unchanged. The deep-link parser in the `useTabs.ts:79-99` `useEffect` is extended to recognise `?tab=architect:<name>` (small colon-parsing addition; the existing `tab.id === tabParam || tab.type === tabParam` match continues to handle the bare `?tab=architect` case). Active-tab persistence stores the selected architect name in `localStorage` keyed by `codev-active-architect:<workspacePath>` (plan-phase confirms key naming). On mobile, architect tabs flow through the existing TabBar machinery, one per architect.
 
-4. **`afx status`.** Add a header line listing architect names. Add a `--architect <name>` flag that filters the builders list by `spawned_by_architect`. Use the Tower API path (`getWorkspaceStatus`) when Tower is running, and fall back to `state.db` (architect table + builders.spawned_by_architect column) when Tower is not running. The `--architect nonexistent` failure mode produces a non-zero exit with an error message of the form `"unknown architect '<name>'; registered: <list>"` — exact wording fixed in plan phase but specified as test-asserted.
+   **Implementation subtlety (called out by Claude review)**: today's left-pane rendering at `App.tsx:236-238` is a bare `Terminal` component that bypasses the `activatedTerminals` lazy-mount + keep-alive pattern used by the right pane (`renderPersistentContent`). For multi-architect tab-switching to avoid Terminal unmount/remount, the left pane needs to participate in the `activatedTerminals` machinery — either by extending `renderPersistentContent` to also accept a "left-pane terminal list" parameter, or by introducing a parallel persistent-content renderer for the left pane. Plan-phase picks the approach; either keeps the WebSocket alive across tab switches.
 
-Each layer can be implemented and reviewed in its own commit; the plan phase will sequence them. The recommended order is `/api/state` first (so the consumers have a stable surface to read from), then the three consumer surfaces in parallel.
+This is the entirety of the v1 implementation surface. Layers for VS Code extension and `afx status` are explicitly deferred to follow-up issues (see "Deferred to follow-up issues" in Scope).
 
 ## Open Questions
 
@@ -258,10 +258,12 @@ Each layer can be implemented and reviewed in its own commit; the plan phase wil
 
 **Surface call sites for v1 (in scope)**:
 - `packages/codev/src/agent-farm/servers/tower-routes.ts:1443-1537` — `handleWorkspaceState` / `/api/state` handler. **Note dual type definition** (inline literal at 1452-1461).
-- `packages/codev/src/agent-farm/servers/tower-terminals.ts:722-946` — `getTerminalsForWorkspace`; emits `TerminalEntry` for the architect surface (currently collapses to one entry; plan to emit one per architect — or keep one entry and have the dashboard read the new collection separately, decision is plan-phase).
 - `packages/types/src/api.ts:11-16,51-60` — `ArchitectState` (gains `name: string`) and `DashboardState` (gains `architects: ArchitectState[]`).
 - `packages/dashboard/src/hooks/useTabs.ts:17-99` — tab construction and deep-link handling.
 - `packages/dashboard/src/components/App.tsx:39,76-87,113-149,184-238,256` — `activatedTerminals` state, left-pane SplitPane content, right-pane TabBar filter.
+
+**Backend call site explicitly NOT touched in v1** (separated from the deferred-follow-up call sites because it's a non-obvious choice):
+- `packages/codev/src/agent-farm/servers/tower-terminals.ts:928-940` — `getTerminalsForWorkspace`'s architect-`TerminalEntry` emission. Stays at one entry per workspace in v1. Modifying it would change `InstanceStatus.terminals` and leak into `afx status`, violating the slicing boundary. The follow-up that picks up `afx status` revisits this together with the formatter change.
 
 **Call sites NOT touched in v1 (deferred)**:
 - `packages/vscode/src/views/workspace.ts:23-51` — sidebar TreeView. Deferred follow-up.
@@ -299,6 +301,14 @@ Each layer can be implemented and reviewed in its own commit; the plan phase wil
 | Claude | APPROVE | HIGH |
 | Codex | (unavailable) | — |
 
+### Verdicts (iteration 2 — after architect's slicing directive + fixes)
+
+| Model | Verdict | Confidence |
+|-------|---------|------------|
+| Gemini | REQUEST_CHANGES (resolved in this iteration) | HIGH |
+| Claude | APPROVE | HIGH |
+| Codex | (unavailable) | — |
+
 ### Convergent findings (addressed in this iteration)
 
 1. **Inline-type drift in `tower-routes.ts:handleWorkspaceState`.** Both Gemini and Claude noted that the API handler defines its response shape inline (`tower-routes.ts:1452-1461`) rather than importing `DashboardState`. Adding `architects` requires updating both. **Fix**: Constraints section now requires that drift is structurally prevented (compile-time import OR asserted test). Success Criteria adds an explicit type-sync test. References call this out at the file/line level.
@@ -325,10 +335,25 @@ Gemini also flagged a non-critical issue:
 
 5. **`Open Architect` → `main` label change in VS Code (N=1 regression).** **Fix**: VS Code scope is deferred. The follow-up issue inherits this question.
 
+### Iteration-2 findings (addressed in this iteration)
+
+Iteration 2 ran after the architect's 2026-05-18 slicing directive was incorporated into the spec.
+
+**Gemini (REQUEST_CHANGES)** raised two contradictions left over from the slicing rewrite:
+1. **Stale "Solution Approach" steps 3 & 4 (VS Code, `afx status`)** still describing in-line implementation despite Scope marking them deferred. A builder reading the Solution Approach directly would have built out-of-scope features. **Fix**: deleted steps 3 & 4 entirely. Solution Approach now has only two steps (matching v1 scope).
+2. **Incorrect instruction to modify `getTerminalsForWorkspace`** in Solution Approach step 1. The dashboard reads architects from `entry.architects` (via `tower-routes.ts:handleWorkspaceState`), NOT from `TerminalEntry[]`. Modifying `getTerminalsForWorkspace` would change `InstanceStatus.terminals` and leak into `afx status`, breaking the slicing boundary. **Fix**: removed the instruction; added an explicit "do NOT modify" note in Solution Approach with rationale; called out the file in References under "explicitly NOT touched in v1."
+
+**Claude (APPROVE)** verified all current-state claims against source files and confirmed no remaining blockers. Three minor observations, two adopted:
+1. **`?tab=architect:<name>` is not zero-new-logic.** The existing `tabs.find(t => t.id === tabParam || t.type === tabParam)` handles bare `?tab=architect` but not the `:<name>` form. **Fix**: Solution Approach step 2 now explicitly says "small colon-parsing addition" rather than implying zero work.
+2. **Left-pane rendering subtlety.** `App.tsx:236-238` is a bare `Terminal` component, NOT going through `renderPersistentContent` / `activatedTerminals`. For multi-architect tab-switching to avoid Terminal remount, the left pane must participate in `activatedTerminals`. **Fix**: Solution Approach step 2 now calls out this implementation subtlety explicitly with two implementation options for plan-phase to pick.
+3. **Architect-removed-while-dashboard-open edge case.** Not in v1 (no removal CLI exists), but worth a note. *Not adopted as a code change* — out of scope.
+
 ### Persisted consultation outputs
 
-- `codev/projects/761-surface-multiple-architects-in/761-spec-iter1-gemini.md`
-- `codev/projects/761-surface-multiple-architects-in/761-spec-iter1-claude.md`
+- `codev/projects/761-surface-multiple-architects-in/761-spec-iter1-gemini.md` (REQUEST_CHANGES, mostly addressed by slicing)
+- `codev/projects/761-surface-multiple-architects-in/761-spec-iter1-claude.md` (APPROVE)
+- `codev/projects/761-surface-multiple-architects-in/761-spec-iter2-gemini.md` (REQUEST_CHANGES, addressed in this iteration)
+- `codev/projects/761-surface-multiple-architects-in/761-spec-iter2-claude.md` (APPROVE)
 - (codex output absent — see note above)
 
 ## Approval
