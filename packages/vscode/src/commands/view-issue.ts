@@ -84,9 +84,16 @@ export async function viewBacklogIssue(
 
   provider.set(issueId, renderIssue(issueId, issue));
   const uri = vscode.Uri.parse(`${SCHEME}:${issueId}.md`);
-  // Render as a read-only markdown preview in the side (right) editor
-  // column — same placement model as builder terminals (which target
-  // ViewColumn.Two). `showPreviewToSide` opens in ViewColumn.Beside,
-  // which from a sidebar click lands in the right pane.
+  // Render as a read-only markdown preview in editor group 2 — the same
+  // placement model as builder terminals (which target ViewColumn.Two).
+  //
+  // `markdown.showPreviewToSide` opens in ViewColumn.Beside, which is
+  // RELATIVE to the active editor group, not an absolute column. Without
+  // anchoring, the first click (sidebar focused → group 1 active) lands
+  // in group 2, but a second click while that preview is focused makes
+  // "Beside" resolve to group 3, then 4, … — a brand-new group per click.
+  // Focusing group 1 first pins "Beside" to group 2 every time, so issue
+  // previews consistently reuse a single group like the builder terminals.
+  await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
   await vscode.commands.executeCommand('markdown.showPreviewToSide', uri);
 }
