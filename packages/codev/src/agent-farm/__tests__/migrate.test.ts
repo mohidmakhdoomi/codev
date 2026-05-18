@@ -55,7 +55,8 @@ describe('Migration', () => {
 
       migrateLocalFromJson(db, jsonPath);
 
-      const architect = db.prepare('SELECT * FROM architect WHERE id = 1').get() as any;
+      // Spec 755: legacy singleton row migrates to architect named 'main'
+      const architect = db.prepare("SELECT * FROM architect WHERE id = 'main'").get() as any;
       expect(architect.pid).toBe(1234);
       expect(architect.port).toBe(4201);
       expect(architect.cmd).toBe('claude --dangerously-skip-permissions');

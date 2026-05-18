@@ -5,7 +5,7 @@
  * Does NOT stop the tower - other workspaces may be using it.
  */
 
-import { loadState, clearState } from '../state.js';
+import { loadState, clearState, getArchitects } from '../state.js';
 import { logger } from '../utils/logger.js';
 import { getConfig } from '../utils/config.js';
 import { getTowerClient } from '../lib/tower-client.js';
@@ -52,13 +52,19 @@ export async function stop(): Promise<void> {
 
   let stopped = 0;
 
-  // Stop architect terminal
-  if (towerRunning && state.architect?.terminalId) {
-    logger.info('Stopping architect...');
-    try {
-      await client.killTerminal(state.architect.terminalId);
-      stopped++;
-    } catch { /* best-effort */ }
+  // Stop all architect terminals (Spec 755: iterate all named architects, not
+  // just 'main'. Pre-spec workspaces had one architect; multi-architect
+  // workspaces must clean up every one, otherwise siblings would leak as
+  // orphaned processes after the legacy fallback path runs).
+  if (towerRunning) {
+    for (const architect of getArchitects()) {
+      if (!architect.terminalId) continue;
+      logger.info(`Stopping architect '${architect.name}'...`);
+      try {
+        await client.killTerminal(architect.terminalId);
+        stopped++;
+      } catch { /* best-effort */ }
+    }
   }
 
   // Stop all builders

@@ -1407,15 +1407,19 @@ async function handleWorkspaceState(
     teamEnabled: await hasTeam(path.join(workspacePath, 'codev', 'team')),
   };
 
-  // Add architect if exists
-  if (entry.architect) {
-    const session = manager.getSession(entry.architect);
+  // Add architect if exists.
+  // Spec 755: /api/state preserves the scalar `state.architect` shape.
+  // Prefer 'main', else first registered architect by name.
+  const architectTerminalId =
+    entry.architects.get('main') ?? entry.architects.values().next().value;
+  if (architectTerminalId) {
+    const session = manager.getSession(architectTerminalId);
     if (session) {
       state.architect = {
         port: 0,
         pid: session.pid || 0,
-        terminalId: entry.architect,
-        persistent: isSessionPersistent(entry.architect, session),
+        terminalId: architectTerminalId,
+        persistent: isSessionPersistent(architectTerminalId, session),
       };
     }
   }
@@ -1850,9 +1854,14 @@ async function handleWorkspaceTabDelete(
       entry.builders.delete(tabId);
     }
   } else if (tabId === 'architect') {
-    terminalId = entry.architect;
-    if (terminalId) {
-      entry.architect = undefined;
+    // Spec 755: tabId 'architect' targets the architect surfaced by /api/state
+    // — prefer 'main', else the first registered.
+    const name = entry.architects.has('main')
+      ? 'main'
+      : entry.architects.keys().next().value;
+    if (name) {
+      terminalId = entry.architects.get(name);
+      entry.architects.delete(name);
     }
   }
 
@@ -1878,9 +1887,10 @@ async function handleWorkspaceStopAll(
   const entry = getWorkspaceTerminalsEntry(workspacePath);
   const manager = getTerminalManager();
 
-  // Kill all terminals (disable shellper auto-restart if applicable)
-  if (entry.architect) {
-    await killTerminalWithShellper(manager, entry.architect);
+  // Kill all terminals (disable shellper auto-restart if applicable).
+  // Spec 755: iterate all named architects, not just the singleton.
+  for (const terminalId of entry.architects.values()) {
+    await killTerminalWithShellper(manager, terminalId);
   }
   for (const terminalId of entry.shells.values()) {
     await killTerminalWithShellper(manager, terminalId);

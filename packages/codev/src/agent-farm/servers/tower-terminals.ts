@@ -131,12 +131,16 @@ export function getTerminalManager(): TerminalManager {
 export function getWorkspaceTerminalsEntry(workspacePath: string): WorkspaceTerminals {
   let entry = workspaceTerminals.get(workspacePath);
   if (!entry) {
-    entry = { builders: new Map(), shells: new Map(), fileTabs: loadFileTabsForWorkspace(workspacePath) };
+    entry = { architects: new Map(), builders: new Map(), shells: new Map(), fileTabs: loadFileTabsForWorkspace(workspacePath) };
     workspaceTerminals.set(workspacePath, entry);
   }
   // Migration: ensure fileTabs exists for older entries
   if (!entry.fileTabs) {
     entry.fileTabs = new Map();
+  }
+  // Migration (Spec 755): ensure architects exists for older entries
+  if (!entry.architects) {
+    entry.architects = new Map();
   }
   return entry;
 }
@@ -286,9 +290,11 @@ export function deleteTerminalSession(terminalId: string): void {
  */
 export function removeTerminalFromRegistry(terminalId: string): void {
   for (const [, entry] of workspaceTerminals) {
-    if (entry.architect === terminalId) {
-      entry.architect = undefined;
-      return;
+    for (const [name, tid] of entry.architects) {
+      if (tid === terminalId) {
+        entry.architects.delete(name);
+        return;
+      }
     }
     for (const [builderId, tid] of entry.builders) {
       if (tid === terminalId) {
@@ -639,7 +645,9 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
     // Register in workspaceTerminals Map
     const entry = getWorkspaceTerminalsEntry(workspacePath);
     if (dbSession.type === 'architect') {
-      entry.architect = session.id;
+      // Spec 755: role_id stores the architect's name. The v13 backfill
+      // populates 'main' for legacy rows where role_id was null.
+      entry.architects.set(dbSession.role_id || 'main', session.id);
     } else if (dbSession.type === 'builder') {
       entry.builders.set(dbSession.role_id || dbSession.id, session.id);
     } else if (dbSession.type === 'shell') {
@@ -656,8 +664,14 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
     if (ptySession) {
       ptySession.on('exit', () => {
         const currentEntry = getWorkspaceTerminalsEntry(workspacePath);
-        if (dbSession.type === 'architect' && currentEntry.architect === session.id) {
-          currentEntry.architect = undefined;
+        if (dbSession.type === 'architect') {
+          // Spec 755: remove the entry whose terminalId matches session.id.
+          for (const [name, tid] of currentEntry.architects) {
+            if (tid === session.id) {
+              currentEntry.architects.delete(name);
+              break;
+            }
+          }
         }
         deleteTerminalSession(session.id);
       });
@@ -722,7 +736,7 @@ export async function getTerminalsForWorkspace(
   // destroying in-memory state that was registered via POST /api/terminals.
   // Previous approach cleared the cache then rebuilt, which lost terminals
   // if their SQLite rows were deleted by external interference (e.g., tests).
-  const freshEntry: WorkspaceTerminals = { builders: new Map(), shells: new Map(), fileTabs: new Map() };
+  const freshEntry: WorkspaceTerminals = { architects: new Map(), builders: new Map(), shells: new Map(), fileTabs: new Map() };
 
   // Load file tabs from SQLite (persisted across restarts)
   const existingEntry = workspaceTerminals.get(normalizedPath);
@@ -803,8 +817,14 @@ export async function getTerminalsForWorkspace(
             // Clean up on exit (only fires for permanent death when restartOnExit is set)
             ptySession.on('exit', () => {
               const currentEntry = getWorkspaceTerminalsEntry(dbSession.workspace_path);
-              if (dbSession.type === 'architect' && currentEntry.architect === newSession.id) {
-                currentEntry.architect = undefined;
+              if (dbSession.type === 'architect') {
+                // Spec 755: remove the entry whose terminalId matches newSession.id.
+                for (const [name, tid] of currentEntry.architects) {
+                  if (tid === newSession.id) {
+                    currentEntry.architects.delete(name);
+                    break;
+                  }
+                }
               }
               deleteTerminalSession(newSession.id);
             });
@@ -829,14 +849,13 @@ export async function getTerminalsForWorkspace(
     }
 
     if (dbSession.type === 'architect') {
-      freshEntry.architect = dbSession.id;
-      terminals.push({
-        type: 'architect',
-        id: 'architect',
-        label: 'Architect',
-        url: `${proxyUrl}?tab=architect`,
-        active: true,
-      });
+      // Spec 755: role_id stores the architect's name; v13 backfill ensures
+      // legacy null role_ids become 'main' before this point. We register
+      // every named architect into freshEntry.architects, but emit only one
+      // Architect terminal entry (after the loop) — the v1 UI contract keeps
+      // a single architect tab. Multi-architect UI is deferred to issue #2.
+      const architectName = dbSession.role_id || 'main';
+      freshEntry.architects.set(architectName, dbSession.id);
     } else if (dbSession.type === 'builder') {
       const builderId = dbSession.role_id || dbSession.id;
       freshEntry.builders.set(builderId, dbSession.id);
@@ -864,17 +883,14 @@ export async function getTerminalsForWorkspace(
   // Also merge in-memory entries that may not be in SQLite yet
   // (e.g., registered via POST /api/terminals but SQLite row was lost)
   if (existingEntry) {
-    if (existingEntry.architect && !freshEntry.architect) {
-      const session = manager.getSession(existingEntry.architect);
+    // Spec 755: merge each named architect entry the fresh build missed.
+    // Note: we register every architect but defer emitting the Architect
+    // terminal entry to the single post-loop push below.
+    for (const [name, terminalId] of existingEntry.architects) {
+      if (freshEntry.architects.has(name)) continue;
+      const session = manager.getSession(terminalId);
       if (session && session.status === 'running') {
-        freshEntry.architect = existingEntry.architect;
-        terminals.push({
-          type: 'architect',
-          id: 'architect',
-          label: 'Architect',
-          url: `${proxyUrl}?tab=architect`,
-          active: true,
-        });
+        freshEntry.architects.set(name, terminalId);
       }
     }
     for (const [builderId, terminalId] of existingEntry.builders) {
@@ -907,6 +923,20 @@ export async function getTerminalsForWorkspace(
         }
       }
     }
+  }
+
+  // Spec 755: emit a single Architect terminal entry when ANY architect is
+  // registered. The v1 UI contract keeps one architect tab; the underlying
+  // collection holds all named architects. Multi-architect UI is deferred to
+  // issue #2.
+  if (freshEntry.architects.size > 0) {
+    terminals.push({
+      type: 'architect',
+      id: 'architect',
+      label: 'Architect',
+      url: `${proxyUrl}?tab=architect`,
+      active: true,
+    });
   }
 
   // Atomically replace the cache entry

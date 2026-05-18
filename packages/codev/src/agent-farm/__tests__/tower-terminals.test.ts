@@ -396,11 +396,11 @@ describe('tower-terminals', () => {
 
     it('removes an architect terminal from the registry', () => {
       const entry = getWorkspaceTerminalsEntry('/project');
-      entry.architect = 'term-arch';
+      entry.architects.set('main', 'term-arch');
 
       removeTerminalFromRegistry('term-arch');
 
-      expect(entry.architect).toBeUndefined();
+      expect(entry.architects.has('main')).toBe(false);
     });
 
     it('is a no-op when terminal ID does not exist', () => {

@@ -30,9 +30,16 @@ export interface TowerContext {
   terminalWss: WebSocketServer;
 }
 
-/** Tracks terminals belonging to a workspace */
+/**
+ * Tracks terminals belonging to a workspace.
+ *
+ * Spec 755: `architects` is a name-keyed collection (name → terminalId).
+ * Single-architect workspaces hold one entry with name `'main'`. The plural
+ * keyed access pattern catches accidental singleton-style code at the type
+ * level rather than at runtime.
+ */
 export interface WorkspaceTerminals {
-  architect?: string;
+  architects: Map<string, string>;
   builders: Map<string, string>;
   shells: Map<string, string>;
   fileTabs: Map<string, FileTab>;

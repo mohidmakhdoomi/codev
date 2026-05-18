@@ -49,18 +49,27 @@ describe('Database Schema', () => {
       expect(tableNames).toContain('annotations');
     });
 
-    it('should enforce architect singleton constraint', () => {
-      // Insert first architect
+    it('should allow multiple named architects (Spec 755 — singleton lifted)', () => {
       db.prepare(`
         INSERT INTO architect (id, pid, port, cmd, started_at)
-        VALUES (1, 1234, 4201, 'claude', datetime('now'))
+        VALUES ('main', 1234, 4201, 'claude', datetime('now'))
       `).run();
 
-      // Attempting to insert a second architect with different id should fail
+      // A second named architect must succeed — the v9 migration dropped the
+      // singleton CHECK constraint.
+      db.prepare(`
+        INSERT INTO architect (id, pid, port, cmd, started_at)
+        VALUES ('sibling', 5678, 4201, 'claude', datetime('now'))
+      `).run();
+
+      const count = db.prepare('SELECT COUNT(*) as count FROM architect').get() as { count: number };
+      expect(count.count).toBe(2);
+
+      // Names are unique (PRIMARY KEY).
       expect(() => {
         db.prepare(`
           INSERT INTO architect (id, pid, port, cmd, started_at)
-          VALUES (2, 5678, 4201, 'claude', datetime('now'))
+          VALUES ('main', 9999, 4201, 'claude', datetime('now'))
         `).run();
       }).toThrow();
     });

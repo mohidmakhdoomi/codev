@@ -34,11 +34,11 @@ export function migrateLocalFromJson(db: Database.Database, jsonPath: string): v
 
   // Wrap in transaction for atomicity
   const migrate = db.transaction(() => {
-    // Migrate architect
+    // Migrate architect (Spec 755: legacy singleton becomes architect named 'main')
     if (state.architect) {
       db.prepare(`
         INSERT INTO architect (id, pid, port, cmd, started_at)
-        VALUES (1, @pid, @port, @cmd, @startedAt)
+        VALUES ('main', @pid, @port, @cmd, @startedAt)
       `).run({
         pid: state.architect.pid,
         port: state.architect.port,

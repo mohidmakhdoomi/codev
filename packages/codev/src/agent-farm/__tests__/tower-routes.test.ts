@@ -33,6 +33,7 @@ const { mockGetInstances, mockGetTerminalManager, mockGetSession,
   mockGetWorkspaceTerminalsEntry: vi.fn(),
   mockGetTerminalsForWorkspace: vi.fn(),
   mockGetRehydratedTerminalsEntry: vi.fn(async () => ({
+    architects: new Map(),
     builders: new Map(),
     shells: new Map(),
     fileTabs: new Map(),
@@ -183,7 +184,7 @@ describe('tower-routes', () => {
       getSession: mockGetSession.mockReturnValue(null),
     });
     mockGetWorkspaceTerminalsEntry.mockReturnValue({
-      architect: undefined,
+      architects: new Map(),
       shells: new Map(),
       builders: new Map(),
       fileTabs: new Map(),
@@ -482,7 +483,7 @@ describe('tower-routes', () => {
     it('includes lastDataAt in shell entries of /api/state response (Spec 467)', async () => {
       const now = Date.now();
       mockGetRehydratedTerminalsEntry.mockResolvedValueOnce({
-        architect: undefined,
+        architects: new Map(),
         shells: new Map([['shell-1', 'term-abc']]),
         builders: new Map(),
         fileTabs: new Map(),
@@ -645,7 +646,7 @@ describe('tower-routes', () => {
 
     beforeEach(() => {
       mockGetWorkspaceTerminalsEntry.mockReturnValue({
-        architect: undefined,
+        architects: new Map(),
         shells: new Map(),
         builders: new Map(),
         fileTabs: new Map([[tabId, { path: '/test/workspace/src/main.ts' }]]),

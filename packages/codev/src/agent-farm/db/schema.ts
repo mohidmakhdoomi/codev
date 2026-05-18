@@ -15,9 +15,9 @@ CREATE TABLE IF NOT EXISTS _migrations (
   applied_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Architect session (singleton)
+-- Architect sessions (Spec 755: multi-architect — id is the architect's name)
 CREATE TABLE IF NOT EXISTS architect (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
+  id TEXT PRIMARY KEY,
   pid INTEGER NOT NULL,
   port INTEGER NOT NULL,
   cmd TEXT NOT NULL,
@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS builders (
   protocol_name TEXT,
   issue_number TEXT,
   terminal_id TEXT,
+  spawned_by_architect TEXT,
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

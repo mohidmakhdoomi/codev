@@ -71,7 +71,8 @@ async function gatherMetadata(): Promise<TowerMetadata> {
   // Build reverse mapping: terminal ID → workspace path
   const terminalToWorkspace = new Map<string, string>();
   for (const [workspacePath, entry] of _deps.workspaceTerminals) {
-    if (entry.architect) terminalToWorkspace.set(entry.architect, workspacePath);
+    // Spec 755: iterate all named architects, not just a singleton.
+    for (const termId of entry.architects.values()) terminalToWorkspace.set(termId, workspacePath);
     for (const termId of entry.builders.values()) terminalToWorkspace.set(termId, workspacePath);
     for (const termId of entry.shells.values()) terminalToWorkspace.set(termId, workspacePath);
   }

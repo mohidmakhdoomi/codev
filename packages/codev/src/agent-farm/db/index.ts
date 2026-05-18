@@ -391,6 +391,46 @@ function ensureLocalDatabase(): Database.Database {
     db.prepare('INSERT INTO _migrations (version) VALUES (8)').run();
   }
 
+  // Migration v9: Multi-architect support (Spec 755)
+  //   - Rebuild architect table: drop CHECK(id=1), change id to TEXT PRIMARY KEY.
+  //     Rekey the existing singleton row's id from 1 to 'main'.
+  //   - Add builders.spawned_by_architect TEXT column (nullable).
+  const v9 = db.prepare('SELECT version FROM _migrations WHERE version = 9').get();
+  if (!v9) {
+    const tableInfo = db
+      .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='architect'")
+      .get() as { sql: string } | undefined;
+
+    // Architect table rebuild — only if it still has the old integer/CHECK shape.
+    // Detect via 'CHECK (id = 1)' (or normalized variants) in the stored DDL.
+    if (tableInfo?.sql && /CHECK\s*\(\s*id\s*=\s*1\s*\)/i.test(tableInfo.sql)) {
+      db.exec(`
+        CREATE TABLE architect_v9 (
+          id TEXT PRIMARY KEY,
+          pid INTEGER NOT NULL,
+          port INTEGER NOT NULL,
+          cmd TEXT NOT NULL,
+          started_at TEXT NOT NULL DEFAULT (datetime('now')),
+          terminal_id TEXT
+        );
+        INSERT INTO architect_v9 (id, pid, port, cmd, started_at, terminal_id)
+          SELECT 'main', pid, port, cmd, started_at, terminal_id FROM architect;
+        DROP TABLE architect;
+        ALTER TABLE architect_v9 RENAME TO architect;
+      `);
+      console.log('[info] Migrated architect table: multi-architect support (Spec 755)');
+    }
+
+    // Add spawned_by_architect column to builders if absent.
+    try {
+      db.exec(`ALTER TABLE builders ADD COLUMN spawned_by_architect TEXT`);
+    } catch {
+      // Column already exists (fresh install ran the updated schema).
+    }
+
+    db.prepare('INSERT INTO _migrations (version) VALUES (9)').run();
+  }
+
   return db;
 }
 
@@ -409,7 +449,7 @@ function ensureGlobalDatabase(): Database.Database {
   configurePragmas(db);
 
   // Current migration version — bump when adding new migrations
-  const GLOBAL_CURRENT_VERSION = 11;
+  const GLOBAL_CURRENT_VERSION = 13;
 
   // Detect fresh vs existing database by checking if content tables exist.
   // On existing databases, GLOBAL_SCHEMA must NOT run because it references column names
@@ -704,6 +744,23 @@ function ensureGlobalDatabase(): Database.Database {
     }
     db.prepare('INSERT INTO _migrations (version) VALUES (12)').run();
     console.log('[info] Added cwd column to terminal_sessions (Bugfix #506)');
+  }
+
+  // Migration v13: Backfill terminal_sessions.role_id for legacy architect rows (Spec 755)
+  // Pre-v13 rows for architects always stored role_id as NULL because there was only
+  // ever one architect per workspace. Multi-architect support requires the name to be
+  // present in role_id so reconnect can re-key the in-memory map. The idempotent
+  // backfill sets role_id = 'main' for legacy rows; subsequent architect rows write
+  // their explicit name and are unaffected.
+  const v13 = db.prepare('SELECT version FROM _migrations WHERE version = 13').get();
+  if (!v13) {
+    db.prepare(`
+      UPDATE terminal_sessions
+         SET role_id = 'main'
+       WHERE type = 'architect' AND role_id IS NULL
+    `).run();
+    db.prepare('INSERT INTO _migrations (version) VALUES (13)').run();
+    console.log('[info] Backfilled architect role_id with \'main\' (Spec 755)');
   }
 
   return db;

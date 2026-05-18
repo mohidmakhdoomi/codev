@@ -73,7 +73,7 @@ function makeDeps(overrides: Partial<InstanceDeps> = {}): InstanceDeps {
     }),
     shellperManager: null,
     getWorkspaceTerminalsEntry: vi.fn().mockReturnValue({
-      architect: undefined,
+      architects: new Map(),
       builders: new Map(),
       shells: new Map(),
     }),
@@ -173,7 +173,7 @@ describe('tower-instances', () => {
 
     it('includes paths from in-memory workspaceTerminals', () => {
       const workspaceTerminals = new Map();
-      workspaceTerminals.set('/path/b', { architect: undefined, builders: new Map(), shells: new Map() });
+      workspaceTerminals.set('/path/b', { architects: new Map(), builders: new Map(), shells: new Map() });
       const deps = makeDeps({ workspaceTerminals });
       initInstances(deps);
 
@@ -183,7 +183,7 @@ describe('tower-instances', () => {
 
     it('deduplicates paths across sources', () => {
       const workspaceTerminals = new Map();
-      workspaceTerminals.set('/path/c', { architect: undefined, builders: new Map(), shells: new Map() });
+      workspaceTerminals.set('/path/c', { architects: new Map(), builders: new Map(), shells: new Map() });
       const deps = makeDeps({ workspaceTerminals });
       initInstances(deps);
 
@@ -229,7 +229,7 @@ describe('tower-instances', () => {
     it('skips builder worktrees', async () => {
       const workspaceTerminals = new Map();
       workspaceTerminals.set('/home/user/project/.builders/001', {
-        architect: undefined, builders: new Map(), shells: new Map(),
+        architects: new Map(), builders: new Map(), shells: new Map(),
       });
       const deps = makeDeps({ workspaceTerminals });
       initInstances(deps);
@@ -241,7 +241,7 @@ describe('tower-instances', () => {
     it('skips non-existent directories', async () => {
       const workspaceTerminals = new Map();
       workspaceTerminals.set('/nonexistent/path/project', {
-        architect: undefined, builders: new Map(), shells: new Map(),
+        architects: new Map(), builders: new Map(), shells: new Map(),
       });
       const deps = makeDeps({ workspaceTerminals });
       initInstances(deps);
@@ -258,10 +258,10 @@ describe('tower-instances', () => {
       try {
         const workspaceTerminals = new Map();
         workspaceTerminals.set(tmpDir, {
-          architect: undefined, builders: new Map(), shells: new Map(),
+          architects: new Map(), builders: new Map(), shells: new Map(),
         });
         workspaceTerminals.set(tmpDir2, {
-          architect: undefined, builders: new Map(), shells: new Map(),
+          architects: new Map(), builders: new Map(), shells: new Map(),
         });
 
         const getTerminalsForWorkspace = vi.fn()
@@ -288,7 +288,7 @@ describe('tower-instances', () => {
       try {
         const workspaceTerminals = new Map();
         workspaceTerminals.set(tmpDir, {
-          architect: undefined, builders: new Map(), shells: new Map(),
+          architects: new Map(), builders: new Map(), shells: new Map(),
         });
 
         const deps = makeDeps({ workspaceTerminals });
@@ -322,7 +322,7 @@ describe('tower-instances', () => {
       try {
         const workspaceTerminals = new Map();
         workspaceTerminals.set(tmpDir, {
-          architect: undefined, builders: new Map(), shells: new Map(),
+          architects: new Map(), builders: new Map(), shells: new Map(),
         });
 
         const deps = makeDeps({ workspaceTerminals });
@@ -626,7 +626,7 @@ describe('tower-instances', () => {
     it('kills all terminals for a workspace', async () => {
       const workspaceTerminals = new Map();
       workspaceTerminals.set('/project/path', {
-        architect: 'arch-1',
+        architects: new Map([['main', 'arch-1']]),
         builders: new Map([['b1', 'build-1']]),
         shells: new Map([['s1', 'shell-1']]),
       });
@@ -652,7 +652,7 @@ describe('tower-instances', () => {
     it('clears workspace from registry after stop', async () => {
       const workspaceTerminals = new Map();
       workspaceTerminals.set('/project/path', {
-        architect: 'arch-1',
+        architects: new Map([['main', 'arch-1']]),
         builders: new Map(),
         shells: new Map(),
       });

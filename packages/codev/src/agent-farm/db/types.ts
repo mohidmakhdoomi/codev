@@ -8,10 +8,14 @@
 import type { Builder, ArchitectState, UtilTerminal, Annotation, BuilderType } from '../types.js';
 
 /**
- * Database row type for architect table
+ * Database row type for architect table.
+ *
+ * Spec 755: `id` is now the architect name (TEXT PRIMARY KEY). Pre-v9 schemas
+ * had `id INTEGER PRIMARY KEY CHECK (id = 1)`; the v9 migration rebuilds the
+ * table and rekeys the existing row's id to 'main'.
  */
 export interface DbArchitect {
-  id: number;
+  id: string;
   pid: number;
   port: number;
   cmd: string;
@@ -36,6 +40,7 @@ export interface DbBuilder {
   protocol_name: string | null;
   issue_number: string | null;
   terminal_id: string | null;
+  spawned_by_architect: string | null;   // Spec 755: spawning architect's name; null for legacy rows
   started_at: string;
   updated_at: string;
 }
@@ -70,6 +75,7 @@ export interface DbAnnotation {
  */
 export function dbArchitectToArchitectState(row: DbArchitect): ArchitectState {
   return {
+    name: row.id,
     cmd: row.cmd,
     startedAt: row.started_at,
     terminalId: row.terminal_id ?? undefined,
@@ -92,6 +98,7 @@ export function dbBuilderToBuilder(row: DbBuilder): Builder {
     protocolName: row.protocol_name ?? undefined,
     issueNumber: row.issue_number ?? undefined,
     terminalId: row.terminal_id ?? undefined,
+    spawnedByArchitect: row.spawned_by_architect ?? undefined,
   };
 }
 

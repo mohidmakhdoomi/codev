@@ -188,15 +188,20 @@ function resolveAgentInWorkspace(
     };
   }
 
-  // Check architect
+  // Check architect.
+  // Spec 755: with one registered architect (singleton case), behavior is
+  // unchanged from today — fast path returns 'main'. Phase 3 adds the
+  // affinity-aware path that consults the sender's `spawned_by_architect`.
   if (agent === 'architect' || agent === 'arch') {
-    if (!entry.architect) {
+    if (entry.architects.size === 0) {
       return {
         code: 'NOT_FOUND',
         message: `No architect terminal found in workspace '${path.basename(workspacePath)}'.`,
       };
     }
-    return { terminalId: entry.architect, workspacePath, agent: 'architect' };
+    const terminalId =
+      entry.architects.get('main') ?? entry.architects.values().next().value!;
+    return { terminalId, workspacePath, agent: 'architect' };
   }
 
   // Check builders — exact match (case-insensitive)

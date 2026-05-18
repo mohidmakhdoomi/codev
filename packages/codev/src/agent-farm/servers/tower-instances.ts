@@ -350,8 +350,10 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
     // Initialize workspace terminal entry
     const entry = _deps.getWorkspaceTerminalsEntry(resolvedPath);
 
-    // Create architect terminal if not already present
-    if (!entry.architect) {
+    // Create architect terminal if not already present.
+    // Spec 755: this is the workspace-start path; it only creates the default
+    // 'main' architect. Additional named architects come via the Phase 2 CLI.
+    if (entry.architects.size === 0) {
       const manager = _deps.getTerminalManager();
 
       // Read architect command: env var override (for CI/testing), unified config, or default
@@ -413,8 +415,9 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
               ptySession.restartOnExit = true;
             }
 
-            entry.architect = session.id;
-            _deps.saveTerminalSession(session.id, resolvedPath, 'architect', null, shellperInfo.pid,
+            // Spec 755: default architect is named 'main'; role_id stores the name.
+            entry.architects.set('main', session.id);
+            _deps.saveTerminalSession(session.id, resolvedPath, 'architect', 'main', shellperInfo.pid,
               shellperInfo.socketPath, shellperInfo.pid, shellperInfo.startTime, null, workspacePath);
 
             // Clean up cache/SQLite when the shellper session permanently exits
@@ -423,8 +426,11 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
             if (ptySession) {
               ptySession.on('exit', (exitCode?: number, signal?: number | string | null) => {
                 const currentEntry = _deps!.getWorkspaceTerminalsEntry(resolvedPath);
-                if (currentEntry.architect === session.id) {
-                  currentEntry.architect = undefined;
+                for (const [name, tid] of currentEntry.architects) {
+                  if (tid === session.id) {
+                    currentEntry.architects.delete(name);
+                    break;
+                  }
                 }
                 _deps!.deleteTerminalSession(session.id);
                 _deps!.log('INFO', `Architect shellper session exited for ${workspacePath} (code=${exitCode ?? null}, signal=${signal ?? null})`);
@@ -449,15 +455,19 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
             env: cleanEnv,
           });
 
-          entry.architect = session.id;
-          _deps.saveTerminalSession(session.id, resolvedPath, 'architect', null, session.pid, null, null, null, null, workspacePath);
+          // Spec 755: default architect is named 'main'; role_id stores the name.
+          entry.architects.set('main', session.id);
+          _deps.saveTerminalSession(session.id, resolvedPath, 'architect', 'main', session.pid, null, null, null, null, workspacePath);
 
           const ptySession = manager.getSession(session.id);
           if (ptySession) {
             ptySession.on('exit', () => {
               const currentEntry = _deps!.getWorkspaceTerminalsEntry(resolvedPath);
-              if (currentEntry.architect === session.id) {
-                currentEntry.architect = undefined;
+              for (const [name, tid] of currentEntry.architects) {
+                if (tid === session.id) {
+                  currentEntry.architects.delete(name);
+                  break;
+                }
               }
               _deps!.deleteTerminalSession(session.id);
               _deps!.log('INFO', `Architect pty exited for ${workspacePath}`);
@@ -525,11 +535,12 @@ export async function stopInstance(workspacePath: string): Promise<{ success: bo
   const entry = _deps.workspaceTerminals.get(resolvedPath) || _deps.workspaceTerminals.get(workspacePath);
 
   if (entry) {
-    // Kill architect (disable shellper auto-restart if applicable)
-    if (entry.architect) {
-      const session = manager.getSession(entry.architect);
+    // Kill all architects (disable shellper auto-restart if applicable)
+    // Spec 755: iterate the named-architect Map instead of the old scalar.
+    for (const terminalId of entry.architects.values()) {
+      const session = manager.getSession(terminalId);
       if (session) {
-        await killTerminalWithShellper(manager, entry.architect);
+        await killTerminalWithShellper(manager, terminalId);
         stopped.push(session.pid);
       }
     }

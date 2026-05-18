@@ -32,12 +32,22 @@ import type { MessageFrame } from '../servers/tower-messages.js';
 // Helpers
 // ============================================================================
 
-function makeWorkspaceTerminals(overrides?: Partial<WorkspaceTerminals>): WorkspaceTerminals {
+/**
+ * Build a WorkspaceTerminals fixture. Accepts a legacy `architect?: string`
+ * override (translated to a 'main' entry in `architects`) so existing test
+ * call sites keep compiling without touching every line. Tests written after
+ * Spec 755 lands should pass `architects` directly.
+ */
+function makeWorkspaceTerminals(
+  overrides?: Partial<WorkspaceTerminals> & { architect?: string },
+): WorkspaceTerminals {
+  const { architect, architects, ...rest } = overrides ?? {};
   return {
+    architects: architects ?? (architect ? new Map([['main', architect]]) : new Map()),
     builders: new Map(),
     shells: new Map(),
     fileTabs: new Map(),
-    ...overrides,
+    ...rest,
   };
 }
 

@@ -16,6 +16,7 @@ export interface Builder {
   protocolName?: string;  // For protocol mode
   issueNumber?: number | string;   // For bugfix mode
   terminalId?: string;    // Terminal session ID
+  spawnedByArchitect?: string;   // Name of the architect that spawned this builder (Spec 755)
 }
 
 export interface UtilTerminal {
@@ -35,6 +36,7 @@ export interface Annotation {
 }
 
 export interface ArchitectState {
+  name: string;          // Architect name; defaults to 'main' for the singleton case (Spec 755).
   cmd: string;
   startedAt: string;
   terminalId?: string;
