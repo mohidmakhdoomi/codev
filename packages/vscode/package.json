@@ -348,15 +348,25 @@
       },
       {
         "command": "workbench.view.extension.codev",
-        "key": "ctrl+k c",
+        "key": "ctrl+alt+c",
         "mac": "cmd+alt+c",
         "when": "!sideBarVisible || activeViewlet != 'workbench.view.extension.codev'"
       },
       {
         "command": "workbench.action.closeSidebar",
-        "key": "ctrl+k c",
+        "key": "ctrl+alt+c",
         "mac": "cmd+alt+c",
         "when": "sideBarVisible && activeViewlet == 'workbench.view.extension.codev'"
+      },
+      {
+        "command": "codev.runWorkspaceDev",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r"
+      },
+      {
+        "command": "codev.stopWorkspaceDev",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s"
       }
     ],
     "viewsContainers": {
