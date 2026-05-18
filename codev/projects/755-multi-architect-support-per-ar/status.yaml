@@ -1,7 +1,7 @@
 id: '755'
 title: multi-architect-support-per-ar
 protocol: spir
-phase: specify
+phase: plan
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -16,7 +16,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-05-17T20:51:15.851Z'
-updated_at: '2026-05-18T02:43:42.920Z'
+updated_at: '2026-05-18T02:43:58.248Z'
