@@ -233,6 +233,11 @@ Projects currently in development (conceived through committed), sorted by prior
 
 ```yaml
 releases:
+  - version: "v3.0.4"
+    name: "Ionic"
+    status: released
+    target_date: "2026-05-18"
+    notes: "Multi-architect builder→architect message routing (#755); baked architectural decisions for SPIR/AIR/ASPIR issues (#746); bugfixes for BUGFIX consult templates (#742), SPIR one-PR-per-spec ambiguity (#744), afx spawn untracked-files strictness (#745); codex SDK XProtect cert fix."
   - version: "v3.0.3"
     name: "Ionic"
     status: released
