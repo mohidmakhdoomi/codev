@@ -156,6 +156,69 @@ describe('State Management', () => {
       expect(result.builders).toHaveLength(1);
       expect(result.builders[0].status).toBe('blocked');
     });
+
+    // Spec 755 Phase 2: spawnedByArchitect persistence.
+    it('persists spawnedByArchitect when supplied', () => {
+      state.upsertBuilder({
+        id: 'B-spec755',
+        name: 'test-builder',
+        status: 'implementing' as const,
+        phase: 'init',
+        worktree: '/tmp/worktree',
+        branch: 'feature-branch',
+        type: 'spec' as const,
+        spawnedByArchitect: 'sibling',
+      });
+
+      const row = state.getBuilder('B-spec755');
+      expect(row?.spawnedByArchitect).toBe('sibling');
+    });
+
+    it('preserves spawnedByArchitect across re-upserts (COALESCE)', () => {
+      // First insert with an explicit architect name.
+      state.upsertBuilder({
+        id: 'B-spec755',
+        name: 'test-builder',
+        status: 'implementing' as const,
+        phase: 'init',
+        worktree: '/tmp/worktree',
+        branch: 'feature-branch',
+        type: 'spec' as const,
+        spawnedByArchitect: 'sibling',
+      });
+
+      // Subsequent status update without spawnedByArchitect must NOT clobber
+      // the persisted name. The SQL uses COALESCE to preserve it.
+      state.upsertBuilder({
+        id: 'B-spec755',
+        name: 'test-builder',
+        status: 'blocked' as const,
+        phase: 'review',
+        worktree: '/tmp/worktree',
+        branch: 'feature-branch',
+        type: 'spec' as const,
+        // spawnedByArchitect intentionally omitted.
+      });
+
+      const row = state.getBuilder('B-spec755');
+      expect(row?.status).toBe('blocked');
+      expect(row?.spawnedByArchitect).toBe('sibling');
+    });
+
+    it('leaves spawnedByArchitect null for legacy upserts that never supplied it', () => {
+      state.upsertBuilder({
+        id: 'B-spec755-legacy',
+        name: 'test-builder',
+        status: 'implementing' as const,
+        phase: 'init',
+        worktree: '/tmp/worktree',
+        branch: 'feature-branch',
+        type: 'spec' as const,
+      });
+
+      const row = state.getBuilder('B-spec755-legacy');
+      expect(row?.spawnedByArchitect).toBeUndefined();
+    });
   });
 
   describe('removeBuilder', () => {

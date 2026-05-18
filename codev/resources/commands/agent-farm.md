@@ -136,8 +136,50 @@ afx workspace stop
 Stops all running agent-farm processes including:
 - Terminal sessions (Shellper processes)
 - Workspace servers
+- All architect terminals (`main` plus any sibling architects registered via `afx workspace add-architect`)
 
 Does NOT clean up worktrees - use `afx cleanup` for that.
+
+---
+
+#### afx workspace add-architect
+
+Register an additional named architect terminal in an active workspace (Spec 755).
+
+```bash
+afx workspace add-architect [--name <name>]
+```
+
+**Options:**
+
+- `--name <name>` - Explicit architect name. Must match `[a-z][a-z0-9-]*` and be at most 64 characters. If omitted, the next available auto-numbered name is assigned (`architect-2`, `architect-3`, ...).
+
+**Description:**
+
+Multi-architect support lets the same workspace host more than one architect terminal so that each architect's builders can route their `afx send architect` messages back to that specific architect — instead of every message landing at the lone singleton.
+
+The first architect started in a workspace (by `afx workspace start`) is named `main` by default. Use `afx workspace add-architect` to register additional architects.
+
+**Naming rules:**
+
+- Names match `[a-z][a-z0-9-]*`, max 64 characters.
+- Empty `--name` is rejected (use no `--name` to auto-number).
+- Reusing an already-registered name in the same workspace is rejected.
+
+**Examples:**
+
+```bash
+# Auto-numbered second architect (becomes architect-2):
+afx workspace add-architect
+
+# Explicit name:
+afx workspace add-architect --name sibling
+```
+
+**Related**:
+
+- Every architect terminal Tower starts has `CODEV_ARCHITECT_NAME` injected into its environment. `afx spawn` reads this variable to tag each new builder row with the spawning architect's name (`spawnedByArchitect`). Builders running in an architect terminal therefore inherit that architect's identity transparently.
+- Cleanup: when the architect's PTY exits, Tower removes the entry from the in-memory map AND the local state.db, so re-registering the same name later works without collision.
 
 ---
 
@@ -702,6 +744,17 @@ afx spawn 42 --protocol spir --builder-cmd "claude --model haiku"
 | `.agent-farm/state.db` | Project runtime state (SQLite) |
 | `~/.agent-farm/global.db` | Global port registry (SQLite) |
 | `.codev/config.json` | Project configuration |
+
+---
+
+## Environment Variables
+
+Codev reserves the `CODEV_*` prefix. Tower injects these variables into the architect terminals it starts; users should not set them manually.
+
+| Variable | Set by | Read by | Purpose |
+|----------|--------|---------|---------|
+| `CODEV_ARCHITECT_NAME` | Tower (at architect-terminal start) | `afx spawn` | Identifies the spawning architect so each new builder records `spawnedByArchitect` on its row. Defaults to `main` when absent (i.e., `afx spawn` was invoked outside any architect terminal). Spec 755. |
+| `TOWER_ARCHITECT_CMD` | User (optional) | Tower (at architect-terminal start) | Overrides the architect command. Useful for CI / testing. |
 
 ---
 

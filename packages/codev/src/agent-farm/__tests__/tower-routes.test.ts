@@ -62,6 +62,7 @@ vi.mock('../servers/tower-instances.js', () => ({
   launchInstance: vi.fn(async () => ({ success: true })),
   killTerminalWithShellper: vi.fn(async () => true),
   stopInstance: vi.fn(async () => ({ ok: true })),
+  addArchitect: vi.fn(async () => ({ success: true, name: 'sibling', terminalId: 'term-arch-sibling' })),
 }));
 
 vi.mock('../servers/tower-terminals.js', () => ({
@@ -1168,6 +1169,105 @@ describe('tower-routes', () => {
       await handleRequest(req, res, makeCtx());
 
       expect(mockComputeAnalytics).toHaveBeenCalledWith('/tmp/workspace', '1', false);
+    });
+  });
+
+  // Spec 755: POST /api/workspaces/:encodedPath/architects
+  describe('POST /api/workspaces/:path/architects (Spec 755)', () => {
+    it('returns 200 with success body when addArchitect succeeds', async () => {
+      const { addArchitect } = await import('../servers/tower-instances.js');
+      (addArchitect as any).mockResolvedValueOnce({
+        success: true,
+        name: 'sibling',
+        terminalId: 'term-arch-sibling',
+      });
+
+      const encoded = Buffer.from('/test/workspace').toString('base64url');
+      const req = makeReq('POST', `/api/workspaces/${encoded}/architects`);
+      mockParseJsonBody.mockResolvedValueOnce({ name: 'sibling' });
+
+      const { res, statusCode, body } = makeRes();
+      await handleRequest(req, res, makeCtx());
+
+      expect(statusCode()).toBe(200);
+      const parsed = JSON.parse(body());
+      expect(parsed).toEqual({ success: true, name: 'sibling', terminalId: 'term-arch-sibling' });
+      expect(addArchitect).toHaveBeenCalledWith('/test/workspace', 'sibling');
+    });
+
+    it('passes through undefined name to auto-number', async () => {
+      const { addArchitect } = await import('../servers/tower-instances.js');
+      (addArchitect as any).mockResolvedValueOnce({
+        success: true,
+        name: 'architect-2',
+        terminalId: 'term-arch-2',
+      });
+
+      const encoded = Buffer.from('/test/workspace').toString('base64url');
+      const req = makeReq('POST', `/api/workspaces/${encoded}/architects`);
+      mockParseJsonBody.mockResolvedValueOnce({});
+
+      const { res, statusCode } = makeRes();
+      await handleRequest(req, res, makeCtx());
+
+      expect(statusCode()).toBe(200);
+      expect(addArchitect).toHaveBeenCalledWith('/test/workspace', undefined);
+    });
+
+    it('returns 404 when workspace is not running', async () => {
+      const { addArchitect } = await import('../servers/tower-instances.js');
+      (addArchitect as any).mockResolvedValueOnce({
+        success: false,
+        error: "Workspace '/test/workspace' is not running. Start it with 'afx workspace start' first.",
+      });
+
+      const encoded = Buffer.from('/test/workspace').toString('base64url');
+      const req = makeReq('POST', `/api/workspaces/${encoded}/architects`);
+      mockParseJsonBody.mockResolvedValueOnce({});
+
+      const { res, statusCode } = makeRes();
+      await handleRequest(req, res, makeCtx());
+
+      expect(statusCode()).toBe(404);
+    });
+
+    it('returns 400 on validation error (e.g., collision)', async () => {
+      const { addArchitect } = await import('../servers/tower-instances.js');
+      (addArchitect as any).mockResolvedValueOnce({
+        success: false,
+        error: "Architect 'sibling' is already registered in this workspace.",
+      });
+
+      const encoded = Buffer.from('/test/workspace').toString('base64url');
+      const req = makeReq('POST', `/api/workspaces/${encoded}/architects`);
+      mockParseJsonBody.mockResolvedValueOnce({ name: 'sibling' });
+
+      const { res, statusCode, body } = makeRes();
+      await handleRequest(req, res, makeCtx());
+
+      expect(statusCode()).toBe(400);
+      const parsed = JSON.parse(body());
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain('already registered');
+    });
+
+    it('returns 405 for non-POST methods', async () => {
+      const encoded = Buffer.from('/test/workspace').toString('base64url');
+      const req = makeReq('GET', `/api/workspaces/${encoded}/architects`);
+
+      const { res, statusCode } = makeRes();
+      await handleRequest(req, res, makeCtx());
+
+      expect(statusCode()).toBe(405);
+    });
+
+    it('returns 400 for malformed workspace path encoding', async () => {
+      const req = makeReq('POST', `/api/workspaces/relative-path/architects`);
+
+      const { res, statusCode } = makeRes();
+      await handleRequest(req, res, makeCtx());
+
+      expect(statusCode()).toBe(400);
     });
   });
 });

@@ -28,6 +28,12 @@ import {
   isTempDirectory,
   buildArchitectArgs,
 } from './tower-utils.js';
+import {
+  autoNumberArchitectName,
+  validateArchitectName,
+  DEFAULT_ARCHITECT_NAME,
+} from '../utils/architect-name.js';
+import { setArchitect, setArchitectByName } from '../state.js';
 
 // ============================================================================
 // Dependency interface
@@ -380,8 +386,14 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         const { args: cmdArgs, env: harnessEnv } = buildArchitectArgs(cmdParts.slice(1), workspacePath);
 
         // Build env with CLAUDECODE removed so spawned Claude processes
-        // don't detect a nested session, and merge harness env vars
-        const cleanEnv = { ...process.env, ...harnessEnv } as Record<string, string>;
+        // don't detect a nested session, and merge harness env vars.
+        // Spec 755: inject CODEV_ARCHITECT_NAME so afx spawn invocations
+        // from inside this terminal can record the spawning architect.
+        const cleanEnv = {
+          ...process.env,
+          ...harnessEnv,
+          CODEV_ARCHITECT_NAME: DEFAULT_ARCHITECT_NAME,
+        } as Record<string, string>;
         delete cleanEnv['CLAUDECODE'];
 
         // Try shellper first for persistent session with auto-restart
@@ -419,6 +431,19 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
             entry.architects.set('main', session.id);
             _deps.saveTerminalSession(session.id, resolvedPath, 'architect', 'main', shellperInfo.pid,
               shellperInfo.socketPath, shellperInfo.pid, shellperInfo.startTime, null, workspacePath);
+
+            // Spec 755: persist to local state.db (architect table) so afx
+            // status / stop see the architect via loadState's scalar shim.
+            try {
+              setArchitect({
+                name: DEFAULT_ARCHITECT_NAME,
+                cmd: architectCmd,
+                startedAt: new Date().toISOString(),
+                terminalId: session.id,
+              });
+            } catch (stateErr) {
+              _deps.log('WARN', `Failed to persist architect to state.db: ${(stateErr as Error).message}`);
+            }
 
             // Clean up cache/SQLite when the shellper session permanently exits
             // (e.g., max restarts exceeded or killed). With restartOnExit, this
@@ -458,6 +483,18 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
           // Spec 755: default architect is named 'main'; role_id stores the name.
           entry.architects.set('main', session.id);
           _deps.saveTerminalSession(session.id, resolvedPath, 'architect', 'main', session.pid, null, null, null, null, workspacePath);
+
+          // Spec 755: persist to local state.db so afx status / stop see it.
+          try {
+            setArchitect({
+              name: DEFAULT_ARCHITECT_NAME,
+              cmd: architectCmd,
+              startedAt: new Date().toISOString(),
+              terminalId: session.id,
+            });
+          } catch (stateErr) {
+            _deps.log('WARN', `Failed to persist architect to state.db: ${(stateErr as Error).message}`);
+          }
 
           const ptySession = manager.getSession(session.id);
           if (ptySession) {
@@ -585,4 +622,231 @@ export async function stopInstance(workspacePath: string): Promise<{ success: bo
   }
 
   return { success: true, stopped };
+}
+
+// ============================================================================
+// addArchitect (Spec 755) — register an additional named architect terminal
+// ============================================================================
+
+export interface AddArchitectResult {
+  success: boolean;
+  name?: string;
+  terminalId?: string;
+  error?: string;
+}
+
+/**
+ * Add a named architect terminal to an already-active workspace (Spec 755).
+ *
+ * Differs from `launchInstance` in that:
+ *   - The workspace must already be running (a 'main' architect must exist).
+ *   - Either accepts an explicit `name` (validated) or auto-numbers as
+ *     `architect-<N>` (smallest unused integer ≥ 2).
+ *   - Rejects collisions on already-registered names.
+ *
+ * On success returns the chosen name and the new terminal session ID.
+ */
+export async function addArchitect(
+  workspacePath: string,
+  requestedName?: string,
+): Promise<AddArchitectResult> {
+  if (!_deps) return { success: false, error: 'Tower is still starting up. Try again shortly.' };
+
+  // Resolve symlinks for consistent lookup
+  let resolvedPath = workspacePath;
+  try {
+    if (fs.existsSync(workspacePath)) {
+      resolvedPath = fs.realpathSync(workspacePath);
+    }
+  } catch {
+    // Use original path on resolution failure
+  }
+
+  const entry = _deps.workspaceTerminals.get(resolvedPath) || _deps.workspaceTerminals.get(workspacePath);
+  if (!entry || entry.architects.size === 0) {
+    return {
+      success: false,
+      error: `Workspace '${workspacePath}' is not running. Start it with 'afx workspace start' first.`,
+    };
+  }
+
+  // Pick the architect's name: explicit or auto-numbered.
+  // Spec 755: distinguish "no name supplied" (undefined, auto-number) from
+  // "name supplied with empty value" (rejected — would otherwise silently
+  // auto-number, bypassing validation).
+  let name: string;
+  if (requestedName !== undefined) {
+    const trimmed = requestedName.trim();
+    if (trimmed === '') {
+      return {
+        success: false,
+        error: 'Architect name cannot be empty. Omit the name to auto-number, or supply a valid name.',
+      };
+    }
+    const validationError = validateArchitectName(trimmed);
+    if (validationError) {
+      return { success: false, error: validationError };
+    }
+    if (entry.architects.has(trimmed)) {
+      return {
+        success: false,
+        error: `Architect '${trimmed}' is already registered in this workspace.`,
+      };
+    }
+    name = trimmed;
+  } else {
+    name = autoNumberArchitectName(entry.architects.keys());
+  }
+
+  // Resolve architect command (mirrors launchInstance — env var, config, default).
+  let architectCmd = process.env.TOWER_ARCHITECT_CMD || '';
+  if (!architectCmd) {
+    architectCmd = 'claude';
+    try {
+      const config = loadConfig(workspacePath);
+      const shellArchitect = config.shell?.architect;
+      if (typeof shellArchitect === 'string') {
+        architectCmd = shellArchitect;
+      } else if (Array.isArray(shellArchitect)) {
+        architectCmd = shellArchitect.join(' ');
+      }
+    } catch {
+      // Config load errors — use default
+    }
+  }
+
+  const manager = _deps.getTerminalManager();
+  const cmdParts = architectCmd.split(/\s+/);
+  const cmd = cmdParts[0];
+  const { args: cmdArgs, env: harnessEnv } = buildArchitectArgs(cmdParts.slice(1), workspacePath);
+
+  // Spec 755: inject CODEV_ARCHITECT_NAME so the new architect terminal's
+  // afx spawn invocations tag builders with this architect's name.
+  const cleanEnv = {
+    ...process.env,
+    ...harnessEnv,
+    CODEV_ARCHITECT_NAME: name,
+  } as Record<string, string>;
+  delete cleanEnv['CLAUDECODE'];
+
+  // Try shellper first; fall back to a non-persistent PTY if shellper is
+  // unavailable (matches launchInstance's degradation).
+  let sessionId: string | null = null;
+
+  if (_deps.shellperManager) {
+    try {
+      const shellperSessionId = crypto.randomUUID();
+      const client = await _deps.shellperManager.createSession({
+        sessionId: shellperSessionId,
+        command: cmd,
+        args: cmdArgs,
+        cwd: workspacePath,
+        env: cleanEnv,
+        ...defaultSessionOptions({ restartOnExit: true, restartDelay: 2000, maxRestarts: 50 }),
+      });
+
+      const replayData = client.getReplayData() ?? Buffer.alloc(0);
+      const shellperInfo = _deps.shellperManager.getSessionInfo(shellperSessionId)!;
+
+      const session = manager.createSessionRaw({ label: `Architect (${name})`, cwd: workspacePath });
+      const ptySession = manager.getSession(session.id);
+      if (ptySession) {
+        ptySession.attachShellper(client, replayData, shellperInfo.pid, shellperSessionId);
+        ptySession.restartOnExit = true;
+      }
+
+      entry.architects.set(name, session.id);
+      _deps.saveTerminalSession(
+        session.id, resolvedPath, 'architect', name, shellperInfo.pid,
+        shellperInfo.socketPath, shellperInfo.pid, shellperInfo.startTime, null, workspacePath,
+      );
+
+      // Spec 755: persist to local state.db so the architect appears in
+      // getArchitects() and is included in legacy stop.ts cleanup.
+      try {
+        setArchitectByName(name, {
+          name,
+          cmd: architectCmd,
+          startedAt: new Date().toISOString(),
+          terminalId: session.id,
+        });
+      } catch (stateErr) {
+        _deps.log('WARN', `Failed to persist architect '${name}' to state.db: ${(stateErr as Error).message}`);
+      }
+
+      if (ptySession) {
+        ptySession.on('exit', (exitCode?: number, signal?: number | string | null) => {
+          const currentEntry = _deps!.getWorkspaceTerminalsEntry(resolvedPath);
+          for (const [n, tid] of currentEntry.architects) {
+            if (tid === session.id) {
+              currentEntry.architects.delete(n);
+              break;
+            }
+          }
+          _deps!.deleteTerminalSession(session.id);
+          // Spec 755: remove the architect row from local state.db too.
+          try {
+            setArchitectByName(name, null);
+          } catch { /* best-effort cleanup */ }
+          _deps!.log('INFO', `Architect shellper session '${name}' exited (code=${exitCode ?? null}, signal=${signal ?? null})`);
+        });
+      }
+
+      sessionId = session.id;
+      _deps.log('INFO', `Created shellper-backed architect '${name}' in workspace ${workspacePath}`);
+    } catch (shellperErr) {
+      _deps.log('WARN', `Shellper creation failed for architect '${name}', falling back: ${(shellperErr as Error).message}`);
+    }
+  }
+
+  if (!sessionId) {
+    try {
+      const session = await manager.createSession({
+        command: cmd,
+        args: cmdArgs,
+        cwd: workspacePath,
+        label: `Architect (${name})`,
+        env: cleanEnv,
+      });
+
+      entry.architects.set(name, session.id);
+      _deps.saveTerminalSession(session.id, resolvedPath, 'architect', name, session.pid, null, null, null, null, workspacePath);
+
+      try {
+        setArchitectByName(name, {
+          name,
+          cmd: architectCmd,
+          startedAt: new Date().toISOString(),
+          terminalId: session.id,
+        });
+      } catch (stateErr) {
+        _deps.log('WARN', `Failed to persist architect '${name}' to state.db: ${(stateErr as Error).message}`);
+      }
+
+      const ptySession = manager.getSession(session.id);
+      if (ptySession) {
+        ptySession.on('exit', () => {
+          const currentEntry = _deps!.getWorkspaceTerminalsEntry(resolvedPath);
+          for (const [n, tid] of currentEntry.architects) {
+            if (tid === session.id) {
+              currentEntry.architects.delete(n);
+              break;
+            }
+          }
+          _deps!.deleteTerminalSession(session.id);
+          try {
+            setArchitectByName(name, null);
+          } catch { /* best-effort cleanup */ }
+          _deps!.log('INFO', `Architect pty '${name}' exited`);
+        });
+      }
+
+      sessionId = session.id;
+      _deps.log('WARN', `Architect '${name}' is non-persistent (shellper unavailable)`);
+    } catch (err) {
+      return { success: false, error: `Failed to create architect terminal: ${(err as Error).message}` };
+    }
+  }
+
+  return { success: true, name, terminalId: sessionId! };
 }

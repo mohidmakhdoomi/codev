@@ -190,6 +190,45 @@ export class TowerClient {
     };
   }
 
+  /**
+   * Register a new named architect terminal in an active workspace (Spec 755).
+   *
+   * Without `name`, Tower auto-assigns the next available `architect-<N>`
+   * (smallest unused integer ≥ 2). With `name`, the value is validated against
+   * `[a-z][a-z0-9-]*` (max 64 chars) and rejected with a 4xx if the name is
+   * already in use or malformed.
+   */
+  async addArchitect(
+    workspacePath: string,
+    name?: string,
+  ): Promise<{ ok: boolean; name?: string; terminalId?: string; error?: string }> {
+    const encoded = encodeWorkspacePath(workspacePath);
+    // Spec 755: distinguish `undefined` (auto-number) from `""` (server
+    // must reject as invalid). Truthiness check would swallow the empty
+    // string and silently auto-number — wrong. Send the name iff it was
+    // explicitly supplied.
+    const body = name === undefined ? {} : { name };
+    const result = await this.request<{ success: boolean; name?: string; terminalId?: string; error?: string }>(
+      `/api/workspaces/${encoded}/architects`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    );
+
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+
+    return {
+      ok: result.data?.success ?? false,
+      name: result.data?.name,
+      terminalId: result.data?.terminalId,
+      error: result.data?.error,
+    };
+  }
+
   async deactivateWorkspace(
     workspacePath: string
   ): Promise<{ ok: boolean; stopped?: number[]; error?: string }> {

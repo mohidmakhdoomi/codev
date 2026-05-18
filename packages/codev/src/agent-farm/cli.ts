@@ -103,6 +103,21 @@ export async function runAgentFarm(args: string[]): Promise<void> {
       }
     });
 
+  // Spec 755: register an additional named architect terminal in the active workspace.
+  workspaceCmd
+    .command('add-architect')
+    .description('Add a named architect terminal to the active workspace (multi-architect support)')
+    .option('--name <name>', 'Explicit architect name (default: auto-numbered architect-<N>)')
+    .action(async (options: { name?: string }) => {
+      const { workspaceAddArchitect } = await import('./commands/workspace-add-architect.js');
+      try {
+        await workspaceAddArchitect({ name: options.name });
+      } catch (error) {
+        logger.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
+    });
+
   // Deprecated alias: `afx dash` → `afx workspace`
   const dashCmd = program
     .command('dash')
