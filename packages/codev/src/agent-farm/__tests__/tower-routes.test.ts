@@ -931,6 +931,50 @@ describe('tower-routes', () => {
       expect(JSON.parse(body()).error).toBe('INVALID_PARAMS');
     });
 
+    // Spec 755 Phase 3: `from` must be forwarded to resolveTarget so the
+    // resolver can apply affinity-aware architect routing. Without this
+    // assertion a future refactor could drop sender-awareness silently.
+    it('forwards `from` (sender) to resolveTarget for affinity-aware routing (Spec 755)', async () => {
+      mockParseJsonBody.mockResolvedValue({
+        to: 'architect',
+        message: 'hi',
+        from: 'spir-100',
+        workspace: '/tmp/ws',
+      });
+      mockResolveTarget.mockReturnValue({
+        terminalId: 'term-arch-sibling',
+        workspacePath: '/tmp/ws',
+        agent: 'architect',
+      });
+      mockGetTerminalManager.mockReturnValue({
+        getSession: () => ({ write: vi.fn(), pid: 1234, isUserIdle: () => true, composing: false }),
+        listSessions: () => [],
+      });
+      const req = makeReq('POST', '/api/send');
+      const { res } = makeRes();
+      await handleRequest(req, res, makeCtx());
+
+      expect(mockResolveTarget).toHaveBeenCalledWith('architect', '/tmp/ws', 'spir-100');
+    });
+
+    it('forwards undefined `from` when sender is not supplied (non-builder send)', async () => {
+      mockParseJsonBody.mockResolvedValue({ to: 'architect', message: 'cron', workspace: '/tmp/ws' });
+      mockResolveTarget.mockReturnValue({
+        terminalId: 'term-arch-main',
+        workspacePath: '/tmp/ws',
+        agent: 'architect',
+      });
+      mockGetTerminalManager.mockReturnValue({
+        getSession: () => ({ write: vi.fn(), pid: 1234, isUserIdle: () => true, composing: false }),
+        listSessions: () => [],
+      });
+      const req = makeReq('POST', '/api/send');
+      const { res } = makeRes();
+      await handleRequest(req, res, makeCtx());
+
+      expect(mockResolveTarget).toHaveBeenCalledWith('architect', '/tmp/ws', undefined);
+    });
+
     it('returns 200 with ok:true on successful send', async () => {
       mockParseJsonBody.mockResolvedValue({ to: 'architect', message: 'hello', workspace: '/tmp/ws' });
       mockResolveTarget.mockReturnValue({
