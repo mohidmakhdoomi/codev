@@ -4,6 +4,16 @@ import type { OverviewCache } from './overview-data.js';
 import { BacklogTreeItem } from './backlog-tree-item.js';
 
 /**
+ * Backlog rows the user can act on — exclude issues that already have an
+ * active builder. Mirrors the dashboard's BacklogList
+ * (`items.filter(i => !i.hasBuilder)`) so the extension and web show the
+ * same "available work" set and you can't double-spawn from the Backlog.
+ */
+export function spawnableBacklog(items: OverviewBacklogItem[]): OverviewBacklogItem[] {
+  return items.filter(i => !i.hasBuilder);
+}
+
+/**
  * Backlog view: open GitHub issues with no PR yet. Issues assigned to the
  * current user (auto-detected via OverviewData.currentUser) sort to the
  * top with an `account` icon; the rest keep `issues`. Order within each
@@ -34,8 +44,9 @@ export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     const isMine = (item: OverviewBacklogItem) =>
       !!me && !!item.assignees?.some(a => a.toLowerCase() === me);
 
-    const mine = data.backlog.filter(isMine);
-    const rest = data.backlog.filter(item => !isMine(item));
+    const items = spawnableBacklog(data.backlog);
+    const mine = items.filter(isMine);
+    const rest = items.filter(item => !isMine(item));
 
     return [...mine, ...rest].map(item => {
       const assigned = mine.includes(item);

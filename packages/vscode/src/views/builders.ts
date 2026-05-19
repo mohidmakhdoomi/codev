@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import type { OverviewBuilder } from '@cluesmith/codev-types';
 import type { OverviewCache } from './overview-data.js';
 import { BuilderTreeItem } from './builder-tree-item.js';
+import { BuilderFileTreeItem } from './builder-file-tree-item.js';
+import type { BuilderDiffCache } from './builder-diff-cache.js';
 
 /**
  * Order builders for the Builders tree: blocked first with the longest-
@@ -29,7 +31,10 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.changeEmitter.event;
 
-  constructor(private cache: OverviewCache) {
+  constructor(
+    private cache: OverviewCache,
+    private readonly diffCache: BuilderDiffCache,
+  ) {
     cache.onDidChange(() => this.changeEmitter.fire());
   }
 
@@ -37,7 +42,23 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     return element;
   }
 
-  getChildren(): vscode.TreeItem[] {
+  // Required for `TreeView.reveal` (used by the accordion). Builder rows are
+  // roots → undefined; file rows are never revealed.
+  getParent(): vscode.TreeItem | undefined {
+    return undefined;
+  }
+
+  async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
+    // Second level: a builder's changed files. VSCode only calls this for
+    // an *expanded* builder, so collapsed builders cost no git.
+    if (element instanceof BuilderTreeItem) {
+      return this.fileChildren(element.builderId);
+    }
+    // File rows are leaves.
+    if (element instanceof BuilderFileTreeItem) {
+      return [];
+    }
+    // Root: the builder list.
     const data = this.cache.getData();
     if (!data) { return []; }
 
@@ -48,15 +69,26 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
         ? `blocked on ${b.blocked}${waitTime}`
         : `[${b.phase}]`;
       const item = new BuilderTreeItem(b.id, `#${b.issueId ?? b.id} ${b.issueTitle ?? ''} ${phaseLabel}`);
+      // Stable id (not the churning label) so VSCode persists expansion across
+      // the frequent overview-poll refreshes, and so the accordion's
+      // collapseAll+reveal can target this row reliably.
+      item.id = b.id;
+      // Expandable so the second-level changed-files list can hang off it.
+      // The row keeps its open-terminal command (single click); the chevron
+      // toggles the file list.
+      item.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
       item.tooltip = `Protocol: ${b.protocol} | Mode: ${b.mode} | Progress: ${b.progress}%`;
       // contextValue encodes both blocked-state and protocol so menus can
       // scope by either (e.g., inline Approve only on blocked-builder-*).
       item.contextValue = isBlocked
         ? `blocked-builder-${b.protocol || 'unknown'}`
         : `builder-${b.protocol || 'unknown'}`;
+      // 'circle-filled' (a solid status dot, like VSCode's running-process /
+      // port indicators) reads as "this is live" — unlike 'play', which
+      // looks like a button you press to start it.
       item.iconPath = isBlocked
         ? new vscode.ThemeIcon('bell', new vscode.ThemeColor('notificationsWarningIcon.foreground'))
-        : new vscode.ThemeIcon('play', new vscode.ThemeColor('testing.iconPassed'));
+        : new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('testing.iconPassed'));
       item.command = {
         command: 'codev.openBuilderById',
         title: 'Open Builder Terminal',
@@ -65,6 +97,35 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
       return item;
     });
   }
+
+  /** Changed-file rows for one builder (or a single placeholder row). */
+  private async fileChildren(builderId: string): Promise<vscode.TreeItem[]> {
+    const builder = this.cache.getData()?.builders.find(b => b.id === builderId);
+    if (!builder?.worktreePath) {
+      return [placeholder('No worktree on record')];
+    }
+
+    const result = await this.diffCache.getDiff(builderId, builder.worktreePath);
+    if (result.error) {
+      const row = placeholder('Diff unavailable');
+      row.tooltip = result.error;
+      return [row];
+    }
+    if (result.files.length === 0) {
+      return [placeholder('No changes yet')];
+    }
+    return result.files.map(
+      f => new BuilderFileTreeItem(builderId, builder.worktreePath, result.baseRef, f.change, f.plan),
+    );
+  }
+}
+
+/** Non-clickable informational leaf (no worktree / no changes / error). */
+function placeholder(label: string): vscode.TreeItem {
+  const item = new vscode.TreeItem(label);
+  item.contextValue = 'builder-file-none';
+  item.iconPath = new vscode.ThemeIcon('circle-slash', new vscode.ThemeColor('disabledForeground'));
+  return item;
 }
 
 function timeSince(isoDate: string): string {

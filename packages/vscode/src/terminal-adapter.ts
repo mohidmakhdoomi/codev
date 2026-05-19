@@ -71,6 +71,17 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
     this.ws.send(frame);
   }
 
+  /**
+   * Write text straight to the VSCode terminal renderer (local only — this
+   * goes through writeEmitter, NOT handleInput, so it is never sent to the
+   * PTY / agent). Used for transient status notices like "[Uploading
+   * image...]" during image paste (#736).
+   */
+  writeNotice(text: string): void {
+    if (this.disposed) { return; }
+    this.writeEmitter.fire(text);
+  }
+
   setDimensions(dimensions: vscode.TerminalDimensions): void {
     this.lastDimensions = { cols: dimensions.columns, rows: dimensions.rows };
     if (this.replaying) {

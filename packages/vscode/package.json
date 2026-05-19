@@ -85,6 +85,16 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "codev.enableBuildersAutoCollapse",
+        "title": "Codev: Turn On Builders Auto-Collapse",
+        "icon": "$(unfold)"
+      },
+      {
+        "command": "codev.disableBuildersAutoCollapse",
+        "title": "Codev: Turn Off Builders Auto-Collapse",
+        "icon": "$(fold)"
+      },
+      {
         "command": "codev.refreshTeam",
         "title": "Codev: Refresh Team",
         "icon": "$(refresh)"
@@ -111,6 +121,14 @@
         "title": "Codev: Add Review Comment"
       },
       {
+        "command": "codev.viewDiff",
+        "title": "Codev: View Diff"
+      },
+      {
+        "command": "codev.openBuilderFileDiff",
+        "title": "Codev: Open Builder File Diff"
+      },
+      {
         "command": "codev.openWorktreeWindow",
         "title": "Codev: Open Worktree in New Window"
       },
@@ -129,6 +147,11 @@
       {
         "command": "codev.stopWorkspaceDev",
         "title": "Codev: Stop Dev Server (this workspace)"
+      },
+      {
+        "command": "codev.pasteImage",
+        "title": "Codev: Paste Image into Terminal",
+        "icon": "$(file-media)"
       },
       {
         "command": "codev.openBuilderById",
@@ -188,6 +211,10 @@
           "when": "false"
         },
         {
+          "command": "codev.openBuilderFileDiff",
+          "when": "false"
+        },
+        {
           "command": "codev.addReviewComment",
           "when": "editorLangId == 'markdown'"
         },
@@ -220,6 +247,11 @@
           "command": "codev.viewPlanFile",
           "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder)-pir$/",
           "group": "1_primary@3"
+        },
+        {
+          "command": "codev.viewDiff",
+          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder)-/",
+          "group": "2_worktree@0"
         },
         {
           "command": "codev.openWorktreeWindow",
@@ -281,6 +313,16 @@
         {
           "command": "codev.refreshOverview",
           "when": "view == codev.builders",
+          "group": "navigation"
+        },
+        {
+          "command": "codev.disableBuildersAutoCollapse",
+          "when": "view == codev.builders && codev.buildersAutoCollapse",
+          "group": "navigation"
+        },
+        {
+          "command": "codev.enableBuildersAutoCollapse",
+          "when": "view == codev.builders && !codev.buildersAutoCollapse",
           "group": "navigation"
         },
         {
@@ -367,6 +409,12 @@
         "command": "codev.stopWorkspaceDev",
         "key": "ctrl+alt+s",
         "mac": "cmd+alt+s"
+      },
+      {
+        "command": "codev.pasteImage",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v",
+        "when": "codev.terminalFocused && terminalFocus"
       }
     ],
     "viewsContainers": {
@@ -449,6 +497,11 @@
           "default": 60,
           "minimum": 0,
           "markdownDescription": "Auto-refresh the Builders / Pull Requests / Backlog / Recently Closed views every N seconds while the Codev sidebar is visible. `0` disables periodic refresh (event-only, the previous behavior). A shared Tower-side 30s cache throttles GitHub calls across all windows."
+        },
+        "codev.buildersAutoCollapse": {
+          "type": "boolean",
+          "default": true,
+          "description": "Builders view accordion: expanding one builder auto-collapses the others, so only one builder's changed-files diff is open at a time."
         }
       }
     }

@@ -7,9 +7,11 @@ import { sendMessage } from './commands/send.js';
 import { approveGate } from './commands/approve.js';
 import { cleanupBuilder } from './commands/cleanup.js';
 import { openWorktreeWindow } from './commands/open-worktree-window.js';
+import { viewDiff, activateDiffView, diffUrisForChange } from './commands/view-diff.js';
 import { runWorktreeDev } from './commands/run-worktree-dev.js';
 import { stopWorktreeDev } from './commands/stop-worktree-dev.js';
 import { runWorkspaceDev, stopWorkspaceDev } from './commands/run-workspace-dev.js';
+import { pasteImage } from './commands/paste-image.js';
 import { openWorktreeFolder } from './commands/open-worktree-folder.js';
 import { runWorktreeSetup } from './commands/run-worktree-setup.js';
 import { viewPlanFile } from './commands/view-artifact.js';
@@ -24,12 +26,15 @@ import { BuilderSpawnHandler } from './builder-spawn-handler.js';
 import { BuilderTerminalLinkProvider } from './terminal-link-provider.js';
 import { BuildersProvider } from './views/builders.js';
 import { PullRequestsProvider } from './views/pull-requests.js';
-import { BacklogProvider } from './views/backlog.js';
+import { BacklogProvider, spawnableBacklog } from './views/backlog.js';
 import { RecentlyClosedProvider } from './views/recently-closed.js';
 import { TeamProvider } from './views/team.js';
 import { StatusProvider } from './views/status.js';
 import { WorkspaceProvider } from './views/workspace.js';
 import { BuilderTreeItem } from './views/builder-tree-item.js';
+import { BuilderFileTreeItem } from './views/builder-file-tree-item.js';
+import { BuilderDiffCache } from './views/builder-diff-cache.js';
+import { BuilderFileDecorationProvider } from './views/builder-file-decoration.js';
 import { BacklogTreeItem } from './views/backlog-tree-item.js';
 
 let connectionManager: ConnectionManager | null = null;
@@ -111,6 +116,17 @@ export async function activate(context: vscode.ExtensionContext) {
 	terminalManager = new TerminalManager(connectionManager, outputChannel, context.extensionUri, overviewCache);
 	context.subscriptions.push({ dispose: () => terminalManager?.dispose() });
 
+	// Drive the `codev.terminalFocused` context key so the Cmd/Ctrl+V image
+	// paste binding (#736) only applies when a Codev terminal is focused —
+	// it must never shadow Cmd+V anywhere else.
+	const syncTerminalFocusContext = () =>
+		vscode.commands.executeCommand(
+			'setContext', 'codev.terminalFocused',
+			terminalManager?.isCodevTerminalActive() ?? false);
+	context.subscriptions.push(
+		vscode.window.onDidChangeActiveTerminal(syncTerminalFocusContext));
+	syncTerminalFocusContext(); // seed initial state
+
 	// Update status bar with builder/gate counts
 	const updateStatusBarCounts = () => {
 		if (!statusBarItem || connectionManager?.getState() !== 'connected') { return; }
@@ -137,7 +153,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			typeof n === 'number' ? `${base} (${n})` : base;
 		if (buildersView) { buildersView.title = withCount('Builders', data?.builders.length); }
 		if (pullRequestsView) { pullRequestsView.title = withCount('Pull Requests', data?.pendingPRs.length); }
-		if (backlogView) { backlogView.title = withCount('Backlog', data?.backlog.length); }
+		if (backlogView) { backlogView.title = withCount('Backlog', data ? spawnableBacklog(data.backlog).length : undefined); }
 		if (recentlyClosedView) { recentlyClosedView.title = withCount('Recently Closed', data?.recentlyClosed.length); }
 	};
 
@@ -186,9 +202,17 @@ export async function activate(context: vscode.ExtensionContext) {
 		updateListViewTitles();
 	});
 
+	// Shared across the Builders tree (second-level changed files) and the
+	// SCM-style file decorations so both read one TTL-guarded git result.
+	const builderDiffCache = new BuilderDiffCache();
+	context.subscriptions.push(
+		{ dispose: () => builderDiffCache.dispose() },
+		vscode.window.registerFileDecorationProvider(new BuilderFileDecorationProvider(builderDiffCache)),
+	);
+
 	// List views use createTreeView so their title can carry a live item
 	// count; the rest stay on registerTreeDataProvider.
-	buildersView = vscode.window.createTreeView('codev.builders', { treeDataProvider: new BuildersProvider(overviewCache) });
+	buildersView = vscode.window.createTreeView('codev.builders', { treeDataProvider: new BuildersProvider(overviewCache, builderDiffCache) });
 	pullRequestsView = vscode.window.createTreeView('codev.pullRequests', { treeDataProvider: new PullRequestsProvider(overviewCache) });
 	backlogView = vscode.window.createTreeView('codev.backlog', { treeDataProvider: new BacklogProvider(overviewCache) });
 	recentlyClosedView = vscode.window.createTreeView('codev.recentlyClosed', { treeDataProvider: new RecentlyClosedProvider(overviewCache) });
@@ -201,6 +225,44 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.window.registerTreeDataProvider('codev.workspace', new WorkspaceProvider(connectionManager, terminalManager!)),
 		vscode.window.registerTreeDataProvider('codev.team', teamProvider),
 		vscode.window.registerTreeDataProvider('codev.status', new StatusProvider(connectionManager)),
+	);
+
+	// Builders accordion: expanding one builder auto-collapses the others so a
+	// reviewer can't have diffs from unrelated worktrees open at once. The
+	// deterministic collapseAll+reveal pair (vs fighting VSCode's expansion
+	// reconciliation) is guarded against the expand/collapse events it itself
+	// generates. Toggle via the header button / `codev.buildersAutoCollapse`.
+	const readAccordion = () =>
+		vscode.workspace.getConfiguration('codev').get<boolean>('buildersAutoCollapse', true);
+	let accordionOn = readAccordion();
+	let reconciling = false;
+	// The builder we've made (or are making) the single open one. The id check
+	// is the real guard: `reveal({expand:true})` re-fires onDidExpandElement
+	// for the same builder, and that re-fire can land *after* the await chain
+	// (so `reconciling` is already false). Matching builderId makes the
+	// re-fire a no-op regardless of timing — `reconciling` only debounces
+	// rapid expands of *different* builders.
+	let openBuilderId: string | undefined;
+	vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', accordionOn);
+	context.subscriptions.push(
+		buildersView.onDidExpandElement(async (e) => {
+			if (!accordionOn) { return; }
+			if (!(e.element instanceof BuilderTreeItem)) { return; }
+			if (e.element.builderId === openBuilderId || reconciling) { return; }
+			openBuilderId = e.element.builderId;
+			reconciling = true;
+			try {
+				await vscode.commands.executeCommand('workbench.actions.treeView.codev.builders.collapseAll');
+				await buildersView!.reveal(e.element, { expand: true, select: false, focus: false });
+			} finally {
+				reconciling = false;
+			}
+		}),
+		vscode.workspace.onDidChangeConfiguration((e) => {
+			if (!e.affectsConfiguration('codev.buildersAutoCollapse')) { return; }
+			accordionOn = readAccordion();
+			vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', accordionOn);
+		}),
 	);
 
 	// Periodic overview refresh. VSCode has no timer-based refresh (event-only),
@@ -355,6 +417,14 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('codev.cleanupBuilder', () => cleanupBuilder(connectionManager!, overviewCache)),
 		vscode.commands.registerCommand('codev.openWorktreeWindow', (arg: vscode.TreeItem | string | undefined) =>
 			openWorktreeWindow(connectionManager!, extractBuilderId(arg))),
+		vscode.commands.registerCommand('codev.viewDiff', (arg: vscode.TreeItem | string | undefined) =>
+			viewDiff(connectionManager!, extractBuilderId(arg))),
+		vscode.commands.registerCommand('codev.openBuilderFileDiff', async (arg: unknown) => {
+			if (!(arg instanceof BuilderFileTreeItem)) { return; }
+			const { left, right } = diffUrisForChange(arg.plan, { wt: arg.worktreePath, ref: arg.baseRef });
+			const title = `${arg.plan.resourcePath} (#${arg.builderId})`;
+			await vscode.commands.executeCommand('vscode.diff', left, right, title);
+		}),
 		vscode.commands.registerCommand('codev.runWorktreeDev', (arg: vscode.TreeItem | string | undefined) =>
 			runWorktreeDev(connectionManager!, terminalManager!, extractBuilderId(arg))),
 		vscode.commands.registerCommand('codev.stopWorktreeDev', () =>
@@ -363,6 +433,8 @@ export async function activate(context: vscode.ExtensionContext) {
 			runWorkspaceDev(connectionManager!, terminalManager!)),
 		vscode.commands.registerCommand('codev.stopWorkspaceDev', () =>
 			stopWorkspaceDev(connectionManager!, terminalManager!)),
+		vscode.commands.registerCommand('codev.pasteImage', () =>
+			pasteImage(connectionManager!, terminalManager!)),
 		vscode.commands.registerCommand('codev.refreshTeam', () => teamProvider.refresh()),
 		vscode.commands.registerCommand('codev.openWorktreeFolder', (arg: vscode.TreeItem | string | undefined) =>
 			openWorktreeFolder(connectionManager!, extractBuilderId(arg))),
@@ -371,6 +443,10 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('codev.viewPlanFile', (arg: vscode.TreeItem | string | undefined) =>
 			viewPlanFile(connectionManager!, extractBuilderId(arg))),
 		vscode.commands.registerCommand('codev.refreshOverview', () => overviewCache.refresh()),
+		vscode.commands.registerCommand('codev.enableBuildersAutoCollapse', () =>
+			vscode.workspace.getConfiguration('codev').update('buildersAutoCollapse', true, vscode.ConfigurationTarget.Global)),
+		vscode.commands.registerCommand('codev.disableBuildersAutoCollapse', () =>
+			vscode.workspace.getConfiguration('codev').update('buildersAutoCollapse', false, vscode.ConfigurationTarget.Global)),
 		vscode.commands.registerCommand('codev.reconnect', () => connectionManager?.reconnect()),
 		vscode.commands.registerCommand('codev.connectTunnel', () => connectTunnel(connectionManager!)),
 		vscode.commands.registerCommand('codev.disconnectTunnel', () => disconnectTunnel(connectionManager!)),
@@ -381,6 +457,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Read-only `codev-issue:` content provider backing the "View Issue"
 	// backlog action — renders issue body + comments as markdown preview.
 	activateIssueView(context);
+
+	// Read-only `codev-diff:` content provider backing the "View Diff"
+	// builder action — serves base-branch blob content for the diff editor
+	// without relying on the Git extension's worktree discovery.
+	activateDiffView(context);
 
 	// Review comment decorations
 	activateReviewDecorations(context);
