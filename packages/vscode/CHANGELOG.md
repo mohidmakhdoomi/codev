@@ -2,6 +2,17 @@
 
 What's changed in the Codev VS Code extension, version by version, written for the developers who use it.
 
+## [Unreleased]
+
+### What's new
+
+- **Per-builder changed files, inline.** A builder row in the Builders view is now expandable to the list of files it changed vs the default branch; clicking a file opens its 2-way diff (read-only merge-base base ↔ worktree file). Rows use VSCode's native Source Control look — the file-type icon plus a colored one-letter status badge (A/M/D/R/C/T, plus `!` for unmerged) and tinted label, driven by your theme's `gitDecoration.*` tokens (the built-in Git decorator can't see the gitignored `.builders/` worktrees, so Codev supplies its own). Git is throttled to ~1 spawn / 15s per expanded builder; collapsed builders never run git.
+- **Codev: View Diff** — a command + builder right-click that opens a builder worktree's whole delta vs the default branch in VSCode's Multi Diff Editor. Base content is served by a read-only `codev-diff:` provider running `git -C <worktree>` directly, so it works for the gitignored `.builders/` worktrees the Git extension can't discover; handles add/modify/delete/rename/copy and binary files. Coexists with Open Worktree in New Window.
+- **Accordion mode for the Builders tree** — expanding one builder auto-collapses the others, so a reviewer never has diffs from unrelated worktrees open at once. Toggle via the new `codev.buildersAutoCollapse` setting (default on), a Builders title-bar button (fold/unfold icon reflects state), or the Command Palette. Builder rows now carry a stable id, fixing expansion being reset on every overview poll.
+- **Live-status dot for active builders** — an active builder row shows a green filled dot (the running-process idiom) instead of the old `play` icon that read like a press-to-start button; blocked builders keep the amber bell.
+- **Image paste into Codev terminals** — `Cmd+Alt+V` (macOS) / `Ctrl+Alt+V` (Windows/Linux) in a focused Codev terminal uploads a clipboard image to Tower and injects the saved file path into the terminal — the same path-injection UX as the web dashboard and VSCode's own built-in terminal. Codev terminals are `Pseudoterminal`-backed, so VSCode's built-in image-paste bridge never fires for them; this reimplements it (per-OS clipboard read: macOS `osascript`, Linux `wl-paste`/`xclip`, Windows PowerShell). Cmd+V is untouched — normal text paste stays fully native.
+- **Backlog hides issues that already have a builder** — an issue with an active builder no longer appears in the Backlog (nor counts toward "Backlog (N)"), so you can't accidentally spawn a second builder for it. Matches the web dashboard. Note `hasBuilder` is machine-local — it reflects this machine's builders, not a teammate's on another machine.
+
 ## [3.0.6] - 2026-05-18
 
 ### What's new
