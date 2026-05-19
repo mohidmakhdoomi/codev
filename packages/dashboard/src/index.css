@@ -309,11 +309,15 @@ body {
 
 /* Bugfix #766: multi-architect left-pane wrapper (Spec 761 N>1 path).
  * Without these rules the wrappers collapse to intrinsic block height,
- * leaving the architect terminal at ~1/4 of the SplitPane left side. */
+ * leaving the architect terminal at ~1/4 of the SplitPane left side.
+ * `.split-left` already sets `position: relative`, so positioning the pane
+ * absolutely against it sidesteps any flex/percentage-height plumbing in
+ * ancestor containers. */
 .architect-pane {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-height: 0;
 }
 
