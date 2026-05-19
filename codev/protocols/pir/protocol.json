@@ -70,7 +70,7 @@
     {
       "id": "review",
       "name": "Review",
-      "description": "Write retrospective (arch + lessons), push, open PR with review as body, run CMAP, then wait at pr gate while the human merges on GitHub",
+      "description": "Write retrospective (arch + lessons), push, open PR with review as body, run 3-way consultation, then wait at pr gate while the human merges on GitHub",
       "type": "build_verify",
       "build": {
         "prompt": "review.md",

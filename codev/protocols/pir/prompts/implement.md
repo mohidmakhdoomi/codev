@@ -99,7 +99,7 @@ porch done {{project_id}}
 porch next {{project_id}}
 ```
 
-PIR's `implement` phase has no AI consult — the `dev-approval` gate becomes pending immediately, and the human is the sole reviewer of the running code. (CMAP-2 runs later, in the `review` phase, after the human approves the gate and the PR is opened.)
+PIR's `implement` phase has no AI consult — the `dev-approval` gate becomes pending immediately, and the human is the sole reviewer of the running code. (The 3-way consultation runs later, in the `review` phase, after the human approves the gate and the PR is opened.)
 
 ### 7. End Your Turn With a Code-Review Summary (Prose, Not a File)
 
