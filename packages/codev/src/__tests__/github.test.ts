@@ -258,6 +258,40 @@ describe('parseLabelDefaults', () => {
     expect(parseLabelDefaults([], 'Create issue template').type).toBe('project');
     expect(parseLabelDefaults([], 'Improve issue search').type).toBe('project');
   });
+
+  // Regression: issue #749 — Gitea/Forgejo returns `labels: ""` or `null` for
+  // unlabeled issues, where GitHub always returns []. parseLabelDefaults used
+  // to crash with "labels.map is not a function" and 500 the Tower overview.
+  it('coerces empty-string labels (Gitea/Forgejo) to no-labels result', () => {
+    // @ts-expect-error — exercising the non-GitHub forge runtime shape
+    expect(parseLabelDefaults('', 'Fix login bug')).toEqual({
+      type: 'bug',
+      priority: 'medium',
+    });
+  });
+
+  it('coerces null labels to no-labels result', () => {
+    // @ts-expect-error — exercising the non-GitHub forge runtime shape
+    expect(parseLabelDefaults(null)).toEqual({
+      type: 'project',
+      priority: 'medium',
+    });
+  });
+
+  it('coerces undefined labels to no-labels result', () => {
+    // @ts-expect-error — exercising the non-GitHub forge runtime shape
+    expect(parseLabelDefaults(undefined, 'Add dark mode')).toEqual({
+      type: 'project',
+      priority: 'medium',
+    });
+  });
+
+  it('still extracts type from a real label array (GitHub path)', () => {
+    expect(parseLabelDefaults([{ name: 'type:bug' }])).toEqual({
+      type: 'bug',
+      priority: 'medium',
+    });
+  });
 });
 
 // =============================================================================

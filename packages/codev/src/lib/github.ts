@@ -466,13 +466,17 @@ const BARE_TYPE_LABELS = new Set(['bug', 'project', 'spike']);
 const BUG_TITLE_PATTERNS = /\b(fix|bug|broken|error|crash|fail|wrong|regression|not working)/i;
 
 export function parseLabelDefaults(
-  labels: Array<{ name: string }>,
+  labels: Array<{ name: string }> | null | undefined | string,
   title?: string,
 ): {
   type: string;
   priority: string;
 } {
-  const names = labels.map(l => l.name);
+  // Forge providers vary: GitHub returns an array of {name} objects, while
+  // Gitea/Forgejo returns "" (empty string) or null when an issue has no
+  // labels. Coerce non-array inputs to [] so the array methods below can't
+  // throw "labels.map is not a function" in non-GitHub forges.
+  const names = Array.isArray(labels) ? labels.map(l => l.name) : [];
 
   const typeLabels = names
     .filter(n => n.startsWith('type:'))
