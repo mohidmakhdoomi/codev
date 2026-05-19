@@ -26,7 +26,7 @@ import { BuilderSpawnHandler } from './builder-spawn-handler.js';
 import { BuilderTerminalLinkProvider } from './terminal-link-provider.js';
 import { BuildersProvider } from './views/builders.js';
 import { PullRequestsProvider } from './views/pull-requests.js';
-import { BacklogProvider } from './views/backlog.js';
+import { BacklogProvider, spawnableBacklog } from './views/backlog.js';
 import { RecentlyClosedProvider } from './views/recently-closed.js';
 import { TeamProvider } from './views/team.js';
 import { StatusProvider } from './views/status.js';
@@ -153,7 +153,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			typeof n === 'number' ? `${base} (${n})` : base;
 		if (buildersView) { buildersView.title = withCount('Builders', data?.builders.length); }
 		if (pullRequestsView) { pullRequestsView.title = withCount('Pull Requests', data?.pendingPRs.length); }
-		if (backlogView) { backlogView.title = withCount('Backlog', data?.backlog.length); }
+		if (backlogView) { backlogView.title = withCount('Backlog', data ? spawnableBacklog(data.backlog).length : undefined); }
 		if (recentlyClosedView) { recentlyClosedView.title = withCount('Recently Closed', data?.recentlyClosed.length); }
 	};
 
