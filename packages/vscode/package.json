@@ -135,6 +135,11 @@
         "title": "Codev: Stop Dev Server (this workspace)"
       },
       {
+        "command": "codev.pasteImage",
+        "title": "Codev: Paste Image into Terminal",
+        "icon": "$(file-media)"
+      },
+      {
         "command": "codev.openBuilderById",
         "title": "Codev: Open Builder Terminal"
       },
@@ -376,6 +381,12 @@
         "command": "codev.stopWorkspaceDev",
         "key": "ctrl+alt+s",
         "mac": "cmd+alt+s"
+      },
+      {
+        "command": "codev.pasteImage",
+        "key": "ctrl+v",
+        "mac": "cmd+v",
+        "when": "codev.terminalFocused && terminalFocus"
       }
     ],
     "viewsContainers": {

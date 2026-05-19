@@ -261,6 +261,25 @@ export class TerminalManager {
     return this.terminals.size;
   }
 
+  /**
+   * Resolve the currently-focused VSCode terminal to its Codev PTY, or null
+   * if the active terminal is not a Codev-managed one. Linear scan over the
+   * (≤ MAX_TERMINALS) map — no reverse index to keep in sync. Used by the
+   * image-paste command (#736) and the `codev.terminalFocused` context key.
+   */
+  getActiveManagedPty(): CodevPseudoterminal | null {
+    const active = vscode.window.activeTerminal;
+    if (!active) { return null; }
+    for (const entry of this.terminals.values()) {
+      if (entry.terminal === active) { return entry.pty; }
+    }
+    return null;
+  }
+
+  isCodevTerminalActive(): boolean {
+    return this.getActiveManagedPty() !== null;
+  }
+
   // ── Internal ─────────────────────────────────────────────────
 
   private async openTerminal(

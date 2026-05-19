@@ -367,6 +367,64 @@ export class TowerClient {
     });
   }
 
+  /**
+   * Upload a clipboard image to Tower and get back a temp file path.
+   *
+   * Deliberately does NOT route through request<T>(): that helper force-sets
+   * `Content-Type: application/json` after spreading options.headers, so a
+   * binary content-type can't pass through. This mirrors request()'s auth
+   * (codev-web-key), timeout, and error-normalization for a raw binary body.
+   */
+  async pasteImage(
+    workspacePath: string,
+    bytes: Buffer,
+    mime: string,
+  ): Promise<{ ok: boolean; path?: string; error?: string }> {
+    try {
+      const authKey = this.getAuthKey();
+      const headers: Record<string, string> = { 'Content-Type': mime };
+      if (authKey) {
+        headers['codev-web-key'] = authKey;
+      }
+      // Buffer isn't reliably assignable to fetch's BodyInit across
+      // @types/node lib versions; an ArrayBuffer slice always is.
+      const body = bytes.buffer.slice(
+        bytes.byteOffset, bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer;
+      // The paste-image handler is workspace-scoped (same router as
+      // /workspace/<enc>/api/state) — a global /api/paste-image has no route.
+      const encoded = encodeWorkspacePath(workspacePath);
+      const response = await fetch(`${this.baseUrl}/workspace/${encoded}/api/paste-image`, {
+        method: 'POST',
+        headers,
+        body,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        let error: string;
+        try {
+          const json = JSON.parse(text);
+          error = json.error || json.message || text;
+        } catch {
+          error = text;
+        }
+        return { ok: false, error };
+      }
+      const data = (await response.json()) as { path: string };
+      return { ok: true, path: data.path };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('ECONNREFUSED')) {
+        return { ok: false, error: 'Tower not running' };
+      }
+      if (message.includes('timeout')) {
+        return { ok: false, error: 'Request timeout' };
+      }
+      return { ok: false, error: message };
+    }
+  }
+
   getWorkspaceUrl(workspacePath: string): string {
     const encoded = encodeWorkspacePath(workspacePath);
     return `${this.baseUrl}/workspace/${encoded}/`;

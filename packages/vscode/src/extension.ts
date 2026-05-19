@@ -11,6 +11,7 @@ import { viewDiff, activateDiffView } from './commands/view-diff.js';
 import { runWorktreeDev } from './commands/run-worktree-dev.js';
 import { stopWorktreeDev } from './commands/stop-worktree-dev.js';
 import { runWorkspaceDev, stopWorkspaceDev } from './commands/run-workspace-dev.js';
+import { pasteImage } from './commands/paste-image.js';
 import { openWorktreeFolder } from './commands/open-worktree-folder.js';
 import { runWorktreeSetup } from './commands/run-worktree-setup.js';
 import { viewPlanFile } from './commands/view-artifact.js';
@@ -111,6 +112,17 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Terminal Manager
 	terminalManager = new TerminalManager(connectionManager, outputChannel, context.extensionUri, overviewCache);
 	context.subscriptions.push({ dispose: () => terminalManager?.dispose() });
+
+	// Drive the `codev.terminalFocused` context key so the Cmd/Ctrl+V image
+	// paste binding (#736) only applies when a Codev terminal is focused —
+	// it must never shadow Cmd+V anywhere else.
+	const syncTerminalFocusContext = () =>
+		vscode.commands.executeCommand(
+			'setContext', 'codev.terminalFocused',
+			terminalManager?.isCodevTerminalActive() ?? false);
+	context.subscriptions.push(
+		vscode.window.onDidChangeActiveTerminal(syncTerminalFocusContext));
+	syncTerminalFocusContext(); // seed initial state
 
 	// Update status bar with builder/gate counts
 	const updateStatusBarCounts = () => {
@@ -366,6 +378,8 @@ export async function activate(context: vscode.ExtensionContext) {
 			runWorkspaceDev(connectionManager!, terminalManager!)),
 		vscode.commands.registerCommand('codev.stopWorkspaceDev', () =>
 			stopWorkspaceDev(connectionManager!, terminalManager!)),
+		vscode.commands.registerCommand('codev.pasteImage', () =>
+			pasteImage(connectionManager!, terminalManager!)),
 		vscode.commands.registerCommand('codev.refreshTeam', () => teamProvider.refresh()),
 		vscode.commands.registerCommand('codev.openWorktreeFolder', (arg: vscode.TreeItem | string | undefined) =>
 			openWorktreeFolder(connectionManager!, extractBuilderId(arg))),
