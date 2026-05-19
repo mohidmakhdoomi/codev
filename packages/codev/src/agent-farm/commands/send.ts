@@ -10,6 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import Database from 'better-sqlite3';
 import type { SendOptions } from '../types.js';
 import { logger, fatal } from '../utils/logger.js';
 import { loadState } from '../state.js';
@@ -41,28 +42,62 @@ export function detectWorkspaceRoot(): string | null {
 
 /**
  * Detect the current builder ID from worktree path.
- * Looks up the canonical builder ID from state.db by matching worktree path.
- * Falls back to the worktree directory name if no match in state.db.
+ *
+ * Looks up the canonical builder ID by opening the **workspace's** state.db
+ * directly (not the singleton). When CWD is `.builders/<id>/`, the singleton
+ * `getDb()` resolves to the worktree's own state.db — which is empty because
+ * the worktree is itself a full git checkout with its own `codev/`. Reading
+ * that empty DB causes the lookup to miss and the function to fall back to
+ * the worktree directory name (e.g. `bugfix-774`), breaking multi-architect
+ * routing downstream because the canonical ID is `builder-bugfix-774`.
+ *
+ * Mirrors the per-workspace-handle pattern used by
+ * `lookupBuilderSpawningArchitect` in state.ts. Issue #774.
+ *
+ * Falls back to the worktree directory name only as a safety net.
  * Returns null if not in a builder worktree.
  */
 export function detectCurrentBuilderId(): string | null {
   const cwd = process.cwd();
   // Builder worktrees are at .builders/<dir-name>/
-  const match = cwd.match(/\.builders\/([^/]+)/);
+  const match = cwd.match(/^(.+?)\/\.builders\/([^/]+)/);
   if (!match) return null;
 
-  const worktreeDirName = match[1];
+  const workspacePath = match[1];
+  const worktreeDirName = match[2];
 
-  // Look up the canonical builder ID from state.db by matching worktree path
-  const state = loadState();
-  const builder = state.builders.find(b => {
-    if (!b.worktree) return false;
-    // Match on the worktree directory name (last segment of the path)
-    const builderWorktreeDir = b.worktree.split('/').pop();
-    return builderWorktreeDir === worktreeDirName;
-  });
+  // Open the WORKSPACE's state.db readonly — not the singleton getDb(),
+  // which resolves to the worktree-local state.db when CWD is inside
+  // .builders/<id>/.
+  const dbPath = join(workspacePath, '.agent-farm', 'state.db');
+  if (!existsSync(dbPath)) return worktreeDirName;
 
-  return builder ? builder.id : worktreeDirName;
+  let wsDb: Database.Database;
+  try {
+    wsDb = new Database(dbPath, { readonly: true });
+  } catch {
+    return worktreeDirName;
+  }
+
+  try {
+    // Match by canonical worktree path first (most precise), then fall back
+    // to a tail-segment match for legacy rows that recorded a different
+    // absolute prefix.
+    const canonicalWorktree = join(workspacePath, '.builders', worktreeDirName);
+    const rows = wsDb
+      .prepare('SELECT id, worktree FROM builders WHERE worktree IS NOT NULL')
+      .all() as Array<{ id: string; worktree: string }>;
+
+    const exact = rows.find(r => r.worktree === canonicalWorktree);
+    if (exact) return exact.id;
+
+    const tail = rows.find(r => r.worktree.split('/').pop() === worktreeDirName);
+    if (tail) return tail.id;
+
+    return worktreeDirName;
+  } finally {
+    wsDb.close();
+  }
 }
 
 /**
