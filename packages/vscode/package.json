@@ -412,8 +412,8 @@
       },
       {
         "command": "codev.pasteImage",
-        "key": "ctrl+v",
-        "mac": "cmd+v",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v",
         "when": "codev.terminalFocused && terminalFocus"
       }
     ],
