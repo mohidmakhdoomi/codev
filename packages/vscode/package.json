@@ -111,6 +111,10 @@
         "title": "Codev: Add Review Comment"
       },
       {
+        "command": "codev.viewDiff",
+        "title": "Codev: View Diff"
+      },
+      {
         "command": "codev.openWorktreeWindow",
         "title": "Codev: Open Worktree in New Window"
       },
@@ -220,6 +224,11 @@
           "command": "codev.viewPlanFile",
           "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder)-pir$/",
           "group": "1_primary@3"
+        },
+        {
+          "command": "codev.viewDiff",
+          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder)-/",
+          "group": "2_worktree@0"
         },
         {
           "command": "codev.openWorktreeWindow",

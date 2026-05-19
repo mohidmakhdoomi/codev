@@ -7,6 +7,7 @@ import { sendMessage } from './commands/send.js';
 import { approveGate } from './commands/approve.js';
 import { cleanupBuilder } from './commands/cleanup.js';
 import { openWorktreeWindow } from './commands/open-worktree-window.js';
+import { viewDiff, activateDiffView } from './commands/view-diff.js';
 import { runWorktreeDev } from './commands/run-worktree-dev.js';
 import { stopWorktreeDev } from './commands/stop-worktree-dev.js';
 import { runWorkspaceDev, stopWorkspaceDev } from './commands/run-workspace-dev.js';
@@ -355,6 +356,8 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('codev.cleanupBuilder', () => cleanupBuilder(connectionManager!, overviewCache)),
 		vscode.commands.registerCommand('codev.openWorktreeWindow', (arg: vscode.TreeItem | string | undefined) =>
 			openWorktreeWindow(connectionManager!, extractBuilderId(arg))),
+		vscode.commands.registerCommand('codev.viewDiff', (arg: vscode.TreeItem | string | undefined) =>
+			viewDiff(connectionManager!, extractBuilderId(arg))),
 		vscode.commands.registerCommand('codev.runWorktreeDev', (arg: vscode.TreeItem | string | undefined) =>
 			runWorktreeDev(connectionManager!, terminalManager!, extractBuilderId(arg))),
 		vscode.commands.registerCommand('codev.stopWorktreeDev', () =>
@@ -381,6 +384,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Read-only `codev-issue:` content provider backing the "View Issue"
 	// backlog action — renders issue body + comments as markdown preview.
 	activateIssueView(context);
+
+	// Read-only `codev-diff:` content provider backing the "View Diff"
+	// builder action — serves base-branch blob content for the diff editor
+	// without relying on the Git extension's worktree discovery.
+	activateDiffView(context);
 
 	// Review comment decorations
 	activateReviewDecorations(context);
