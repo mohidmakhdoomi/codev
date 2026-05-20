@@ -5,6 +5,7 @@ import type { TerminalManager } from '../terminal-manager.js';
 import { getTowerAddress } from '../workspace-detector.js';
 import { resolveWorkspaceDevTarget } from '../commands/dev-shared.js';
 import { readWorktreeDevUrls } from '../commands/open-dev-url.js';
+import { watchCodevConfig } from '../watch-codev-config.js';
 
 /**
  * Workspace-level entry points: architect terminal, Tower web dashboard,
@@ -18,12 +19,37 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
   constructor(
     private connectionManager: ConnectionManager,
     private terminalManager: TerminalManager,
+    context: vscode.ExtensionContext,
   ) {
-    connectionManager.onStateChange(() => this.changeEmitter.fire());
+    // The workspace view's rows are config-driven (Open Dev URL entries
+    // from worktree.devUrls, with more to come), so any edit to
+    // .codev/config.json (or its per-engineer .local.json sibling) should
+    // re-render. The watching primitive lives in src/watch-codev-config.ts;
+    // we just wire it up here. Lazy install: workspacePath isn't available
+    // at construction because the Tower connection lands async — attempt
+    // on every state change and pin via `configWatcherInstalled` the first
+    // time we succeed.
+    let configWatcherInstalled = false;
+    const installConfigWatcherIfReady = () => {
+      if (configWatcherInstalled) { return; }
+      const workspacePath = connectionManager.getWorkspacePath();
+      if (!workspacePath) { return; }
+      configWatcherInstalled = true;
+      context.subscriptions.push(
+        watchCodevConfig(workspacePath, () => this.changeEmitter.fire()),
+      );
+    };
+    connectionManager.onStateChange(() => {
+      this.changeEmitter.fire();
+      installConfigWatcherIfReady();
+    });
     // Re-render when the dev-terminal set changes (start/stop, a swap that
     // killed this workspace's dev, or cleanup) so the conditional "Stop Dev
     // Server" row reflects reality across every path.
     terminalManager.onDidChangeDevTerminals(() => this.changeEmitter.fire());
+    // Eager attempt in case workspacePath is already set (fast cached
+    // connect path).
+    installConfigWatcherIfReady();
   }
 
   getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
