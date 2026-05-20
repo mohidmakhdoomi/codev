@@ -524,7 +524,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Read-only `codev-issue:` content provider backing the "View Issue"
 	// backlog action — renders issue body + comments as markdown preview.
-	activateIssueView(context);
+	// Reuses overviewCache's existing 60s + SSE heartbeat to passively
+	// refresh open previews; no new timer.
+	activateIssueView(context, connectionManager, overviewCache);
 
 	// Read-only `codev-diff:` content provider backing the "View Diff"
 	// builder action — serves base-branch blob content for the diff editor
