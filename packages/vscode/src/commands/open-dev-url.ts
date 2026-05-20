@@ -19,24 +19,8 @@
  */
 
 import * as vscode from 'vscode';
-import type { WorktreeDevUrl } from '@cluesmith/codev-types';
 import type { ConnectionManager } from '../connection-manager.js';
-
-export type { WorktreeDevUrl };
-
-/**
- * Fetch the canonical resolved dev-URL list for the active workspace
- * from Tower. Returns `[]` when Tower is unreachable, the workspace
- * isn't activated, or the config has no `devUrls` — callers don't
- * have to branch.
- */
-export async function loadWorktreeDevUrls(connectionManager: ConnectionManager): Promise<WorktreeDevUrl[]> {
-  const client = connectionManager.getClient();
-  const workspacePath = connectionManager.getWorkspacePath();
-  if (!client || !workspacePath || connectionManager.getState() !== 'connected') { return []; }
-  const config = await client.getWorktreeConfig(workspacePath);
-  return config?.devUrls ?? [];
-}
+import { loadWorktreeConfig } from '../load-worktree-config.js';
 
 export async function openDevUrl(
   connectionManager: ConnectionManager,
@@ -49,7 +33,7 @@ export async function openDevUrl(
   }
 
   // Palette / arg-less invocation: resolve from config and route.
-  const devUrls = await loadWorktreeDevUrls(connectionManager);
+  const devUrls = (await loadWorktreeConfig(connectionManager))?.devUrls ?? [];
 
   if (devUrls.length === 0) {
     vscode.window.showWarningMessage(

@@ -4,7 +4,7 @@ import type { ConnectionManager } from '../connection-manager.js';
 import type { TerminalManager } from '../terminal-manager.js';
 import { getTowerAddress } from '../workspace-detector.js';
 import { resolveWorkspaceDevTarget } from '../commands/dev-shared.js';
-import { loadWorktreeDevUrls } from '../commands/open-dev-url.js';
+import { loadWorktreeConfig } from '../load-worktree-config.js';
 
 /**
  * Workspace-level entry points: architect terminal, Tower web dashboard,
@@ -103,6 +103,13 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
     const workspacePath = this.connectionManager.getWorkspacePath();
     const devTarget = workspacePath ? resolveWorkspaceDevTarget(workspacePath) : null;
 
+    // Resolved worktree config (Tower-merged across all 5 layers). One
+    // fetch drives both the dev-server row's visibility (gated on
+    // devCommand presence) and the Open Dev URL row(s) below.
+    const worktreeConfig = await loadWorktreeConfig(this.connectionManager);
+    const devCommand = worktreeConfig?.devCommand ?? null;
+    const devUrls = worktreeConfig?.devUrls ?? [];
+
     // Mutually exclusive: show Start when no dev is running anywhere, Stop
     // when one is — regardless of which target started it. The single-slot
     // model in dev-shared.ts means listDevTerminals() has at most one entry;
@@ -110,6 +117,14 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
     // right-click context menu is visible/stoppable from the Workspace view
     // too. The visible control is itself the state indicator (play/stop
     // model) — never both, no row-count jitter.
+    //
+    // Visibility also depends on whether devCommand is configured:
+    //   - dev running → always show Stop (lets the user kill a dev they
+    //     started before nulling out devCommand)
+    //   - no dev running + devCommand set → show Start
+    //   - no dev running + devCommand null → show nothing
+    // The third case is the new one — it removes the "click Start, get a
+    // toast saying devCommand isn't configured" footgun.
     const allDevs = this.terminalManager.listDevTerminals();
     const targetDev = devTarget ? allDevs.find(d => d.builderId === devTarget.id) : undefined;
     const otherDev = !targetDev ? allDevs[0] : undefined; // single-slot ⇒ at most one
@@ -140,13 +155,13 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
         title: 'Stop Dev Server',
       };
       items.push(stopDev);
-    } else {
-      // No dev anywhere — today's Start row for this workspace's target.
+    } else if (devCommand !== null) {
+      // No dev anywhere AND a devCommand is configured — Start row.
       const startDev = new vscode.TreeItem('Start Dev Server');
       startDev.iconPath = new vscode.ThemeIcon('play');
       startDev.tooltip = devTarget
-        ? `Run worktree.devCommand for this workspace (target: ${devTarget.id})`
-        : 'Run worktree.devCommand for this workspace';
+        ? `Run worktree.devCommand (\`${devCommand}\`) for this workspace (target: ${devTarget.id})`
+        : `Run worktree.devCommand (\`${devCommand}\`) for this workspace`;
       startDev.contextValue = 'workspace-dev-start';
       startDev.command = {
         command: 'codev.runWorkspaceDev',
@@ -154,13 +169,13 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
       };
       items.push(startDev);
     }
+    // else: no dev running and no devCommand → no dev-server row at all.
 
-    // Open Dev URL rows: one per entry in `worktree.devUrls` (or one
-    // for the legacy `worktree.devUrl`). Visible independent of dev-PTY
+    // Open Dev URL rows: one per entry in `worktree.devUrls`. Visible
+    // independent of dev-PTY
     // state. Opens in the user's default browser (real DevTools, real
     // cookies, real OAuth) — not the embedded Simple Browser webview.
     // Closed the tab? Click the row again for a fresh one.
-    const devUrls = await loadWorktreeDevUrls(this.connectionManager);
     for (const { label, url } of devUrls) {
       const row = new vscode.TreeItem(label);
       // 'link-external' (square + outgoing arrow) — VSCode's conventional
