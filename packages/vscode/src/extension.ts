@@ -297,7 +297,14 @@ export async function activate(context: vscode.ExtensionContext) {
 			reconciling = true;
 			try {
 				await vscode.commands.executeCommand('workbench.actions.treeView.codev.builders.collapseAll');
-				await buildersView!.reveal(e.element, { expand: true, select: false, focus: false });
+				// `expand: 3` (the VSCode max) recursively expands the builder
+				// and its file-tree descendants — so re-expanding after the
+				// accordion's collapseAll restores the default expanded-folder
+				// look instead of leaving every folder collapsed. Without this,
+				// collapseAll persists "collapsed" against each folder's stable
+				// id, and the next reveal honours that persisted state for
+				// every level below the builder row itself.
+				await buildersView!.reveal(e.element, { expand: 3, select: false, focus: false });
 			} finally {
 				reconciling = false;
 			}
