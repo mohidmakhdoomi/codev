@@ -2,7 +2,7 @@
 
 ## Metadata
 - **ID**: spec-2026-05-20-786-multi-architect-feature
-- **Status**: draft (iter-5 — post iter-3 CMAP, addressing Codex's narrower iter-3 findings)
+- **Status**: draft (iter-6 — post iter-4 Codex CMAP, addressing CLI-side `clearState()` seam)
 - **Created**: 2026-05-20
 - **GitHub Issue**: [#786](https://github.com/cluesmith/codev/issues/786)
 - **Predecessors**: #755 (v3.0.5 primitive), #761 (v3.0.6 dashboard tabs), #774 (v3.0.8 routing fix)
@@ -91,6 +91,7 @@ A user can add, manage, evict, and recover sibling architects with the same flue
 - [ ] `afx workspace remove-architect <name>` exists. Removes the named sibling from Tower's in-memory map, deletes the persisted row from `state.db.architect` AND from `terminal_sessions`, terminates the architect's terminal cleanly (no zombie shellper). Refuses to remove `main`. Refuses to remove a name that doesn't exist. **Does NOT refuse to remove an architect that has in-flight builders** — per OQ-A, those builders' subsequent `afx send architect` calls fall back to `main` via the existing routing chain.
 - [ ] Sibling architect rows survive `afx workspace stop` + `afx workspace start`. Specifically: `stopInstance` no longer indiscriminately deletes ALL rows; siblings' rows persist across the stop/start boundary, and `launchInstance` re-spawns them with their recorded `cmd` and re-injected `CODEV_ARCHITECT_NAME`. `main`'s existing behaviour is unchanged. **The row-deletion paths must distinguish "intentional stop" from "permanent exit":** intentional stop (via `stopInstance`) preserves sibling rows; permanent exit (max-restart exhaustion, explicit `remove-architect`) deletes them per OQ-B. The exit handlers at `tower-instances.ts:452-462`, `:507`, `:777-793`, `:830-846` and the reconciliation exit handler at `tower-terminals.ts:665-677` must each be inspected and updated to honour this distinction (e.g. a "shutdown in progress" flag, or routing intentional stops through a different teardown path that skips the `setArchitectByName(name, null)` call).
 - [ ] **`handleWorkspaceStopAll` (the explicit "stop-all" API at `tower-routes.ts:~2061`) remains a full wipe**, including sibling rows. This path is semantically distinct from `stopInstance`: it is the user-driven tear-down ("stop everything in this workspace"), so deleting all rows is the correct behaviour. `stopInstance` preserves sibling rows for restart; `handleWorkspaceStopAll` does not. Plan phase pins the implementation seam.
+- [ ] **CLI-side `clearState()` no longer wipes sibling architect rows on `afx workspace stop`.** `commands/stop.ts:42, :93` currently calls `clearState()` (at `state.ts:314-324`), which executes `DELETE FROM architect` — wiping every architect row including siblings — and similarly drops `builders`, `utils`, `annotations`. After this change, the CLI stop path for `afx workspace stop` must preserve sibling architect rows (and `main`'s row, for symmetry) so the server-side `stopInstance` row-preservation has any effect. Recommended seam: split `clearState()` into a "runtime clear" (current behaviour) and a "registration-preserving clear" (skips the `architect` table delete), with `stop.ts` choosing the latter. `clearState()`'s callers outside the workspace-stop path (e.g. uninstall / nuke-everything flows) keep the current behaviour. Plan phase pins the API shape and confirms which other callers want which variant.
 - [ ] `launchInstance` correctly boots `main` even when sibling rows already exist (i.e. don't gate `main` creation on `entry.architects.size === 0` after this change — that pre-condition becomes unsafe once siblings can be loaded via reconciliation before `main` is created). Concretely: ensure `main` is always present after `launchInstance` returns success.
 - [ ] **Identity preservation across shellper auto-restart.** `tower-terminals.ts` reconciliation builds `restartOptions.env` with `CODEV_ARCHITECT_NAME: <name>` for every architect (where `<name>` comes from `dbSession.role_id`). When a sibling's claude process dies and shellper restarts it, the new process spawns with the correct architect name in env.
 - [ ] Sibling-architect tabs in the dashboard's `ArchitectTabStrip` carry a close affordance that triggers `remove-architect`. `main`'s tab has no close button.
@@ -243,7 +244,8 @@ When a sibling is removed, the dashboard's active-tab state must not be left poi
 - **Internal Systems**:
   - `packages/codev/src/agent-farm/utils/architect-name.ts` (reserved-name check)
   - `packages/codev/src/agent-farm/db/schema.ts` (read-only — schema is correct)
-  - `packages/codev/src/agent-farm/state.ts` (`setArchitectByName`, new `removeArchitect`)
+  - `packages/codev/src/agent-farm/state.ts` (`setArchitectByName`, new `removeArchitect`, split or extend `clearState()` per the CLI-side seam — see Functional MUST above)
+  - `packages/codev/src/agent-farm/commands/stop.ts` (call the registration-preserving variant of `clearState` so sibling rows survive `afx workspace stop`)
   - `packages/codev/src/agent-farm/servers/tower-instances.ts` (graceful-stop semantics, `launchInstance` re-spawn loop, new `removeArchitect` handler)
   - `packages/codev/src/agent-farm/servers/tower-terminals.ts` (identity-on-restart env injection at `:559-567` and `:773-776`; removal of v1 collapse at `:928-940`; possible changes to `deleteWorkspaceTerminalSessions` to preserve sibling rows on graceful stop)
   - `packages/codev/src/agent-farm/servers/tower-messages.ts` (regression-test only; existing routing is correct)
@@ -321,6 +323,7 @@ Architect resolutions for the four blocking OQs were applied in iter-3 and remai
 - [x] Expert AI Consultation iter-1 complete
 - [x] Expert AI Consultation iter-2 complete (Gemini & Claude APPROVE; Codex REQUEST_CHANGES addressed)
 - [x] Expert AI Consultation iter-3 complete (Gemini & Claude APPROVE; Codex narrower REQUEST_CHANGES addressed in iter-5)
+- [x] Expert AI Consultation iter-4 complete (Codex-only follow-up; new finding — CLI `clearState()` seam — addressed in iter-6)
 
 ## Notes
 
