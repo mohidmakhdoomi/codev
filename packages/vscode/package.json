@@ -95,6 +95,16 @@
         "icon": "$(fold)"
       },
       {
+        "command": "codev.enableBuildersFileTreeMode",
+        "title": "Codev: View Changed Files as Tree",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "codev.disableBuildersFileTreeMode",
+        "title": "Codev: View Changed Files as List",
+        "icon": "$(list-flat)"
+      },
+      {
         "command": "codev.refreshTeam",
         "title": "Codev: Refresh Team",
         "icon": "$(refresh)"
@@ -147,6 +157,10 @@
       {
         "command": "codev.stopWorkspaceDev",
         "title": "Codev: Stop Dev Server (this workspace)"
+      },
+      {
+        "command": "codev.openDevUrl",
+        "title": "Codev: Open Dev URL"
       },
       {
         "command": "codev.pasteImage",
@@ -348,6 +362,16 @@
           "group": "navigation"
         },
         {
+          "command": "codev.disableBuildersFileTreeMode",
+          "when": "view == codev.builders && codev.buildersFileViewAsTree",
+          "group": "navigation"
+        },
+        {
+          "command": "codev.enableBuildersFileTreeMode",
+          "when": "view == codev.builders && !codev.buildersFileViewAsTree",
+          "group": "navigation"
+        },
+        {
           "command": "codev.refreshOverview",
           "when": "view == codev.pullRequests",
           "group": "navigation"
@@ -524,6 +548,11 @@
           "type": "boolean",
           "default": true,
           "description": "Builders view accordion: expanding one builder auto-collapses the others, so only one builder's changed-files diff is open at a time."
+        },
+        "codev.buildersFileViewAsTree": {
+          "type": "boolean",
+          "default": true,
+          "description": "Render a builder's changed-files list as a folder tree (with single-child folder chains compacted, like VSCode's Source Control panel) instead of a flat list. Toggleable via the Builders title-bar button."
         }
       }
     }

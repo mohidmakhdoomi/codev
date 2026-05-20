@@ -11,6 +11,12 @@ import { getSkeletonDir } from '../../lib/skeleton.js';
 import { loadConfig } from '../../lib/config.js';
 import type { CodevConfig } from '../../lib/config.js';
 import { resolveHarness, type HarnessProvider, type CustomHarnessConfig } from './harness.js';
+import type { ResolvedWorktreeConfig, WorktreeDevUrl } from '@cluesmith/codev-types';
+
+// Re-export so existing internal callers that import the resolved types
+// from this module keep working. The canonical home is now
+// @cluesmith/codev-types (these cross HTTP via /api/worktree-config).
+export type { ResolvedWorktreeConfig, WorktreeDevUrl };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -269,18 +275,10 @@ export function getBuilderHarness(workspaceRoot?: string): HarnessProvider {
   );
 }
 
-/**
- * Resolved view of the `worktree` config block with defaults applied.
- * Unset fields collapse to empty / null so callers don't have to branch.
- */
-export interface ResolvedWorktreeConfig {
-  /** Glob patterns to symlink from workspace root into each worktree. `[]` when unset. */
-  symlinks: string[];
-  /** Shell commands to run in each worktree after creation. `[]` when unset. */
-  postSpawn: string[];
-  /** Command for `afx dev <builder-id>`. `null` when unset. */
-  devCommand: string | null;
-}
+// ResolvedWorktreeConfig + WorktreeDevUrl now live in
+// @cluesmith/codev-types (they cross HTTP via /api/worktree-config).
+// Re-exported from this module at the top of the file so existing
+// internal callers keep working.
 
 /**
  * Load the `worktree` block from .codev/config.json, applying defaults.
@@ -296,7 +294,22 @@ export function getWorktreeConfig(workspaceRoot?: string): ResolvedWorktreeConfi
     symlinks: w?.symlinks ?? [],
     postSpawn: w?.postSpawn ?? [],
     devCommand: w?.devCommand ?? null,
+    devUrls: resolveDevUrls(w),
   };
+}
+
+/**
+ * Filter malformed entries (missing/empty `label` or `url`). Both
+ * fields are mandatory by schema — no default-label fallback.
+ */
+function resolveDevUrls(w: { devUrls?: Array<{ label?: string; url?: string }> } | undefined): WorktreeDevUrl[] {
+  if (!Array.isArray(w?.devUrls)) { return []; }
+  return w.devUrls
+    .map(e => ({
+      label: typeof e?.label === 'string' ? e.label.trim() : '',
+      url: typeof e?.url === 'string' ? e.url.trim() : '',
+    }))
+    .filter(e => e.label && e.url);
 }
 
 /**

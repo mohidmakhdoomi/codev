@@ -212,6 +212,19 @@ export interface UserConfig {
      * Example: 'pnpm dev'.
      */
     devCommand?: string;
+    /**
+     * Dev URLs the running app(s) listen on — surfaced as one
+     * workspace-view row per entry in VSCode (`label` = row text,
+     * `url` = what opens in the default browser). The palette command
+     * `Codev: Open Dev URL` shows a QuickPick when invoked without a
+     * specific target. Both fields are required; entries missing
+     * either are silently filtered out.
+     * Example:
+     *   [{ "label": "App",   "url": "http://localhost:3000" },
+     *    { "label": "API",   "url": "http://localhost:3001" },
+     *    { "label": "Admin", "url": "http://localhost:8080/admin" }]
+     */
+    devUrls?: Array<{ label: string; url: string }>;
   };
 }
 

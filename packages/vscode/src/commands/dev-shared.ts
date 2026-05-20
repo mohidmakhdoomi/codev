@@ -14,10 +14,10 @@
  */
 
 import * as vscode from 'vscode';
-import { readFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { ConnectionManager } from '../connection-manager.js';
 import type { TerminalManager } from '../terminal-manager.js';
+import { loadWorktreeConfig } from '../load-worktree-config.js';
 
 export const KILL_WAIT_TIMEOUT_MS = 7000;
 export const KILL_POLL_INTERVAL_MS = 200;
@@ -48,19 +48,6 @@ export function resolveWorkspaceDevTarget(workspacePath: string): DevTarget {
     return { id, cwd: workspacePath, name: id };
   }
   return { id: 'main', cwd: workspacePath, name: 'Workspace' };
-}
-
-/** Read `worktree.devCommand` from `.codev/config.json`; null if unset/unreadable. */
-export async function readDevCommand(workspacePath: string): Promise<string | null> {
-  const configPath = path.join(workspacePath, '.codev', 'config.json');
-  try {
-    const raw = await readFile(configPath, 'utf-8');
-    const parsed = JSON.parse(raw) as { worktree?: { devCommand?: unknown } };
-    const cmd = parsed.worktree?.devCommand;
-    return typeof cmd === 'string' && cmd.length > 0 ? cmd : null;
-  } catch {
-    return null;
-  }
 }
 
 /** Poll `listTerminals` until the killed terminal disappears (or timeout). */
@@ -95,10 +82,16 @@ export async function startDevForTarget(
     return;
   }
 
-  const devCommand = await readDevCommand(workspacePath);
+  // Resolve the dev command through Tower so the full 5-layer config merge
+  // (defaults / cache / global / project / project-local) applies — including
+  // `.codev/config.local.json`, which is the per-engineer override layer.
+  // Reading `.codev/config.json` directly would miss the local override.
+  const worktreeConfig = await loadWorktreeConfig(connectionManager);
+  const devCommand = worktreeConfig?.devCommand ?? null;
   if (!devCommand) {
     vscode.window.showErrorMessage(
-      'Codev: Configure worktree.devCommand in .codev/config.json to use this action. ' +
+      'Codev: Configure worktree.devCommand in .codev/config.json ' +
+      '(or .codev/config.local.json) to use this action. ' +
       'See "Runnable Worktrees" in CLAUDE.md for stack-specific recipes.',
     );
     return;

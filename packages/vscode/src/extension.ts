@@ -11,6 +11,7 @@ import { viewDiff, activateDiffView, diffUrisForChange } from './commands/view-d
 import { runWorktreeDev } from './commands/run-worktree-dev.js';
 import { stopWorktreeDev } from './commands/stop-worktree-dev.js';
 import { runWorkspaceDev, stopWorkspaceDev } from './commands/run-workspace-dev.js';
+import { openDevUrl } from './commands/open-dev-url.js';
 import { pasteImage } from './commands/paste-image.js';
 import { openWorktreeFolder } from './commands/open-worktree-folder.js';
 import { runWorktreeSetup } from './commands/run-worktree-setup.js';
@@ -251,7 +252,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// List views use createTreeView so their title can carry a live item
 	// count; the rest stay on registerTreeDataProvider.
-	buildersView = vscode.window.createTreeView('codev.builders', { treeDataProvider: new BuildersProvider(overviewCache, builderDiffCache) });
+	const buildersProvider = new BuildersProvider(overviewCache, builderDiffCache);
+	buildersView = vscode.window.createTreeView('codev.builders', { treeDataProvider: buildersProvider });
 	pullRequestsView = vscode.window.createTreeView('codev.pullRequests', { treeDataProvider: new PullRequestsProvider(overviewCache) });
 	backlogView = vscode.window.createTreeView('codev.backlog', { treeDataProvider: new BacklogProvider(overviewCache) });
 	recentlyClosedView = vscode.window.createTreeView('codev.recentlyClosed', { treeDataProvider: new RecentlyClosedProvider(overviewCache) });
@@ -295,7 +297,14 @@ export async function activate(context: vscode.ExtensionContext) {
 			reconciling = true;
 			try {
 				await vscode.commands.executeCommand('workbench.actions.treeView.codev.builders.collapseAll');
-				await buildersView!.reveal(e.element, { expand: true, select: false, focus: false });
+				// `expand: 3` (the VSCode max) recursively expands the builder
+				// and its file-tree descendants — so re-expanding after the
+				// accordion's collapseAll restores the default expanded-folder
+				// look instead of leaving every folder collapsed. Without this,
+				// collapseAll persists "collapsed" against each folder's stable
+				// id, and the next reveal honours that persisted state for
+				// every level below the builder row itself.
+				await buildersView!.reveal(e.element, { expand: 3, select: false, focus: false });
 			} finally {
 				reconciling = false;
 			}
@@ -304,6 +313,23 @@ export async function activate(context: vscode.ExtensionContext) {
 			if (!e.affectsConfiguration('codev.buildersAutoCollapse')) { return; }
 			accordionOn = readAccordion();
 			vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', accordionOn);
+		}),
+	);
+
+	// Builders file-view-as-tree: each builder's changed-files list renders
+	// as a folder tree (with single-child folder chains compacted, like
+	// VSCode SCM) when on, or as a flat list when off. Toggle via the
+	// header button / `codev.buildersFileViewAsTree`. Same mechanics as
+	// accordion above — read setting, mirror to context key, refresh
+	// provider on change so the tree redraws in the new mode.
+	const readFileViewAsTree = () =>
+		vscode.workspace.getConfiguration('codev').get<boolean>('buildersFileViewAsTree', true);
+	vscode.commands.executeCommand('setContext', 'codev.buildersFileViewAsTree', readFileViewAsTree());
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration((e) => {
+			if (!e.affectsConfiguration('codev.buildersFileViewAsTree')) { return; }
+			vscode.commands.executeCommand('setContext', 'codev.buildersFileViewAsTree', readFileViewAsTree());
+			buildersProvider.refresh();
 		}),
 	);
 
@@ -501,6 +527,8 @@ export async function activate(context: vscode.ExtensionContext) {
 			runWorkspaceDev(connectionManager!, terminalManager!)),
 		vscode.commands.registerCommand('codev.stopWorkspaceDev', () =>
 			stopWorkspaceDev(connectionManager!, terminalManager!)),
+		vscode.commands.registerCommand('codev.openDevUrl', (urlArg?: unknown) =>
+			openDevUrl(connectionManager!, typeof urlArg === 'string' ? urlArg : undefined)),
 		vscode.commands.registerCommand('codev.pasteImage', () =>
 			pasteImage(connectionManager!, terminalManager!)),
 		vscode.commands.registerCommand('codev.refreshTeam', () => teamProvider.refresh()),
@@ -515,6 +543,10 @@ export async function activate(context: vscode.ExtensionContext) {
 			vscode.workspace.getConfiguration('codev').update('buildersAutoCollapse', true, vscode.ConfigurationTarget.Global)),
 		vscode.commands.registerCommand('codev.disableBuildersAutoCollapse', () =>
 			vscode.workspace.getConfiguration('codev').update('buildersAutoCollapse', false, vscode.ConfigurationTarget.Global)),
+		vscode.commands.registerCommand('codev.enableBuildersFileTreeMode', () =>
+			vscode.workspace.getConfiguration('codev').update('buildersFileViewAsTree', true, vscode.ConfigurationTarget.Global)),
+		vscode.commands.registerCommand('codev.disableBuildersFileTreeMode', () =>
+			vscode.workspace.getConfiguration('codev').update('buildersFileViewAsTree', false, vscode.ConfigurationTarget.Global)),
 		vscode.commands.registerCommand('codev.reconnect', () => connectionManager?.reconnect()),
 		vscode.commands.registerCommand('codev.connectTunnel', () => connectTunnel(connectionManager!)),
 		vscode.commands.registerCommand('codev.disconnectTunnel', () => disconnectTunnel(connectionManager!)),

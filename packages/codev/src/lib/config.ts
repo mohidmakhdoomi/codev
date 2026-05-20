@@ -195,13 +195,33 @@ export function resolveProjectConfigPath(workspaceRoot: string): string | null {
 }
 
 /**
+ * Resolve the project-local override config path.
+ *
+ * Returns .codev/config.local.json if it exists, otherwise null. No
+ * legacy alias to consider — this layer is new. The local file is
+ * intended to be gitignored and per-engineer.
+ */
+export function resolveLocalConfigPath(workspaceRoot: string): string | null {
+  const localPath = resolve(workspaceRoot, '.codev', 'config.local.json');
+  if (existsSync(localPath)) return localPath;
+  return null;
+}
+
+/**
  * Load the full merged config for a workspace.
  *
  * Layer order (lowest → highest priority):
  *   1. Hardcoded defaults
  *   2. <cache>/config.json (remote framework base config)
- *   3. ~/.codev/config.json (global)
- *   4. .codev/config.json (project)
+ *   3. ~/.codev/config.json (global, per-user, across all projects)
+ *   4. .codev/config.json (project, committed, shared with the team)
+ *   5. .codev/config.local.json (project, per-engineer, gitignored)
+ *
+ * Layer 5 is the place to put preferences that vary between engineers
+ * working on the same repo (e.g. different `worktree.devCommand` for
+ * web vs mobile roles) — Layer 3 spans every project so can't express
+ * "in *this* repo I want X." Add the file to your project's
+ * `.gitignore` so it's never accidentally committed.
  */
 export function loadConfig(workspaceRoot: string): CodevConfig {
   let merged: CodevConfig = structuredClone(DEFAULT_CONFIG);
@@ -229,6 +249,15 @@ export function loadConfig(workspaceRoot: string): CodevConfig {
     const projectConfig = readJsonFile(projectPath);
     if (projectConfig) {
       merged = deepMerge(merged as unknown as Record<string, unknown>, projectConfig) as CodevConfig;
+    }
+  }
+
+  // Layer 5: project-local override (gitignored, per-engineer).
+  const localPath = resolveLocalConfigPath(workspaceRoot);
+  if (localPath) {
+    const localConfig = readJsonFile(localPath);
+    if (localConfig) {
+      merged = deepMerge(merged as unknown as Record<string, unknown>, localConfig) as CodevConfig;
     }
   }
 

@@ -64,7 +64,7 @@ vi.mock('../../lib/forge.js', () => ({
 // Mock the harness resolution to return claude harness by default
 import { CLAUDE_HARNESS, OPENCODE_HARNESS } from '../utils/harness.js';
 const getBuilderHarnessMock = vi.fn(() => CLAUDE_HARNESS);
-const getWorktreeConfigMock = vi.fn(() => ({ symlinks: [], postSpawn: [], devCommand: null }));
+const getWorktreeConfigMock = vi.fn(() => ({ symlinks: [], postSpawn: [], devCommand: null, devUrls: [] }));
 vi.mock('../utils/config.js', () => ({
   getBuilderHarness: (...args: unknown[]) => getBuilderHarnessMock(...args),
   getWorktreeConfig: (...args: unknown[]) => getWorktreeConfigMock(...args),
@@ -882,6 +882,7 @@ describe('spawn-worktree', () => {
         symlinks: ['.env.local', 'packages/*/.env'],
         postSpawn: [],
         devCommand: null,
+        devUrls: [],
       });
       // Hardcoded section (.env / .codev/config.json) — both absent
       vi.mocked(existsSync)
@@ -914,6 +915,7 @@ describe('spawn-worktree', () => {
         symlinks: ['.env.local'],
         postSpawn: [],
         devCommand: null,
+        devUrls: [],
       });
       // Hardcoded section: both absent so no calls there
       vi.mocked(existsSync)

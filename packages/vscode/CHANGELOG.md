@@ -2,7 +2,23 @@
 
 What's changed in the Codev VS Code extension, version by version, written for the developers who use it.
 
-## [3.0.8] - 2026-05-19
+## [Unreleased]
+
+### What's new
+
+- **"Open Dev URL" rows in the Workspace view.** Add an array of `{ label, url }` entries under `worktree.devUrls` in `.codev/config.json` to surface dev/staging/preview links as one-click rows in the Workspace view. Clicking opens the URL in your **default browser**. Distinct from "Open Web Interface", which always points at Tower's dashboard.
+- **Per-engineer config overrides via `.codev/config.local.json`.** A gitignored sibling to `.codev/config.json` that layers your personal overrides on top of the shared project config — your local staging URLs, tunnel hostnames, etc. stay out of the file everyone else commits.
+- **Workspace view live-refreshes on config edits.** Edit `.codev/config.json` or `.codev/config.local.json` and every open VSCode window's sidebar re-renders immediately; no reload needed. Driven via Tower so multiple windows stay in sync.
+- **Changed-files view toggles between tree and list.** A new title-bar button on the Builders view switches a builder's expanded file list between a folder tree and a flat list. Setting: `codev.buildersFileViewAsTree`.
+
+### Bug fixes
+
+- **Workspace view detects dev servers started from any source.** Starting a dev from a builder row's right-click context menu now correctly flips the Workspace view's row to "Stop Dev Server" — previously the row stayed stuck on "Start Dev Server" because the check was scoped to this workspace's own target.
+- **"Start Dev Server" row is hidden when `worktree.devCommand` isn't configured.** No more click → no-op / error on workspaces that don't define a dev command.
+- **`.codev/config.local.json` overrides also apply when actually running the dev command.** Previously the override changed only what the sidebar displayed; the command Tower ran still came from the shared config. Now both honour the layered config.
+- **Re-expanding a builder restores its folder tree.** After accordion auto-collapse (clicking a different builder), re-expanding the first builder now re-expands its folders too — not just the top builder row.
+
+## [3.0.8] - 2026-05-20
 
 ### What's new
 

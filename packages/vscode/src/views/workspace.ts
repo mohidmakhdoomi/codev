@@ -4,6 +4,7 @@ import type { ConnectionManager } from '../connection-manager.js';
 import type { TerminalManager } from '../terminal-manager.js';
 import { getTowerAddress } from '../workspace-detector.js';
 import { resolveWorkspaceDevTarget } from '../commands/dev-shared.js';
+import { loadWorktreeConfig } from '../load-worktree-config.js';
 
 /**
  * Workspace-level entry points: architect terminal, Tower web dashboard,
@@ -23,13 +24,33 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
     // killed this workspace's dev, or cleanup) so the conditional "Stop Dev
     // Server" row reflects reality across every path.
     terminalManager.onDidChangeDevTerminals(() => this.changeEmitter.fire());
+    // Tower fans out a `worktree-config-updated` SSE event whenever
+    // .codev/config(.local).json changes (server-side file watcher in
+    // worktree-config-watcher.ts). We re-render on that signal so the
+    // config-driven rows (Open Dev URL …) reflect edits live, without
+    // the extension ever needing to read or watch the file itself.
+    //
+    // Tower emits events as a JSON envelope on the SSE `data:` field
+    // with no `event:` name (see builder-spawn-handler.ts for the same
+    // gotcha), so the SSE-client-level `type` is always '' and the
+    // real type sits inside the envelope.
+    connectionManager.onSSEEvent(({ data }) => {
+      try {
+        const envelope = JSON.parse(data) as { type?: unknown };
+        if (envelope.type === 'worktree-config-updated') {
+          this.changeEmitter.fire();
+        }
+      } catch {
+        // benign — malformed envelope
+      }
+    });
   }
 
   getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
     return element;
   }
 
-  getChildren(): vscode.TreeItem[] {
+  async getChildren(): Promise<vscode.TreeItem[]> {
     const items: vscode.TreeItem[] = [];
 
     const architect = new vscode.TreeItem('Open Architect');
@@ -82,14 +103,34 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
     const workspacePath = this.connectionManager.getWorkspacePath();
     const devTarget = workspacePath ? resolveWorkspaceDevTarget(workspacePath) : null;
 
-    // Mutually exclusive: show Start when this workspace's dev is stopped,
-    // Stop when it's running. The visible control is itself the state
-    // indicator (play/stop model) — never both, no row-count jitter.
-    const targetDevRunning = !!devTarget && this.terminalManager
-      .listDevTerminals()
-      .some(d => d.builderId === devTarget.id);
+    // Resolved worktree config (Tower-merged across all 5 layers). One
+    // fetch drives both the dev-server row's visibility (gated on
+    // devCommand presence) and the Open Dev URL row(s) below.
+    const worktreeConfig = await loadWorktreeConfig(this.connectionManager);
+    const devCommand = worktreeConfig?.devCommand ?? null;
+    const devUrls = worktreeConfig?.devUrls ?? [];
 
-    if (targetDevRunning) {
+    // Mutually exclusive: show Start when no dev is running anywhere, Stop
+    // when one is — regardless of which target started it. The single-slot
+    // model in dev-shared.ts means listDevTerminals() has at most one entry;
+    // reflect the slot's occupancy here so a dev started from a builder's
+    // right-click context menu is visible/stoppable from the Workspace view
+    // too. The visible control is itself the state indicator (play/stop
+    // model) — never both, no row-count jitter.
+    //
+    // Visibility also depends on whether devCommand is configured:
+    //   - dev running → always show Stop (lets the user kill a dev they
+    //     started before nulling out devCommand)
+    //   - no dev running + devCommand set → show Start
+    //   - no dev running + devCommand null → show nothing
+    // The third case is the new one — it removes the "click Start, get a
+    // toast saying devCommand isn't configured" footgun.
+    const allDevs = this.terminalManager.listDevTerminals();
+    const targetDev = devTarget ? allDevs.find(d => d.builderId === devTarget.id) : undefined;
+    const otherDev = !targetDev ? allDevs[0] : undefined; // single-slot ⇒ at most one
+
+    if (targetDev) {
+      // This workspace's own dev is the running one. Today's Stop row.
       const stopDev = new vscode.TreeItem('Stop Dev Server');
       stopDev.iconPath = new vscode.ThemeIcon('debug-stop');
       stopDev.tooltip = `Stop the dev server for this workspace (target: ${devTarget!.id})`;
@@ -99,18 +140,58 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
         title: 'Stop Dev Server',
       };
       items.push(stopDev);
-    } else {
+    } else if (otherDev) {
+      // A dev is running, but for a different target — surface it so the
+      // user can see/stop it without leaving the Workspace view. Goes
+      // through codev.stopWorktreeDev which targets the dev slot directly
+      // (kills every dev in the local registry; single-slot invariant
+      // means that's exactly the one running).
+      const stopDev = new vscode.TreeItem('Stop Dev Server');
+      stopDev.iconPath = new vscode.ThemeIcon('debug-stop');
+      stopDev.tooltip = `Stop the dev server (currently running for ${otherDev.builderId})`;
+      stopDev.contextValue = 'workspace-dev-stop-other';
+      stopDev.command = {
+        command: 'codev.stopWorktreeDev',
+        title: 'Stop Dev Server',
+      };
+      items.push(stopDev);
+    } else if (devCommand !== null) {
+      // No dev anywhere AND a devCommand is configured — Start row.
       const startDev = new vscode.TreeItem('Start Dev Server');
       startDev.iconPath = new vscode.ThemeIcon('play');
       startDev.tooltip = devTarget
-        ? `Run worktree.devCommand for this workspace (target: ${devTarget.id})`
-        : 'Run worktree.devCommand for this workspace';
+        ? `Run worktree.devCommand (\`${devCommand}\`) for this workspace (target: ${devTarget.id})`
+        : `Run worktree.devCommand (\`${devCommand}\`) for this workspace`;
       startDev.contextValue = 'workspace-dev-start';
       startDev.command = {
         command: 'codev.runWorkspaceDev',
         title: 'Start Dev Server',
       };
       items.push(startDev);
+    }
+    // else: no dev running and no devCommand → no dev-server row at all.
+
+    // Open Dev URL rows: one per entry in `worktree.devUrls`. Visible
+    // independent of dev-PTY
+    // state. Opens in the user's default browser (real DevTools, real
+    // cookies, real OAuth) — not the embedded Simple Browser webview.
+    // Closed the tab? Click the row again for a fresh one.
+    for (const { label, url } of devUrls) {
+      const row = new vscode.TreeItem(label);
+      // 'link-external' (square + outgoing arrow) — VSCode's conventional
+      // "opens outside the editor" glyph; matches what
+      // vscode.env.openExternal actually does, and distinguishes this row
+      // from "Open Web Interface" above (which keeps the more abstract
+      // 'globe' for the Tower dashboard).
+      row.iconPath = new vscode.ThemeIcon('link-external');
+      row.tooltip = `Open ${url} in your default browser`;
+      row.contextValue = 'workspace-dev-url';
+      row.command = {
+        command: 'codev.openDevUrl',
+        title: label,
+        arguments: [url],
+      };
+      items.push(row);
     }
 
     return items;

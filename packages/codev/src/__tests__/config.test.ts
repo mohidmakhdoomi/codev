@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { deepMerge, loadConfig, resolveProjectConfigPath } from '../lib/config.js';
+import { deepMerge, loadConfig, resolveProjectConfigPath, resolveLocalConfigPath } from '../lib/config.js';
 
 // Helpers
 let tmpDir: string;
@@ -37,6 +37,12 @@ function writeProjectConfig(workspaceRoot: string, config: Record<string, unknow
 function writeGlobalConfig(config: Record<string, unknown>) {
   fs.mkdirSync(globalCodevDir, { recursive: true });
   fs.writeFileSync(path.join(globalCodevDir, 'config.json'), JSON.stringify(config, null, 2));
+}
+
+function writeLocalConfig(workspaceRoot: string, config: Record<string, unknown>) {
+  const dir = path.join(workspaceRoot, '.codev');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'config.local.json'), JSON.stringify(config, null, 2));
 }
 
 // =============================================================================
@@ -109,6 +115,22 @@ describe('resolveProjectConfigPath', () => {
     fs.writeFileSync(path.join(tmpDir, 'af-config.json'), '{}');
     expect(() => resolveProjectConfigPath(tmpDir)).toThrow('af-config.json is no longer supported');
     expect(() => resolveProjectConfigPath(tmpDir)).toThrow('codev update');
+  });
+});
+
+// =============================================================================
+// resolveLocalConfigPath
+// =============================================================================
+
+describe('resolveLocalConfigPath', () => {
+  it('returns .codev/config.local.json path when it exists', () => {
+    writeLocalConfig(tmpDir, { shell: {} });
+    const result = resolveLocalConfigPath(tmpDir);
+    expect(result).toBe(path.join(tmpDir, '.codev', 'config.local.json'));
+  });
+
+  it('returns null when no local config exists', () => {
+    expect(resolveLocalConfigPath(tmpDir)).toBeNull();
   });
 });
 
@@ -200,5 +222,35 @@ describe('loadConfig', () => {
     });
     const config = loadConfig(tmpDir);
     expect(config.porch?.checks?.lint).toEqual({ skip: true });
+  });
+
+  it('layer 5: .codev/config.local.json overrides defaults when project config absent', () => {
+    writeLocalConfig(tmpDir, {
+      shell: { architect: 'local-only-architect' },
+    });
+    const config = loadConfig(tmpDir);
+    expect(config.shell?.architect).toBe('local-only-architect');
+    expect(config.shell?.builder).toBe('claude'); // default preserved
+  });
+
+  it('layer 5: local overrides project, non-overlapping project keys survive', () => {
+    writeProjectConfig(tmpDir, {
+      shell: { architect: 'project-architect', builder: 'project-builder' },
+    });
+    writeLocalConfig(tmpDir, {
+      shell: { architect: 'local-architect' },
+    });
+    const config = loadConfig(tmpDir);
+    expect(config.shell?.architect).toBe('local-architect');   // local wins
+    expect(config.shell?.builder).toBe('project-builder');     // project survives
+  });
+
+  it('layer 5: missing config.local.json is a no-op', () => {
+    writeProjectConfig(tmpDir, {
+      shell: { architect: 'project-architect' },
+    });
+    // no writeLocalConfig — file absent
+    const config = loadConfig(tmpDir);
+    expect(config.shell?.architect).toBe('project-architect');
   });
 });

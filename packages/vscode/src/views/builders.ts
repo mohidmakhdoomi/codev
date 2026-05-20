@@ -4,6 +4,8 @@ import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
 import type { OverviewCache } from './overview-data.js';
 import { BuilderTreeItem } from './builder-tree-item.js';
 import { BuilderFileTreeItem } from './builder-file-tree-item.js';
+import { BuilderFolderTreeItem } from './builder-folder-tree-item.js';
+import { buildFilePathTree, type FilePathNode } from './file-path-tree.js';
 import type { BuilderDiffCache } from './builder-diff-cache.js';
 
 /**
@@ -44,6 +46,15 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     cache.onDidChange(() => this.changeEmitter.fire());
   }
 
+  /**
+   * Force a re-render. Used by config-change listeners (e.g. the
+   * file-view-as-tree toggle) that aren't reflected in the overview
+   * cache but need the tree to redraw with the new setting applied.
+   */
+  refresh(): void {
+    this.changeEmitter.fire();
+  }
+
   getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
     return element;
   }
@@ -59,6 +70,12 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     // an *expanded* builder, so collapsed builders cost no git.
     if (element instanceof BuilderTreeItem) {
       return this.fileChildren(element.builderId);
+    }
+    // Folder rows (tree-mode only) expand to their child folders/files.
+    if (element instanceof BuilderFolderTreeItem) {
+      return element.node.children!.map(child =>
+        materialiseNode(element.builderId, element.worktreePath, element.baseRef, child),
+      );
     }
     // File rows are leaves.
     if (element instanceof BuilderFileTreeItem) {
@@ -119,7 +136,12 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     });
   }
 
-  /** Changed-file rows for one builder (or a single placeholder row). */
+  /**
+   * Changed-file rows for one builder, rendered as a flat list or a
+   * folder tree depending on the `codev.buildersFileViewAsTree` setting.
+   * The diff data and the leaf shape (BuilderFileTreeItem) are identical
+   * in both modes — only the grouping around the leaves differs.
+   */
   private async fileChildren(builderId: string): Promise<vscode.TreeItem[]> {
     const builder = this.cache.getData()?.builders.find(b => b.id === builderId);
     if (!builder?.worktreePath) {
@@ -135,10 +157,49 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     if (result.files.length === 0) {
       return [placeholder('No changes yet')];
     }
+
+    if (this.viewAsTree()) {
+      // Tree mode: group by folder, compact single-child folder chains.
+      // Top-level nodes may be folders or root-level files (e.g. README).
+      return buildFilePathTree(result.files).map(node =>
+        materialiseNode(builderId, builder.worktreePath, result.baseRef, node),
+      );
+    }
+    // List mode (today's behaviour): flat, one row per changed file.
     return result.files.map(
       f => new BuilderFileTreeItem(builderId, builder.worktreePath, result.baseRef, f.change, f.plan),
     );
   }
+
+  /** Read the file-view-as-tree setting; falls back to the spec default. */
+  private viewAsTree(): boolean {
+    return vscode.workspace
+      .getConfiguration('codev')
+      .get<boolean>('buildersFileViewAsTree', true);
+  }
+}
+
+/**
+ * Render one tree-mode node as either a folder row (if it has children)
+ * or a file row (if it carries a leaf). Folders carry the worktreePath
+ * + baseRef forward so the renderer can construct file children on
+ * subsequent expansion without re-fetching from the diff cache.
+ */
+function materialiseNode(
+  builderId: string,
+  worktreePath: string,
+  baseRef: string,
+  node: FilePathNode,
+): vscode.TreeItem {
+  if (node.children) {
+    return new BuilderFolderTreeItem(builderId, worktreePath, baseRef, node);
+  }
+  // Leaf: must have a file (folder-without-children shouldn't be reachable
+  // from buildFilePathTree, but the type allows it — guard defensively).
+  if (!node.file) {
+    return placeholder(node.name);
+  }
+  return new BuilderFileTreeItem(builderId, worktreePath, baseRef, node.file.change, node.file.plan);
 }
 
 /** Non-clickable informational leaf (no worktree / no changes / error). */

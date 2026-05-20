@@ -40,6 +40,7 @@ const getWorktreeConfigMock = vi.fn(() => ({
   symlinks: [],
   postSpawn: [],
   devCommand: 'pnpm dev',
+  devUrls: [],
 }));
 vi.mock('../utils/index.js', () => ({
   getConfig: () => ({ workspaceRoot: '/proj' }),
@@ -94,7 +95,7 @@ beforeEach(() => {
   findBuilderByIdMock.mockReturnValue(builder);
   listTerminalsMock.mockResolvedValue([]);
   killTerminalMock.mockResolvedValue(true);
-  getWorktreeConfigMock.mockReturnValue({ symlinks: [], postSpawn: [], devCommand: 'pnpm dev' });
+  getWorktreeConfigMock.mockReturnValue({ symlinks: [], postSpawn: [], devCommand: 'pnpm dev', devUrls: [] });
 });
 
 // ─── Tests ──────────────────────────────────────────────────────────────
@@ -110,7 +111,7 @@ describe('afx dev — validation', () => {
   });
 
   it('errors when worktree.devCommand is unset', async () => {
-    getWorktreeConfigMock.mockReturnValueOnce({ symlinks: [], postSpawn: [], devCommand: null });
+    getWorktreeConfigMock.mockReturnValueOnce({ symlinks: [], postSpawn: [], devCommand: null, devUrls: [] });
     await expect(dev({ builderId: 'spir-42' })).rejects.toThrow(/No worktree\.devCommand configured/);
   });
 });
