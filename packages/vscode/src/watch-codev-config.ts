@@ -18,7 +18,15 @@ export function watchCodevConfig(
   workspacePath: string,
   onChange: () => void,
 ): vscode.Disposable {
-  const pattern = new vscode.RelativePattern(workspacePath, '.codev/config{,.local}.json');
+  // Two explicit alternatives. Earlier draft used `.codev/config{,.local}.json`
+  // with an empty-string alternative inside the braces, which VSCode's glob
+  // matcher inconsistently honors — observed: matched `config.json` only,
+  // missed `config.local.json`. Listing both filenames explicitly is
+  // unambiguous across glob implementations.
+  const pattern = new vscode.RelativePattern(
+    workspacePath,
+    '.codev/{config.json,config.local.json}',
+  );
   const watcher = vscode.workspace.createFileSystemWatcher(pattern);
   return vscode.Disposable.from(
     watcher,
