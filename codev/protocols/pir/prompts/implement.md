@@ -113,7 +113,7 @@ When the gate goes pending, output a short prose summary in the pane to orient t
 
 > **What changed**: 2–3 sentence summary.
 >
-> **Files**: `git diff --stat "$DEFAULT_BRANCH"` style list — paths and +/-. (Resolve `$DEFAULT_BRANCH` once per session: `DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)`.)
+> **Files**: `git diff --stat "$DEFAULT_BRANCH"` style list — paths and +/-. (Resolve `$DEFAULT_BRANCH` once per session: `DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||'); DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}`.)
 >
 > **Test results**: `npm run build` ✓, `npm test` ✓ (X tests, Y new).
 >

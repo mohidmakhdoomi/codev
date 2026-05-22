@@ -324,8 +324,8 @@ Before marking PR ready, the Builder must verify:
 The "< 300 LOC" threshold is measured as **net diff** (additions + deletions):
 
 ```bash
-DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)
-git diff --stat "$DEFAULT_BRANCH" | tail -1
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+git diff --stat "${DEFAULT_BRANCH:-main}" | tail -1
 # Example: "3 files changed, 145 insertions(+), 52 deletions(-)"
 # Net diff = 145 + 52 = 197 LOC ✓ (under 300)
 ```
