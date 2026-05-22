@@ -57,6 +57,7 @@ KEY_ISSUES:
 - **DO** flag obvious problems the human reviewer at the gate might have missed
 - **DO NOT** redesign the approach — that was settled at `plan-approval` and validated at `dev-approval`
 - **DO NOT** demand changes the human reviewer already accepted at the `dev-approval` gate (the human ran the code and approved it; you didn't)
+- **DO NOT** flag the syntax of `git diff` examples that appear in review-file prose (e.g., `git diff ci..HEAD` inside a "Files Changed" caption or "How to Test Locally" section). Quoted diff syntax is documentation, not a command. Apply two-dot/three-dot scrutiny only to diffs you compute yourself.
 
 ## Notes
 

@@ -355,6 +355,148 @@ export class CliResolver implements ArtifactResolver {
 }
 
 // =============================================================================
+// Git Ref Resolver (reads codev/ artifacts at a specific git ref)
+// =============================================================================
+
+/**
+ * Reads codev/specs/, codev/plans/, codev/reviews/, and
+ * codev/projects/<id>/plan.md as they exist on a specific git ref (e.g.
+ * `origin/builder/777-foo`) — not from the architect's checked-out
+ * working tree.
+ *
+ * Closes #777 Defect A: when an architect runs `consult --type {spec,plan}`
+ * from the integration-branch checkout to supply a missing review, the
+ * routine had been reading the stale on-integration-branch artifact instead
+ * of the builder-branch version under review. This resolver fixes that by
+ * reading directly from the ref the reviewer is meant to evaluate.
+ *
+ * Best-effort `git fetch origin <branch>` is attempted once at construction
+ * for refs that include an `origin/` prefix. Fetch failure for the
+ * already-cached / offline case stays silent (the subsequent `git show`
+ * surfaces missing-ref errors), but auth / network / unknown failures emit
+ * a stderr warning since stale local refs could otherwise silently corrupt
+ * the review. Refs without an `origin/` prefix (e.g. local branches like
+ * `builder/777-foo`) skip the fetch entirely.
+ */
+export class GitRefResolver implements ArtifactResolver {
+  constructor(
+    private workspaceRoot: string,
+    private ref: string,
+  ) {
+    if (ref.startsWith('origin/')) {
+      const branch = ref.slice('origin/'.length);
+      try {
+        execFileSync('git', ['fetch', 'origin', branch], {
+          cwd: workspaceRoot,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      } catch (err) {
+        // Distinguish "already fetched / offline with cached copy" (silently
+        // OK) from "fetch actually failed for an unexpected reason" (visible).
+        // The subsequent `git show` surfaces missing-ref failures, but it
+        // can't tell stale-vs-fresh apart — that's what this warning is for.
+        const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr).trim() : '';
+        console.error(
+          `Warning: \`git fetch origin ${branch}\` failed; reading ${ref} from any locally-cached copy. ` +
+          `Stale refs may produce misleading reviews.` +
+          (stderr ? ` Underlying: ${stderr}` : '')
+        );
+      }
+    }
+  }
+
+  private listFiles(dir: string): string[] {
+    try {
+      const stdout = execFileSync(
+        'git',
+        ['ls-tree', '--name-only', '-r', this.ref, '--', dir],
+        { cwd: this.workspaceRoot, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      return stdout.split('\n').filter(Boolean).map(line => path.basename(line));
+    } catch {
+      return [];
+    }
+  }
+
+  private showFile(filePath: string): string | null {
+    try {
+      const stdout = execFileSync(
+        'git',
+        ['show', `${this.ref}:${filePath}`],
+        {
+          cwd: this.workspaceRoot,
+          encoding: 'utf-8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          maxBuffer: 32 * 1024 * 1024,
+        },
+      );
+      return stdout;
+    } catch {
+      return null;
+    }
+  }
+
+  findSpecBaseName(projectId: string, _title: string): string | null {
+    const files = this.listFiles('codev/specs');
+    const specFile = files.find(f => f.endsWith('.md') && matchesProjectId(f, projectId));
+    return specFile ? specFile.replace(/\.md$/, '') : null;
+  }
+
+  getSpecContent(projectId: string, title: string): string | null {
+    const baseName = this.findSpecBaseName(projectId, title);
+    if (!baseName) return null;
+    return this.showFile(`codev/specs/${baseName}.md`);
+  }
+
+  getPlanContent(projectId: string, _title: string): string | null {
+    // New location: codev/projects/<id>-<name>/plan.md
+    try {
+      const stdout = execFileSync(
+        'git',
+        ['ls-tree', '--name-only', this.ref, '--', 'codev/projects/'],
+        { cwd: this.workspaceRoot, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      const projDirs = stdout.split('\n').filter(Boolean).map(line => path.basename(line));
+      const projDir = projDirs.find(d => matchesProjectId(d, projectId));
+      if (projDir) {
+        const content = this.showFile(`codev/projects/${projDir}/plan.md`);
+        if (content !== null) return content;
+      }
+    } catch { /* continue to legacy */ }
+
+    // Legacy location: codev/plans/<id>-*.md
+    const files = this.listFiles('codev/plans');
+    const planFile = files.find(f => f.endsWith('.md') && matchesProjectId(f, projectId));
+    if (!planFile) return null;
+    return this.showFile(`codev/plans/${planFile}`);
+  }
+
+  getReviewContent(projectId: string, _title: string): string | null {
+    const files = this.listFiles('codev/reviews');
+    const reviewFile = files.find(f => f.endsWith('.md') && matchesProjectId(f, projectId));
+    if (!reviewFile) return null;
+    return this.showFile(`codev/reviews/${reviewFile}`);
+  }
+
+  hasPreApproval(artifactGlob: string): boolean {
+    // Strip the leading codev/ root from the glob (e.g. `codev/specs/0073-*.md`
+    // → `specs/0073-*.md`) and resolve via the appropriate getter.
+    const typeMatch = artifactGlob.match(/\b(specs|plans|reviews)\b/);
+    const prefixedMatch = artifactGlob.match(/(?:specs|plans|reviews)\/([a-z]+(?:-[a-z]+)*-\d+)/i);
+    const numericMatch = artifactGlob.match(/(?:specs|plans|reviews)\/0*(\d+)/);
+    const projectId = prefixedMatch?.[1] ?? numericMatch?.[1];
+    if (!projectId || !typeMatch) return false;
+
+    let content: string | null = null;
+    if (typeMatch[1] === 'plans') content = this.getPlanContent(projectId, '');
+    else if (typeMatch[1] === 'reviews') content = this.getReviewContent(projectId, '');
+    else content = this.getSpecContent(projectId, '');
+
+    return content !== null && isPreApprovedContent(content);
+  }
+}
+
+// =============================================================================
 // Factory
 // =============================================================================
 

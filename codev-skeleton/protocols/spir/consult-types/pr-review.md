@@ -28,9 +28,13 @@ You are performing a final self-check during the Review phase. The builder has c
    - Are any new APIs documented?
 
 5. **PR Readiness**
-   - Is the branch up to date with main?
+   - Is the branch up to date with its base (the integration branch the PR targets)?
    - Are commits atomic and well-described?
    - Is the change diff reasonable in size?
+
+## Scope
+
+- **DO NOT** flag the syntax of `git diff` examples that appear in review-file prose (e.g., `git diff ci..HEAD` inside a "Files Changed" caption or "How to Test Locally" section). Quoted diff syntax is documentation, not a command. Apply two-dot/three-dot scrutiny only to diffs you compute yourself.
 
 ## Verdict Format
 

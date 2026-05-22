@@ -25,6 +25,7 @@ vi.mock('node:child_process', () => ({
     }
     return Buffer.from('');
   }),
+  execFileSync: vi.fn(() => Buffer.from('')),
 }));
 
 // Mock Claude Agent SDK
@@ -940,18 +941,15 @@ describe('consult command', () => {
     it('getDiffStat should call git diff --stat and --name-only', async () => {
       vi.resetModules();
 
-      const { execSync } = await import('node:child_process');
-      vi.mocked(execSync).mockImplementation((cmd: string) => {
-        if (typeof cmd === 'string' && cmd.includes('--stat')) {
-          return Buffer.from(' src/app.ts | 10 +++++++---\n 1 file changed, 7 insertions(+), 3 deletions(-)\n');
+      const { execFileSync } = await import('node:child_process');
+      vi.mocked(execFileSync).mockImplementation((_file: string, args?: readonly string[]) => {
+        if (args?.includes('--stat')) {
+          return ' src/app.ts | 10 +++++++---\n 1 file changed, 7 insertions(+), 3 deletions(-)\n';
         }
-        if (typeof cmd === 'string' && cmd.includes('--name-only')) {
-          return Buffer.from('src/app.ts\n');
+        if (args?.includes('--name-only')) {
+          return 'src/app.ts\n';
         }
-        if (cmd.includes('which')) {
-          return Buffer.from('/usr/bin/command');
-        }
-        return Buffer.from('');
+        return '';
       });
 
       const { _getDiffStat } = await import('../commands/consult/index.js');
@@ -964,23 +962,20 @@ describe('consult command', () => {
     it('getDiffStat should handle multiple files', async () => {
       vi.resetModules();
 
-      const { execSync } = await import('node:child_process');
-      vi.mocked(execSync).mockImplementation((cmd: string) => {
-        if (typeof cmd === 'string' && cmd.includes('--stat')) {
-          return Buffer.from(
+      const { execFileSync } = await import('node:child_process');
+      vi.mocked(execFileSync).mockImplementation((_file: string, args?: readonly string[]) => {
+        if (args?.includes('--stat')) {
+          return (
             ' .claude/settings.json     |  5 +++++\n' +
             ' src/app/widget.tsx         | 20 ++++++++++++++------\n' +
             ' src/middleware.ts          | 15 ++++++++++++---\n' +
             ' 3 files changed, 32 insertions(+), 9 deletions(-)\n'
           );
         }
-        if (typeof cmd === 'string' && cmd.includes('--name-only')) {
-          return Buffer.from('.claude/settings.json\nsrc/app/widget.tsx\nsrc/middleware.ts\n');
+        if (args?.includes('--name-only')) {
+          return '.claude/settings.json\nsrc/app/widget.tsx\nsrc/middleware.ts\n';
         }
-        if (cmd.includes('which')) {
-          return Buffer.from('/usr/bin/command');
-        }
-        return Buffer.from('');
+        return '';
       });
 
       const { _getDiffStat } = await import('../commands/consult/index.js');
@@ -1000,24 +995,21 @@ describe('consult command', () => {
       // the actual files from disk, eliminating truncation entirely.
       vi.resetModules();
 
-      const { execSync } = await import('node:child_process');
-      vi.mocked(execSync).mockImplementation((cmd: string) => {
-        if (typeof cmd === 'string' && cmd.includes('--stat')) {
-          return Buffer.from(' 50 files changed, 10000 insertions(+), 5000 deletions(-)\n');
+      const { execFileSync } = await import('node:child_process');
+      vi.mocked(execFileSync).mockImplementation((_file: string, args?: readonly string[]) => {
+        if (args?.includes('--stat')) {
+          return ' 50 files changed, 10000 insertions(+), 5000 deletions(-)\n';
         }
-        if (typeof cmd === 'string' && cmd.includes('--name-only')) {
+        if (args?.includes('--name-only')) {
           // 50 files spanning the full alphabet
           const files = Array.from({ length: 50 }, (_, i) =>
             i < 10 ? `.claude/file${i}.json` :
             i < 20 ? `codev/specs/${i}.md` :
             `src/app/component${i}.tsx`
           );
-          return Buffer.from(files.join('\n') + '\n');
+          return files.join('\n') + '\n';
         }
-        if (cmd.includes('which')) {
-          return Buffer.from('/usr/bin/command');
-        }
-        return Buffer.from('');
+        return '';
       });
 
       const { _getDiffStat } = await import('../commands/consult/index.js');

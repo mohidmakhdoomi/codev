@@ -9,13 +9,14 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execSync, execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import chalk from 'chalk';
 import { query as claudeQuery } from '@anthropic-ai/claude-agent-sdk';
 import { Codex } from '@openai/codex-sdk';
 import { readCodevFile, findWorkspaceRoot } from '../../lib/skeleton.js';
-import { getResolver } from '../porch/artifacts.js';
+import { resolveDefaultBranch } from '../../lib/default-branch.js';
+import { getResolver, GitRefResolver, type ArtifactResolver } from '../porch/artifacts.js';
 import { MetricsDB } from './metrics.js';
 import { extractUsage, extractReviewText, type SDKResultLike, type UsageData } from './usage-extractor.js';
 import { executeForgeCommandSync } from '../../lib/forge.js';
@@ -65,6 +66,10 @@ export interface ConsultOptions {
   protocol?: string;
   type?: string;
   issue?: string;
+  // Read spec/plan from this git ref instead of the local workspace.
+  // Defaults to the PR's headRefName when --issue resolves to a PR.
+  // Closes #777 Defect A.
+  branch?: string;
   // Porch flags
   output?: string;
   planPhase?: string;
@@ -203,24 +208,31 @@ function loadDotenv(workspaceRoot: string): void {
 /**
  * Find spec content by project ID using the artifact resolver.
  * Returns a ContentRef with content and label, or null if not found.
+ *
+ * Accepts an explicit `resolver` to support reading from a git ref (#777
+ * Defect A) instead of the architect's local workspace. When omitted,
+ * falls back to the workspace-root resolver from `.codev/config.json`.
  */
-function findSpecContent(workspaceRoot: string, id: string): ContentRef | null {
-  const resolver = getResolver(workspaceRoot);
-  const content = resolver.getSpecContent(id, '');
+function findSpecContent(workspaceRoot: string, id: string, resolver?: ArtifactResolver): ContentRef | null {
+  const r = resolver ?? getResolver(workspaceRoot);
+  const content = r.getSpecContent(id, '');
   if (!content) return null;
-  const label = resolver.findSpecBaseName(id, '') ?? id;
+  const label = r.findSpecBaseName(id, '') ?? id;
   return { content, label };
 }
 
 /**
  * Find plan content by project ID using the artifact resolver.
  * Returns a ContentRef with content and label, or null if not found.
+ *
+ * Accepts an explicit `resolver` to support reading from a git ref (#777
+ * Defect A) instead of the architect's local workspace.
  */
-function findPlanContent(workspaceRoot: string, id: string): ContentRef | null {
-  const resolver = getResolver(workspaceRoot);
-  const content = resolver.getPlanContent(id, '');
+function findPlanContent(workspaceRoot: string, id: string, resolver?: ArtifactResolver): ContentRef | null {
+  const r = resolver ?? getResolver(workspaceRoot);
+  const content = r.getPlanContent(id, '');
   if (!content) return null;
-  const baseName = resolver.findSpecBaseName(id, '') ?? id;
+  const baseName = r.findSpecBaseName(id, '') ?? id;
   return { content, label: baseName };
 }
 
@@ -767,10 +779,13 @@ async function runConsultation(
 
 /**
  * Get a compact diff stat summary and list of changed files.
+ *
+ * `ref` is passed as a single argv element so branch names with shell
+ * metacharacters can't break out of the command (#777 cmap-3 follow-up).
  */
 function getDiffStat(workspaceRoot: string, ref: string): { stat: string; files: string[] } {
-  const stat = execSync(`git diff --stat ${ref}`, { cwd: workspaceRoot, encoding: 'utf-8' }).toString();
-  const nameOnly = execSync(`git diff --name-only ${ref}`, { cwd: workspaceRoot, encoding: 'utf-8' }).toString();
+  const stat = execFileSync('git', ['diff', '--stat', ref], { cwd: workspaceRoot, encoding: 'utf-8' });
+  const nameOnly = execFileSync('git', ['diff', '--name-only', ref], { cwd: workspaceRoot, encoding: 'utf-8' });
   const files = nameOnly.trim().split('\n').filter(Boolean);
   return { stat, files };
 }
@@ -986,7 +1001,8 @@ function buildImplQuery(
   let diffStat = '';
   let changedFiles: string[] = [];
   try {
-    const ref = diffRef ?? execSync('git merge-base HEAD main', { cwd: workspaceRoot, encoding: 'utf-8' }).trim();
+    const defaultBranch = resolveDefaultBranch(workspaceRoot);
+    const ref = diffRef ?? execFileSync('git', ['merge-base', 'HEAD', defaultBranch], { cwd: workspaceRoot, encoding: 'utf-8' }).trim();
     const result = getDiffStat(workspaceRoot, ref);
     diffStat = result.stat;
     changedFiles = result.files;
@@ -1025,9 +1041,15 @@ function buildImplQuery(
     query += `\n\n## How to Review\n`;
     query += `**Read the changed files from disk** to review their actual content. You have full filesystem access.\n`;
     query += `For each file listed above, read it and evaluate the implementation against the spec/plan.\n`;
-    query += `Do NOT rely on git diffs to determine the current state of code — diffs miss uncommitted changes in worktrees.\n`;
+    query += `\n### Scope is the file list above\n`;
+    query += `The files above are the canonical scope of this PR (three-dot diff against the PR's base, equivalent to GitHub's PR view). `;
+    query += `If this PR targets an integration branch, the file list reflects the diff against that integration branch — not necessarily \`main\`. `;
+    query += `Do not flag files outside this list, even if you see other changes in the worktree. `;
+    query += `If you compute a diff yourself, use \`git diff <base>...HEAD\` (three-dot) — never two-dot, which over-includes commits the base branch picked up since this branch was created.\n`;
   } else {
-    query += `\n## Instructions\n\nExplore the filesystem to find and review the implementation changes.\n`;
+    query += `\n## Instructions\n\n`;
+    query += `Explore the filesystem to find and review the implementation changes. `;
+    query += `If you compute a diff yourself, use \`git diff <base>...HEAD\` (three-dot, anchored at the merge-base) — never two-dot, which over-includes commits the base branch picked up since this branch was created.\n`;
   }
 
   query += `
@@ -1170,18 +1192,43 @@ function findPRForCurrentBranch(workspaceRoot: string): string {
 
 /**
  * Find PR number for a given issue number (architect mode) via pr-search forge concept.
+ *
+ * Returns the PR's `baseRefName` alongside `headRefName` so the architect-mode
+ * impl path can compute the merge-base against the PR's *actual* base, not the
+ * repo's default branch. This matters when the PR targets a non-default
+ * integration branch — same #777 false-positive class as Layer 1, one layer
+ * deeper. Found by cmap-3 review.
+ *
+ * Defensive fallback: if a project ships its own `pr-search.sh` override at
+ * `.codev/scripts/forge/github/pr-search.sh` that pre-dates the baseRefName
+ * addition, the JSON won't include it. Rather than crashing on a stale
+ * override (which is the kind of thing users only discover at the worst
+ * possible moment), substitute the repo's default branch and warn loudly.
  */
-function findPRForIssue(workspaceRoot: string, issueId: string): { number: number; headRefName: string } {
+function findPRForIssue(workspaceRoot: string, issueId: string): { number: number; headRefName: string; baseRefName: string } {
   const result = executeForgeCommandSync('pr-search', {
     CODEV_SEARCH_QUERY: issueId,
   }, { cwd: workspaceRoot });
 
-  const prs = Array.isArray(result) ? result as Array<{ number: number; headRefName: string }> : [];
+  const prs = Array.isArray(result) ? result as Array<{ number: number; headRefName: string; baseRefName?: string }> : [];
   if (prs.length === 0 || !prs[0]?.number) {
     throw new Error(`No PR found for issue #${issueId}`);
   }
 
-  return prs[0];
+  const pr = prs[0];
+  if (!pr.baseRefName) {
+    const defaultBranch = resolveDefaultBranch(workspaceRoot);
+    console.error(
+      `Warning: forge pr-search did not return baseRefName for PR #${pr.number}; ` +
+      `falling back to repo default branch \`${defaultBranch}\`. ` +
+      `This usually means a stale \`pr-search.sh\` override exists at ` +
+      `.codev/scripts/forge/github/pr-search.sh — refresh it (see the bundled version under ` +
+      `\`packages/codev/scripts/forge/github/pr-search.sh\` for the current shape).`
+    );
+    return { number: pr.number, headRefName: pr.headRefName, baseRefName: defaultBranch };
+  }
+
+  return { number: pr.number, headRefName: pr.headRefName, baseRefName: pr.baseRefName };
 }
 
 /**
@@ -1251,6 +1298,48 @@ function resolveBuilderQuery(workspaceRoot: string, type: string, options: Consu
 }
 
 /**
+ * Pick the artifact resolver for an architect-mode consult.
+ *
+ * Closes #777 Defect A. Resolution order:
+ *   1. Explicit `--branch <ref>` → read from that ref.
+ *   2. PR exists for the issue → read from `origin/<headRefName>`. This is
+ *      the routine "architect supplying missing consult" case.
+ *   3. Neither → fall back to the local workspace, with a warning so the
+ *      architect knows the verdict may target a stale artifact.
+ */
+function resolveArtifactSource(
+  workspaceRoot: string,
+  issueId: string,
+  branchOption: string | undefined,
+): { resolver: ArtifactResolver; sourceLabel: string } {
+  if (branchOption) {
+    return {
+      resolver: new GitRefResolver(workspaceRoot, branchOption),
+      sourceLabel: `--branch ${branchOption}`,
+    };
+  }
+
+  try {
+    const pr = findPRForIssue(workspaceRoot, issueId);
+    const ref = `origin/${pr.headRefName}`;
+    return {
+      resolver: new GitRefResolver(workspaceRoot, ref),
+      sourceLabel: `${ref} (PR #${pr.number})`,
+    };
+  } catch {
+    console.error(
+      `Warning: no PR found for issue #${issueId} and no --branch given; ` +
+      `reading spec/plan from local workspace. Verdicts may not reflect ` +
+      `the in-progress version.`,
+    );
+    return {
+      resolver: getResolver(workspaceRoot),
+      sourceLabel: 'local workspace',
+    };
+  }
+}
+
+/**
  * Resolve query for architect context (requires --issue)
  */
 function resolveArchitectQuery(workspaceRoot: string, type: string, options: ConsultOptions): string {
@@ -1269,18 +1358,22 @@ function resolveArchitectQuery(workspaceRoot: string, type: string, options: Con
 
   switch (type) {
     case 'spec': {
-      const spec = findSpecContent(workspaceRoot, issueId);
-      if (!spec) throw new Error(`Spec ${issueId} not found`);
-      const plan = findPlanContent(workspaceRoot, issueId);
+      const { resolver, sourceLabel } = resolveArtifactSource(workspaceRoot, issueId, options.branch);
+      const spec = findSpecContent(workspaceRoot, issueId, resolver);
+      if (!spec) throw new Error(`Spec ${issueId} not found at ${sourceLabel}`);
+      const plan = findPlanContent(workspaceRoot, issueId, resolver);
+      console.error(`Source: ${sourceLabel}`);
       console.error(`Spec: ${spec.label}`);
       if (plan) console.error(`Plan: ${plan.label}`);
       return buildSpecQuery(spec, plan);
     }
 
     case 'plan': {
-      const plan = findPlanContent(workspaceRoot, issueId);
-      if (!plan) throw new Error(`Plan ${issueId} not found`);
-      const spec = findSpecContent(workspaceRoot, issueId);
+      const { resolver, sourceLabel } = resolveArtifactSource(workspaceRoot, issueId, options.branch);
+      const plan = findPlanContent(workspaceRoot, issueId, resolver);
+      if (!plan) throw new Error(`Plan ${issueId} not found at ${sourceLabel}`);
+      const spec = findSpecContent(workspaceRoot, issueId, resolver);
+      console.error(`Source: ${sourceLabel}`);
       console.error(`Plan: ${plan.label}`);
       if (spec) console.error(`Spec: ${spec.label}`);
       return buildPlanQuery(plan, spec);
@@ -1288,19 +1381,74 @@ function resolveArchitectQuery(workspaceRoot: string, type: string, options: Con
 
     case 'impl': {
       const pr = findPRForIssue(workspaceRoot, issueId);
-      // Fetch the branch and diff from merge-base
-      try {
-        execSync(`git fetch origin ${pr.headRefName}`, { cwd: workspaceRoot, stdio: 'pipe' });
-      } catch {
-        // May already be fetched
+      // Fetch both the PR head and its base so the diff has local refs to
+      // work with. Fetch failures are non-fatal in the already-cached case,
+      // but auth/network failures can leave us with stale local tracking
+      // refs — surface them so the architect knows the diff may be
+      // misleading.
+      for (const ref of [pr.headRefName, pr.baseRefName]) {
+        try {
+          execFileSync('git', ['fetch', 'origin', ref], { cwd: workspaceRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+        } catch (err) {
+          const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr).trim() : '';
+          console.error(
+            `Warning: \`git fetch origin ${ref}\` failed; proceeding with any locally-cached copy. ` +
+            `Stale refs may produce misleading diffs.` +
+            (stderr ? ` Underlying: ${stderr}` : '')
+          );
+        }
       }
-      const mergeBase = execSync(`git merge-base main origin/${pr.headRefName}`, { cwd: workspaceRoot, encoding: 'utf-8' }).trim();
-      const spec = findSpecContent(workspaceRoot, issueId);
-      const plan = findPlanContent(workspaceRoot, issueId);
-      console.error(`Project: ${issueId} (PR #${pr.number}, branch: ${pr.headRefName})`);
+
+      // Use the PR's actual base (not the repo's default branch) as the
+      // merge-base anchor. cmap-3 finding: when a PR targets a non-default
+      // integration branch, defaultBranch was the wrong anchor and produced
+      // phantom scope-creep verdicts of the same shape as the hardcoded-
+      // `main` bug — one layer deeper.
+      //
+      // Three-dot in `git diff A...B` is documented as `git diff
+      // $(git merge-base A B) B` — git computes the merge-base internally,
+      // so an explicit `git merge-base` call would be redundant. We just
+      // verify the base ref is locally resolvable and let the three-dot
+      // form do the rest. If verification fails, crash explicitly rather
+      // than silently degrade to reviewing the architect's checked-out
+      // tree (cmap-3 Gemini finding).
+      // Verify both refs up front. Without verifying head, getDiffStat would
+      // fail later inside buildImplQuery, which swallows diff errors and drops
+      // the reviewer into "explore the filesystem" — silently degrading the
+      // architect-mode review against whatever's checked out locally. Verify
+      // both so the failure surfaces here with an actionable message.
+      // cmap-3 round-2 finding (Codex).
+      let diffRef: string;
+      try {
+        for (const refName of [pr.baseRefName, pr.headRefName]) {
+          execFileSync('git', ['rev-parse', '--verify', `origin/${refName}`], {
+            cwd: workspaceRoot,
+            encoding: 'utf-8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
+        }
+        diffRef = `origin/${pr.baseRefName}...origin/${pr.headRefName}`;
+      } catch (err) {
+        throw new Error(
+          `Cannot compute diff scope for PR #${pr.number} (${pr.headRefName} → ${pr.baseRefName}). ` +
+          `Ensure both refs are fetched: \`git fetch origin ${pr.baseRefName} ${pr.headRefName}\`. ` +
+          `Underlying error: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+
+      // Read spec/plan from the PR's branch by default so they match the
+      // diff source (#777 Defect A). --branch overrides the PR default; the
+      // diff scope itself is always the PR's head→base (--branch does not
+      // change diff scope, only artifact source — cmap-3 finding).
+      const ref = options.branch ?? `origin/${pr.headRefName}`;
+      const resolver = new GitRefResolver(workspaceRoot, ref);
+      const spec = findSpecContent(workspaceRoot, issueId, resolver);
+      const plan = findPlanContent(workspaceRoot, issueId, resolver);
+      console.error(`Project: ${issueId} (PR #${pr.number}, ${pr.headRefName} → ${pr.baseRefName})`);
+      console.error(`Source: ${ref}`);
       if (spec) console.error(`Spec: ${spec.label}`);
       if (plan) console.error(`Plan: ${plan.label}`);
-      return buildImplQuery(workspaceRoot, spec, plan, options.planPhase, `${mergeBase}..origin/${pr.headRefName}`);
+      return buildImplQuery(workspaceRoot, spec, plan, options.planPhase, diffRef);
     }
 
     case 'pr': {

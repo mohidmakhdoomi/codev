@@ -38,7 +38,7 @@ Fixes #{{issue.number}}
 
 ## Files Changed
 
-Output of `git diff --stat "$DEFAULT_BRANCH"`, formatted as a list (resolve once: `DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)`):
+Output of `git diff --stat "$MERGE_BASE"`, formatted as a list (resolve once: `DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||'); DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}; MERGE_BASE=$(git merge-base "$DEFAULT_BRANCH" HEAD)`. Anchoring at the merge-base keeps the file list scoped to *your* changes, not commits the base branch absorbed after you branched.):
 
 - `path/to/file.ts` (+12 / -3)
 - `path/to/new-file.ts` (+45 / -0)
@@ -249,7 +249,8 @@ Together with the `--pr` record from step 4a and the `--merged` record from step
 **If the PR cannot be created (e.g., merge conflicts with the default branch):**
 - Rebase on the default branch:
   ```bash
-  DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)
+  DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+  DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
   git fetch origin "$DEFAULT_BRANCH" && git rebase "origin/$DEFAULT_BRANCH"
   ```
 - Resolve conflicts (do NOT use destructive shortcuts)

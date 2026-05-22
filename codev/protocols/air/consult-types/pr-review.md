@@ -34,7 +34,11 @@ If the baked decisions themselves contain contradictions, do not pick one — `R
 5. **PR Quality**
    - Does the PR link to the issue?
    - Is the PR body review section informative?
-   - Is the branch up to date with main?
+   - Is the branch up to date with its base (the integration branch the PR targets)?
+
+## Scope
+
+- **DO NOT** flag the syntax of `git diff` examples that appear in review-file prose (e.g., `git diff ci..HEAD` inside a "Files Changed" caption or "How to Test Locally" section). Quoted diff syntax is documentation, not a command. Apply two-dot/three-dot scrutiny only to diffs you compute yourself.
 
 ## Verdict Format
 

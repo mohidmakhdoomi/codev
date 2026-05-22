@@ -145,7 +145,7 @@ When filing an issue for SPIR, you can pin architectural decisions you don't wan
 11. Final updates based on second review
 12. **COMMIT**: "Final approved specification"
     - Add YAML frontmatter: `approved: <date>` and `validated: [gemini, codex, claude]`
-    - Commit to `main` so builder worktrees include the artifact
+    - Commit to the integration branch (the branch builders branch off) so builder worktrees include the artifact
     - Porch will detect this metadata and skip the specify phase automatically
 13. **GATE CHECK**: Before proceeding to Plan, verify all `spec_*` items complete
     - If incomplete: Output "⚠️ BLOCKED" with missing items, stop
@@ -240,7 +240,7 @@ When filing an issue for SPIR, you can pin architectural decisions you don't wan
 10. Final updates based on second review
 11. **COMMIT**: "Final approved plan"
     - Add YAML frontmatter: `approved: <date>` and `validated: [gemini, codex, claude]`
-    - Commit to `main` so builder worktrees include the artifact
+    - Commit to the integration branch (the branch builders branch off) so builder worktrees include the artifact
     - Porch will detect this metadata and skip the plan phase automatically
 12. **REGISTER PHASES**: For each phase defined in the plan:
 13. **GATE CHECK**: Before proceeding to Implement, verify all `plan_*` items complete

@@ -17,14 +17,16 @@ Implement the approved plan, write tests, and pause at the `dev-approval` gate s
 
 Run `porch next {{project_id}}`. If the response is `gate_pending` on `dev-approval`, the code is already written and you're awaiting review. In that case:
 
-1. Resolve your repo's default branch (falls back to `main` if `origin/HEAD` isn't set):
+1. Resolve your repo's default branch and the merge-base. The merge-base anchors the diff at the branch's fork point, so commits the base branch picked up *after* you branched don't show up as phantom "scope creep". (`DEFAULT_BRANCH` falls back to `main` if `origin/HEAD` isn't set.)
 
    ```bash
-   DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)
+   DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+   DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
+   MERGE_BASE=$(git merge-base "$DEFAULT_BRANCH" HEAD)
    ```
 
 2. Check for feedback:
-   - `git diff "$DEFAULT_BRANCH"` — has the reviewer made any direct edits to your code?
+   - `git diff "$MERGE_BASE"` — has the reviewer made any direct edits to your code?
    - `gh issue view {{issue.number}} --comments`
    - `afx send` queue messages
 3. If feedback requires code changes: make them, re-run build + tests, recommit.
@@ -113,7 +115,7 @@ When the gate goes pending, output a short prose summary in the pane to orient t
 
 > **What changed**: 2–3 sentence summary.
 >
-> **Files**: `git diff --stat "$DEFAULT_BRANCH"` style list — paths and +/-. (Resolve `$DEFAULT_BRANCH` once per session: `DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)`.)
+> **Files**: `git diff --stat "$MERGE_BASE"` style list — paths and +/-. (Resolve `$MERGE_BASE` once per session: `DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||'); DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}; MERGE_BASE=$(git merge-base "$DEFAULT_BRANCH" HEAD)`. Anchoring at the merge-base excludes commits the base branch picked up after you branched.)
 >
 > **Test results**: `npm run build` ✓, `npm test` ✓ (X tests, Y new).
 >
