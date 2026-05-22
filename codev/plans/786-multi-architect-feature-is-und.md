@@ -2,7 +2,7 @@
 
 ## Metadata
 - **ID**: plan-2026-05-22-786-multi-architect-feature
-- **Status**: draft
+- **Status**: draft (iter-2 — post plan iter-1 CMAP: Gemini APPROVE, Codex REQUEST_CHANGES, Claude COMMENT; both addressed)
 - **Specification**: [codev/specs/786-multi-architect-feature-is-und.md](../specs/786-multi-architect-feature-is-und.md)
 - **Created**: 2026-05-22
 
@@ -141,9 +141,12 @@ Revert the commit. The two-line addition is trivially reversible. No data migrat
 - [ ] `handleWorkspaceStopAll` in `tower-routes.ts:~2061` explicitly remains a full wipe — confirmed and tested (assertion that after stop-all, both `main` and any siblings are gone)
 
 #### Implementation Details
-- **Intentional-stop flag**: simplest implementation is a per-workspace `Set<string>` of paths currently shutting down, stored in the `_deps` module-level state. `stopInstance` adds the path to the set before iterating kills; the set is cleared in the `finally` after kills complete (or after a short timeout — see Risks). Exit handlers check `intentionallyStoppingWorkspaces.has(workspacePath)` and skip the `setArchitectByName(name, null)` call when true.
-- Alternative: pass a per-kill "intentional" flag through `killTerminalWithShellper` to the PtySession's exit emit. This is more invasive but doesn't rely on shared state. The plan recommends the Set approach for minimal blast radius; the builder may switch if they find a cleaner seam.
-- **`launchInstance` reconciliation loop**: after `entry = getWorkspaceTerminalsEntry(resolvedPath)`, query `state.db.architect` for all rows. For each row whose name is not `main` and which isn't already in `entry.architects`, call into `addArchitect()` logic with the persisted `cmd`. Then ensure `main` exists per the existing `entry.architects.has('main')` check (which replaces the size-based gate). Run reconciliation BEFORE creating main so that the restored siblings show up in the dashboard ordering as expected.
+- **Intentional-stop flag**: simplest implementation is a per-workspace `Set<string>` of paths currently shutting down. **Cross-module access (per Claude iter-1 finding)**: of the five exit handlers, four live in `tower-instances.ts` and one lives in `tower-terminals.ts:665-677`. The flag therefore needs to be reachable from both files. Recommended seam: put the Set in `tower-instances.ts` as a module-scoped const and **export a getter** (`isIntentionallyStopping(workspacePath: string): boolean`). `tower-terminals.ts` imports the getter. `stopInstance` adds the path to the set before iterating kills; the set is cleared in `finally` after kills complete. Exit handlers call `isIntentionallyStopping(workspacePath)` and skip the `setArchitectByName(name, null)` call when true.
+- Alternative: pass a per-kill "intentional" flag through `killTerminalWithShellper` to the PtySession's exit emit. This is more invasive but doesn't rely on shared state. The plan recommends the exported-getter approach for minimal blast radius; the builder may switch if they find a cleaner seam.
+- **`launchInstance` reconciliation loop**: 
+  - **Critical ordering constraint** (per Claude iter-1 finding + Codex iter-1 finding): `addArchitect()` at `tower-instances.ts:666` explicitly rejects with "Workspace not running" when `entry.architects.size === 0`. So calling `addArchitect()` from `launchInstance` BEFORE `main` is created would fail.
+  - **Required order**: (1) Create `main` if `!entry.architects.has('main')` — same logic as today, just with the new gate condition. (2) Query `state.db.architect` for all rows whose `id !== 'main'`. (3) For each persisted sibling not already in `entry.architects`, call `addArchitect(workspacePath, name)` (which now passes the size>0 guard because `main` exists). The persisted `cmd` is read from the `architect` table row via `getArchitects()`.
+  - **`main`-first ordering also satisfies Spec 761's `architectTabId` convention**: the first registered architect gets the bare `'architect'` id; subsequent ones get `architect:<name>`. By always creating `main` first, `main` reliably owns the bare id, and deep-link parsing stays stable. This is the pinned answer to Claude iter-1's "Phase 5 main-first ordering" question.
 - **`deleteWorkspaceTerminalSessions` selectivity**: simplest implementation — leave the existing function alone and add a new `deleteWorkspaceTerminalSessionsExceptSiblings(workspacePath)` variant that runs `DELETE FROM terminal_sessions WHERE workspace_path = ? AND NOT (type = 'architect' AND role_id != 'main')`. `stopInstance` calls the new variant; `handleWorkspaceStopAll` keeps the existing full-wipe call.
 
 #### Acceptance Criteria
@@ -155,10 +158,18 @@ Revert the commit. The two-line addition is trivially reversible. No data migrat
 
 #### Test Plan
 - **Unit Tests**: 
-  - `tower-instances.test.ts` — mock the architect table; assert `launchInstance` calls `addArchitect` for each non-main persisted row
-  - `tower-instances.test.ts` — assert the intentional-stop flag suppresses the exit-handler's setArchitectByName(null) call
-- **Integration Tests** (live tower + sqlite):
-  - The three Acceptance-Criteria integration tests above
+  - `tower-instances.test.ts` — mock the architect table; assert `launchInstance` calls `addArchitect` for each non-main persisted row, with main created first
+  - `tower-instances.test.ts` — assert the intentional-stop flag suppresses the exit-handler's `setArchitectByName(null)` call
+  - `tower-instances.test.ts` — assert the intentional-stop flag is cleared via `finally` even when a kill throws
+- **Integration Tests** (live tower + sqlite — automated, per Codex iter-1 Co4):
+  - **Workspace stop+start round-trip**: add sibling, `afx workspace stop`, `afx workspace start`, assert sibling reappears and is functional. (Codex iter-1 specifically called this out as needing automation, not just manual.)
+  - **Tower stop+start round-trip**: add sibling, `afx tower stop`, restart Tower, assert sibling reappears. (Distinct from workspace stop+start — exercises a different shutdown path.)
+  - **Crash recovery regression**: add sibling, SIGKILL Tower (simulated via the existing crash-recovery test harness), restart, assert sibling restored and identity preserved.
+  - **`handleWorkspaceStopAll` full-wipe regression**: hit the `/api/workspaces/:enc/stop-all` endpoint with siblings present, assert both `main` and siblings are gone after.
+  - **Permanent-exit auto-delete**: force max-restart on a sibling, assert `state.db.architect` row AND `terminal_sessions` row are both gone (OQ-B behaviour).
+- **Non-functional timing assertions** (per Codex iter-1 Co4 + spec NFR):
+  - Add 8 architects, `afx workspace stop`, `start`, time the reconciliation. Assert `<2s` total per the spec's NFR.
+  - Time individual persistence write/delete operations. Assert `<100ms` each.
 - **Manual Testing**: 
   - Real workspace with 2 siblings; `afx workspace stop` + `start`; verify dashboard
   - Permanent-exit simulation on a sibling (force max-restart by killing its claude N times)
@@ -184,19 +195,21 @@ Revert the commit. `clearRuntime` from Phase 1 still works (just no caller). Sta
 - Fold in #764: solo-architect tab label restored to `'Architect'` when N=1.
 
 #### Deliverables
-- [ ] `packages/codev/src/agent-farm/commands/workspace-remove-architect.ts` — new command. Validates name is not `main`; calls Tower RPC; reports success/failure
-- [ ] `packages/core/src/tower-client.ts` — new `removeArchitect(workspacePath, name)` RPC method; re-exported via `packages/codev/src/agent-farm/lib/tower-client.ts`
-- [ ] `packages/codev/src/agent-farm/servers/tower-instances.ts` — new `removeArchitect(workspacePath, name)` Tower-side handler: refuses `main`, refuses unknown names, kills the sibling's PTY (raising the intentional-stop flag from Phase 3 to suppress the auto-delete path, then directly deleting rows), removes from in-memory `entry.architects`, deletes `architect` and `terminal_sessions` rows
-- [ ] Tower route in `tower-routes.ts` for the new RPC
-- [ ] `packages/dashboard/src/hooks/useTabs.ts:52` — `closable: name !== 'main' && architects.length > 1` (only siblings are closable; `main` always non-closable; at N=1 main is the only architect and is non-closable, so the criterion collapses to `name !== 'main'` semantically but the architects.length check is defensive)
+- [ ] `packages/codev/src/agent-farm/commands/workspace-remove-architect.ts` — new command. Validates name is not `main`; calls Tower client method; reports success/failure
+- [ ] `packages/codev/src/agent-farm/cli.ts` — register `workspace remove-architect <name>` subcommand mirroring the existing `workspace add-architect` pattern at `cli.ts:108-114` (lazy-import the command module, pass the parsed name)
+- [ ] `packages/core/src/tower-client.ts` — new `removeArchitect(workspacePath, name)` client method; **REST transport** mirroring the existing `addArchitect` shape at `:201-230` — issues `DELETE /api/workspaces/:encoded/architects/:name` (REST-idiomatic). Re-exported via `packages/codev/src/agent-farm/lib/tower-client.ts` (no edit needed if the re-export is wildcard; otherwise add the type)
+- [ ] `packages/codev/src/agent-farm/servers/tower-routes.ts` — register the new `DELETE /api/workspaces/:encoded/architects/:name` route; route handler decodes path params, calls `removeArchitect(workspacePath, name)` Tower-side handler, returns `{ success, error? }` JSON
+- [ ] `packages/codev/src/agent-farm/servers/tower-instances.ts` — new `removeArchitect(workspacePath, name)` Tower-side handler: refuses `main`, refuses unknown names, kills the sibling's PTY (raising the intentional-stop flag from Phase 3 to suppress the cascaded auto-delete path, then explicitly deleting rows), removes from in-memory `entry.architects`, deletes `architect` row and `terminal_sessions` row
+- [ ] `packages/dashboard/src/hooks/useTabs.ts:52` — `closable: name !== 'main'` (only `main` is non-closable; siblings always have close buttons. At N=1 main is the only architect, so it's non-closable by name anyway. Defensive `architects.length > 1` guard is unnecessary because main-by-name is sufficient)
+- [ ] `packages/dashboard/src/components/ArchitectTabStrip.tsx` — **add close-button rendering** (per Claude iter-1 finding). Today the component renders only `<span className="tab-label">{tab.label}</span>` and has no close button at all, unlike `TabBar.tsx:48-64` which conditionally renders `&times;` when `tab.closable === true`. Add a matching conditional close-button render: `{tab.closable && (<span className="tab-close" onClick={...}>×</span>)}`. The click handler invokes the confirmation modal (next deliverable below) rather than directly calling remove. Without this addition, setting `closable: true` on the tab object would have no visible effect — flagged by Claude iter-1 as a gap in the original plan
 - [ ] `useTabs.ts:buildArchitectTabs` — when `architects.length === 1`, the single architect's tab label is `'Architect'` (restoring pre-#762 behaviour, **folds #764**); when `architects.length > 1`, use `name`
 - [ ] Dashboard click handler for the close-X opens a confirmation modal: "Remove architect `<name>`?" with informational text about in-flight builders (count + names if any). Confirm → calls `removeArchitect` RPC
 - [ ] `useTabs` active-tab fallback: explicit logic — if `activeTabId === <removed-architect-tab-id>`, set `activeTabId` to `'architect'` (main's tab id per Spec 761's first-architect-is-bare design). The existing fallback at `:194` goes to `tabs[0]` which is `'work'` — that's wrong; new code is needed
 - [ ] `main` tab has no close button (already handled by `closable: false` on its tab object)
 
 #### Implementation Details
-- **CLI**: model after `workspace-add-architect.ts`. Same arg parsing (`<name>`), client construction, error handling.
-- **RPC + route**: model after `addArchitect` RPC. JSON-RPC envelope `{ method: 'workspace.removeArchitect', params: { workspacePath, name } }`. Returns `{ ok: true }` or `{ ok: false, error: '...' }`.
+- **CLI**: model after `workspace-add-architect.ts`. Same arg parsing (`<name>`), client construction, error handling. `cli.ts` registration mirrors lines 108-114 (the `add-architect` subcommand block).
+- **Client + route (REST)**: Tower uses REST endpoints, not JSON-RPC. Model after `addArchitect` at `tower-client.ts:201-230` (`POST /api/workspaces/:encoded/architects`). For remove, use `DELETE /api/workspaces/:encoded/architects/:name` — REST-idiomatic and avoids needing a request body. Returns `{ success: boolean; error?: string }`.
 - **Tower handler**:
   ```
   if (name === 'main') return { ok: false, error: 'Cannot remove main architect' };
@@ -266,10 +279,12 @@ Revert the commit. The CLI command, RPC, dashboard modal, and useTabs changes ar
 - Confirm or pin the Tower /status API contract (extend existing shape vs. new `/architects` endpoint).
 
 #### Deliverables
-- [ ] `tower-terminals.ts:928-940` — replace the single-entry emission with `for (const [name, terminalId] of freshEntry.architects) { terminals.push({ type: 'architect', id: name === firstName ? 'architect' : `architect:${name}`, label: name, url: `${proxyUrl}?tab=${name === firstName ? 'architect' : `architect:${name}`}`, active: true }) }` (preserves Spec 761's first-architect-is-bare-id convention)
-- [ ] **Tower /status API contract decision**: the per-architect terminal entries above expose `type/id/label/url/active` — sufficient for dashboard, but `afx status` needs PID + port. Add per-architect fields (`pid`, `port`) directly to the terminal entries when type is `architect`, OR add a sibling `/architects` endpoint. Plan recommends extending the terminal entry (smaller change, single round-trip)
-- [ ] `state.ts:loadState()` — return all architects as a collection (`architects: ArchitectState[]`), keeping the existing scalar `architect` shim for legacy callers but no longer using it as the only source
-- [ ] `packages/codev/src/agent-farm/commands/status.ts:86-92` — enumerate `state.architects` rather than reading `state.architect`. Tower-up mode reads from Tower API; Tower-down mode reads from `state.db.architect` via the updated `loadState`. Show name + terminal_id always; show PID + port when Tower is running and the API exposes them; print "Tower not running" when in fallback
+- [ ] `tower-terminals.ts:928-940` — replace the single-entry emission with `for (const [name, terminalId] of freshEntry.architects) { terminals.push({ type: 'architect', id: name === 'main' ? 'architect' : `architect:${name}`, label: name, url: `${proxyUrl}?tab=${name === 'main' ? 'architect' : `architect:${name}`}`, active: true, architectName: name, pid: <from PtySession>, port: <if any> }) }` (preserves Spec 761's first-architect-is-bare-id convention; main is always first per Phase 3's pinned ordering)
+- [ ] **Tower /status API contract — extend terminal entries** (per Gemini iter-1 endorsement; avoids N+1 vs a separate `/architects` endpoint). Add optional `architectName?: string; pid?: number; port?: number` fields to terminal entries when `type === 'architect'`. Existing clients ignore unknown fields. Document the addition in `arch.md` (Phase 7)
+- [ ] `packages/types/src/api.ts` (if shared types live there) and `packages/core/src/tower-client.ts` — extend `TowerWorkspaceStatus` / terminal-entry type with the new optional fields (per Codex iter-1 finding — missed in iter-1 plan)
+- [ ] `packages/codev/src/agent-farm/types.ts` — extend the local `State` type with an `architects: ArchitectState[]` collection field (per Codex iter-1 finding — required for `loadState()` collection-aware result; keep the scalar `architect` field for legacy callers, populate it from `architects[0]` for backward-compat)
+- [ ] `state.ts:loadState()` — populate the new `architects` collection from `SELECT * FROM architect`, sorted by `id === 'main' DESC` then by `started_at ASC` so `main` is always `architects[0]`. Keep the existing scalar `architect` shim pointing at `architects[0]`
+- [ ] `packages/codev/src/agent-farm/commands/status.ts:86-92` — enumerate `state.architects` rather than reading `state.architect`. Tower-up mode reads from Tower API (using new `architectName/pid/port` fields); Tower-down mode reads from `state.db.architect` via the updated `loadState`. Show name + terminal_id always; show PID + port when Tower is running and the API exposes them; print "Tower not running" when in fallback
 - [ ] Tests for each change
 
 #### Implementation Details
@@ -287,12 +302,13 @@ Revert the commit. The CLI command, RPC, dashboard modal, and useTabs changes ar
 
 #### Test Plan
 - **Unit Tests**:
-  - `tower-terminals.test.ts` — assert per-architect emission for N=1, N=2, N=3; assert id/url scheme
+  - `tower-terminals.test.ts` — assert per-architect emission for N=1, N=2, N=3; assert id/url scheme (main → bare `architect`; siblings → `architect:<name>`)
   - `status-naming.test.ts` (existing) — extend to cover sibling enumeration in both modes
-  - `state.test.ts` — `loadState` returns collection
-- **Integration Tests**:
-  - Live: add 3 architects, run `afx status`, assert output matches expected
-  - Same, after `afx tower stop` (fallback mode)
+  - `state.test.ts` — `loadState` returns collection with `main` first
+- **Integration Tests** (automated, per Codex iter-1 Co4):
+  - Live: add 3 architects, run `afx status`, assert output matches expected (lists all 3 by name + PID + port + terminal_id)
+  - Same, after `afx tower stop` (fallback mode) — should list all 3 by name + cmd, omit PID/port, note "Tower not running"
+  - **Architect-to-architect routing (automated)**: add sibling `ob-refine`. From `main`'s PTY, send a message with target address `architect:ob-refine`. Assert the message is delivered to ob-refine's PTY (via the PTY's input buffer or output assertion). Reverse: from ob-refine's PTY, send to `architect:main`. Assert it lands on main. (Codex iter-1 specifically asked for this to be automated, not just manual.)
 - **Manual Testing**: verify `afx status` output by eye in a real workspace
 
 #### Rollback Strategy
@@ -319,8 +335,9 @@ Revert the commit. The Tower API extension is additive (new optional fields); ro
 - [ ] `packages/vscode/src/views/workspace.ts:getChildren` — replace the single architect TreeItem with an expandable "Architects" collapsible TreeItem; its `getChildren` fetches the architects list from Tower's API (per Phase 5's per-architect emission) and emits one TreeItem per architect
 - [ ] Each architect TreeItem has `command: { command: 'codev.openArchitectTerminal', arguments: [name] }`
 - [ ] `packages/vscode/src/terminal-manager.ts` — replace singleton `'architect'` key (at `:96, :116, :333`) with per-name keys (e.g. `architect:<name>`). `openArchitectTerminal(name)` looks up by `architect:${name}`; `injectArchitectText(name, text)` similarly
-- [ ] `packages/vscode/src/extension.ts` — register the parameterised `codev.openArchitectTerminal` command accepting `(name: string)` and routing to terminal-manager
-- [ ] Right-click context menu: add "Remove Architect" action on architect TreeItem with `contextValue: 'workspace-architect-sibling'`; main's TreeItem uses `contextValue: 'workspace-architect-main'` (no remove menu). The remove action calls the same `removeArchitect` RPC from Phase 4
+- [ ] `packages/vscode/src/extension.ts` — register the parameterised `codev.openArchitectTerminal` command accepting `(name: string)` and routing to terminal-manager. Also register new `codev.removeArchitect` command accepting `(name: string)` that invokes the REST endpoint from Phase 4
+- [ ] `packages/vscode/package.json` (per Codex iter-1 finding — missed in iter-1 plan): contribute the new `codev.removeArchitect` command in `contributes.commands`, and add a `menus['view/item/context']` entry that exposes the command on `viewItem == workspace-architect-sibling` only. Update the existing `codev.openArchitectTerminal` command contribution to accept an argument
+- [ ] Right-click context menu: add "Remove Architect" action on architect TreeItem with `contextValue: 'workspace-architect-sibling'`; main's TreeItem uses `contextValue: 'workspace-architect-main'` (no remove menu). The remove action calls the new `codev.removeArchitect` command which invokes the REST endpoint from Phase 4
 - [ ] `codev.referenceIssueInArchitect` — always injects to `main`. Document this decision in the code comment
 - [ ] When a sibling is removed while its VSCode terminal is open, the existing PTY exit-handling path closes the terminal gracefully (per spec MUST). No additional code needed; verify in test
 
@@ -468,7 +485,18 @@ Phase 1 and Phase 2 are independent and could be done in parallel; the plan list
 - [ ] After merge: verify-phase execution on a real workspace (the manual round-trip and all spec test scenarios)
 
 ## Expert Review
-_Pending. Plan phase will run CMAP after this draft is committed._
+
+**Iter-1 CMAP (2026-05-22)**:
+- **Gemini**: APPROVE. Endorsed three implementation choices: VSCode right-click context menu for remove, Tower `/status` extension over a sibling endpoint, and `clearState` split via new `clearRuntime()` function. No key issues.
+- **Codex**: REQUEST_CHANGES, all addressed in iter-2:
+  1. Phase 3 `launchInstance` seam — `addArchitect()` rejects when N=0, so plan now pins explicit ordering: create `main` first via the existing in-line code, then iterate persisted siblings and call `addArchitect()` once `main` exists.
+  2. Transport correction — REST routes (`DELETE /api/workspaces/:encoded/architects/:name`), not JSON-RPC envelopes. Plan now describes the actual route shape.
+  3. Missing file deliverables added: `cli.ts` registration, `packages/codev/src/agent-farm/types.ts` `architects` field, `packages/types/src/api.ts` + `packages/core/src/tower-client.ts` status-response type updates, VSCode `package.json` command + menu contribution.
+  4. Automated test coverage added explicitly for: architect-to-architect routing, Tower stop+start (distinct from workspace stop+start), crash recovery regression, non-functional timing assertions (<2s rebind, <100ms persistence). Previously some were manual-only.
+- **Claude**: COMMENT, all addressed in iter-2:
+  1. `ArchitectTabStrip.tsx` needs explicit close-button rendering — added to Phase 4 deliverables (component currently has no X render at all, unlike `TabBar.tsx:48-64`).
+  2. Intentional-stop flag cross-module access — plan now pins exported-getter pattern from `tower-instances.ts` consumed by `tower-terminals.ts`.
+  3. Phase 5 `main`-first ordering pinned in Phase 3's reconciliation loop (create `main` first, then siblings) — this also satisfies Spec 761's `architectTabId` bare-id convention.
 
 ## Approval
 - [ ] Architect Review (plan-approval gate)
