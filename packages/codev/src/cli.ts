@@ -176,7 +176,7 @@ program
   .option('--protocol <name>', 'Protocol name: spir, aspir, air, bugfix, pir, maintain')
   .option('-t, --type <type>', 'Review type: spec, plan, impl, pr, phase, integration')
   .option('--issue <number>', 'Issue number (required from architect context)')
-  .option('--branch <ref>', 'Read spec/plan from this git ref instead of the local workspace (e.g. `origin/builder/777-foo` or `builder/777-foo`). Defaults to the PR\'s head branch when --issue resolves to a PR.')
+  .option('--branch <ref>', 'Read spec/plan artifacts from this git ref instead of the local workspace (e.g. `origin/builder/777-foo` or `builder/777-foo`). Defaults to the PR\'s head branch when --issue resolves to a PR. Note: this only changes the artifact source — for --type impl, the diff scope is always the PR\'s head→base, not the --branch ref.')
   .option('--output <path>', 'Write consultation output to file (used by porch)')
   .option('--plan-phase <phase>', 'Scope review to a specific plan phase (used by porch)')
   .option('--context <path>', 'Context file with previous iteration feedback (used by porch)')

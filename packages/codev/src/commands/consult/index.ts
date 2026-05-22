@@ -1189,13 +1189,19 @@ function findPRForCurrentBranch(workspaceRoot: string): string {
 
 /**
  * Find PR number for a given issue number (architect mode) via pr-search forge concept.
+ *
+ * Returns the PR's `baseRefName` alongside `headRefName` so the architect-mode
+ * impl path can compute the merge-base against the PR's *actual* base, not the
+ * repo's default branch. This matters when the PR targets a non-default
+ * integration branch — same #777 false-positive class as Layer 1, one layer
+ * deeper. Found by cmap-3 review.
  */
-function findPRForIssue(workspaceRoot: string, issueId: string): { number: number; headRefName: string } {
+function findPRForIssue(workspaceRoot: string, issueId: string): { number: number; headRefName: string; baseRefName: string } {
   const result = executeForgeCommandSync('pr-search', {
     CODEV_SEARCH_QUERY: issueId,
   }, { cwd: workspaceRoot });
 
-  const prs = Array.isArray(result) ? result as Array<{ number: number; headRefName: string }> : [];
+  const prs = Array.isArray(result) ? result as Array<{ number: number; headRefName: string; baseRefName: string }> : [];
   if (prs.length === 0 || !prs[0]?.number) {
     throw new Error(`No PR found for issue #${issueId}`);
   }
@@ -1353,36 +1359,65 @@ function resolveArchitectQuery(workspaceRoot: string, type: string, options: Con
 
     case 'impl': {
       const pr = findPRForIssue(workspaceRoot, issueId);
-      // Fetch the branch and diff from merge-base
+      // Fetch both the PR head and its base so merge-base + diff have local
+      // refs to work with. Head fetch failures are non-fatal (may already be
+      // fetched); base fetch failures are also non-fatal because the base
+      // tracking ref usually exists already.
       try {
         execSync(`git fetch origin ${pr.headRefName}`, { cwd: workspaceRoot, stdio: 'pipe' });
-      } catch {
-        // May already be fetched
-      }
-      const defaultBranch = resolveDefaultBranch(workspaceRoot);
-      let diffRef: string | undefined;
+      } catch { /* may already be fetched */ }
+      try {
+        execSync(`git fetch origin ${pr.baseRefName}`, { cwd: workspaceRoot, stdio: 'pipe' });
+      } catch { /* may already be fetched */ }
+
+      // Use the PR's actual base (not the repo's default branch) as the
+      // merge-base counterparty. cmap-3 finding: when a PR targets a
+      // non-default integration branch, defaultBranch was the wrong anchor
+      // and produced phantom scope-creep verdicts of the same shape as the
+      // hardcoded-`main` bug — one layer deeper.
+      let diffRef: string;
       try {
         const mergeBase = execSync(
-          `git merge-base ${defaultBranch} origin/${pr.headRefName}`,
+          `git merge-base origin/${pr.baseRefName} origin/${pr.headRefName}`,
           { cwd: workspaceRoot, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] },
         ).trim();
         // Three-dot is the canonical PR-diff semantics (symmetric difference,
-        // anchored at the merge-base). Semantically equivalent to two-dot when
-        // the LHS is already the merge-base SHA, but disambiguates in code review
-        // and stays correct if the LHS shape ever changes.
+        // anchored at the merge-base). Equivalent to two-dot when the LHS is
+        // already the merge-base SHA, but disambiguates intent.
         diffRef = `${mergeBase}...origin/${pr.headRefName}`;
       } catch {
-        // Merge-base lookup failed (dangling origin/HEAD, default branch not
-        // locally present, etc.). Let buildImplQuery hit its empty-changedFiles
-        // fallback rather than crashing the whole command.
+        // Explicit merge-base failed (e.g. base ref not fetched, no common
+        // history). Fall back to three-dot against the base ref directly,
+        // which lets git compute the merge-base inline.
+        try {
+          execSync(
+            `git rev-parse --verify origin/${pr.baseRefName}`,
+            { cwd: workspaceRoot, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] },
+          );
+          diffRef = `origin/${pr.baseRefName}...origin/${pr.headRefName}`;
+        } catch (err) {
+          // Both attempts failed — degrading silently would let reviewers
+          // emit verdicts against the architect's local checkout (typically
+          // the integration branch), producing bogus APPROVE/REQUEST_CHANGES
+          // verdicts on the wrong code. Crash explicitly instead.
+          // cmap-3 finding (Gemini).
+          throw new Error(
+            `Cannot compute diff scope for PR #${pr.number} (${pr.headRefName} → ${pr.baseRefName}). ` +
+            `Ensure both refs are fetched: \`git fetch origin ${pr.baseRefName} ${pr.headRefName}\`. ` +
+            `Underlying error: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
+
       // Read spec/plan from the PR's branch by default so they match the
-      // diff source (#777 Defect A). --branch overrides the PR default.
+      // diff source (#777 Defect A). --branch overrides the PR default; the
+      // diff scope itself is always the PR's head→base (--branch does not
+      // change diff scope, only artifact source — cmap-3 finding).
       const ref = options.branch ?? `origin/${pr.headRefName}`;
       const resolver = new GitRefResolver(workspaceRoot, ref);
       const spec = findSpecContent(workspaceRoot, issueId, resolver);
       const plan = findPlanContent(workspaceRoot, issueId, resolver);
-      console.error(`Project: ${issueId} (PR #${pr.number}, branch: ${pr.headRefName})`);
+      console.error(`Project: ${issueId} (PR #${pr.number}, ${pr.headRefName} → ${pr.baseRefName})`);
       console.error(`Source: ${ref}`);
       if (spec) console.error(`Spec: ${spec.label}`);
       if (plan) console.error(`Plan: ${plan.label}`);
