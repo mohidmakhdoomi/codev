@@ -1360,15 +1360,22 @@ function resolveArchitectQuery(workspaceRoot: string, type: string, options: Con
     case 'impl': {
       const pr = findPRForIssue(workspaceRoot, issueId);
       // Fetch both the PR head and its base so merge-base + diff have local
-      // refs to work with. Head fetch failures are non-fatal (may already be
-      // fetched); base fetch failures are also non-fatal because the base
-      // tracking ref usually exists already.
-      try {
-        execSync(`git fetch origin ${pr.headRefName}`, { cwd: workspaceRoot, stdio: 'pipe' });
-      } catch { /* may already be fetched */ }
-      try {
-        execSync(`git fetch origin ${pr.baseRefName}`, { cwd: workspaceRoot, stdio: 'pipe' });
-      } catch { /* may already be fetched */ }
+      // refs to work with. Fetch failures are non-fatal in the
+      // already-cached case, but auth/network failures can leave us with
+      // stale local tracking refs — surface them so the architect knows the
+      // diff may be misleading.
+      for (const ref of [pr.headRefName, pr.baseRefName]) {
+        try {
+          execSync(`git fetch origin ${ref}`, { cwd: workspaceRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+        } catch (err) {
+          const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr).trim() : '';
+          console.error(
+            `Warning: \`git fetch origin ${ref}\` failed; proceeding with any locally-cached copy. ` +
+            `Stale refs may produce misleading diffs.` +
+            (stderr ? ` Underlying: ${stderr}` : '')
+          );
+        }
+      }
 
       // Use the PR's actual base (not the repo's default branch) as the
       // merge-base counterparty. cmap-3 finding: when a PR targets a

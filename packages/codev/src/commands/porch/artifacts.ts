@@ -387,10 +387,17 @@ export class GitRefResolver implements ArtifactResolver {
           cwd: workspaceRoot,
           stdio: ['ignore', 'pipe', 'pipe'],
         });
-      } catch {
-        // Ref may already be fetched, the remote may be unreachable, or the
-        // branch may not exist remotely — the subsequent `git show` will
-        // surface the real failure.
+      } catch (err) {
+        // Distinguish "already fetched / offline with cached copy" (silently
+        // OK) from "fetch actually failed for an unexpected reason" (visible).
+        // The subsequent `git show` surfaces missing-ref failures, but it
+        // can't tell stale-vs-fresh apart — that's what this warning is for.
+        const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr).trim() : '';
+        console.error(
+          `Warning: \`git fetch origin ${branch}\` failed; reading ${ref} from any locally-cached copy. ` +
+          `Stale refs may produce misleading reviews.` +
+          (stderr ? ` Underlying: ${stderr}` : '')
+        );
       }
     }
   }
