@@ -2,7 +2,7 @@
 
 ## Metadata
 - **ID**: spec-2026-05-20-786-multi-architect-feature
-- **Status**: draft (iter-7 — post iter-5 Codex CMAP COMMENT; convergence reached, ready for spec-approval gate)
+- **Status**: approved (iter-8 — spec-approval gate passed 2026-05-22; #764 scope folded in)
 - **Created**: 2026-05-20
 - **GitHub Issue**: [#786](https://github.com/cluesmith/codev/issues/786)
 - **Predecessors**: #755 (v3.0.5 primitive), #761 (v3.0.6 dashboard tabs), #774 (v3.0.8 routing fix)
@@ -67,6 +67,9 @@ Result: an external adopter (Shannon) running the feature in production with rec
 - **Renaming architects after add.** File as a separate ticket if wanted; not part of #786.
 - **Generic right-pane close affordance redesign.** Right-pane tabs (builders, shells, files) already render close buttons via `closable: true` + `TabBar.tsx`. The issue body's claim that "right-pane terminals also lack a close button" doesn't match current code; this spec only adds the close button to architect tabs.
 
+### Now in scope (added 2026-05-22 by architect)
+- **#764 mobile-solo-architect tab label fix.** Folded in by architect direction at spec-approval gate because it touches `useTabs.ts:buildArchitectTabs` — the same surface as the close-button affordance work. Documented as a MUST in Success Criteria above. Ships in the same plan phase as the close-button work, not as a separate phase.
+
 ## Desired State
 
 A user can add, manage, evict, and recover sibling architects with the same fluency they have with builders. Concretely:
@@ -95,6 +98,7 @@ A user can add, manage, evict, and recover sibling architects with the same flue
 - [ ] `launchInstance` correctly boots `main` even when sibling rows already exist (i.e. don't gate `main` creation on `entry.architects.size === 0` after this change — that pre-condition becomes unsafe once siblings can be loaded via reconciliation before `main` is created). Concretely: ensure `main` is always present after `launchInstance` returns success. **Note**: `main`'s local registration in `state.db.architect` MAY persist across stop/start for symmetry with siblings, but its runtime PTY session is always recreated on each `launchInstance` (it's not "restored" the way siblings are — `main` is the workspace's default architect and always boots fresh per current `launchInstance` semantics). This split (persistent registration row vs ephemeral runtime session) applies symmetrically to siblings as the spec requires.
 - [ ] **Identity preservation across shellper auto-restart.** `tower-terminals.ts` reconciliation builds `restartOptions.env` with `CODEV_ARCHITECT_NAME: <name>` for every architect (where `<name>` comes from `dbSession.role_id`). When a sibling's claude process dies and shellper restarts it, the new process spawns with the correct architect name in env.
 - [ ] Sibling-architect tabs in the dashboard's `ArchitectTabStrip` carry a close affordance that triggers `remove-architect`. `main`'s tab has no close button.
+- [ ] **Mobile-solo-architect tab label restored to `'Architect'` when N=1 (folds #764).** `buildArchitectTabs()` in `useTabs.ts` should label the architect tab `'Architect'` when `architects.length === 1` (the pre-#762 behaviour that was inadvertently changed when the function started using the per-architect `name` unconditionally) and use the architect name when N>1. Both branches asserted in tests. This is a small, ~5-line change to `useTabs.ts:buildArchitectTabs` plus one new test case; the architect requested it be folded into #786 since it touches the same surface as the close-button affordance work.
 - [ ] `afx status` enumerates ALL registered architects when Tower is running, showing **at minimum: architect name and terminal ID**. PID and port are shown when available from Tower's in-memory `PtySession` (the architect-row's stored `pid`/`port` are 0 — `setArchitect()` / `setArchitectByName()` persist literal `0` per `state.ts:79, :103` — so PID/port enumeration requires Tower's live data, not state.db). In Tower-down (fallback) mode, `afx status` enumerates by name and `cmd` only; PID/port are omitted with a note ("Tower not running"). The v1 collapse logic at `tower-terminals.ts:928-940` is replaced with per-architect emission. **The Tower-side API contract must be updated to surface architect name/PID/port:** the current `/status` terminal-list entries expose only `type/id/label/url/active`, so the plan must either extend that response shape with per-architect fields or introduce a sibling endpoint (e.g. `/architects`) returning name/PID/port/terminal_id. Plan phase pins the shape.
 - [ ] VSCode extension Workspace sidebar exposes an expandable "Architects" tree section containing one entry per architect (per OQ-D). The section is present at N=1 (showing just `main`) and expands to show siblings when added.
 - [ ] **VSCode click behaviour and terminal-slot model**: Clicking a child entry (e.g. `main` or a sibling name) opens that architect's terminal in the VSCode editor area. Each architect gets its own VSCode terminal slot keyed by architect name — `terminal-manager.ts` must replace its singleton `'architect'` key (used at `:96, :116, :333` today) with per-name keys (e.g. `architect:<name>`). Opening the same architect twice reuses the existing terminal; opening a different architect creates (or focuses) its own terminal. The existing `codev.openArchitectTerminal` command is extended (or replaced with a parameterised variant) to accept the architect name as an argument; the tree-item `command.arguments` carries the name. **When a sibling architect is removed while its VSCode terminal tab is open, the tab degrades to a "session ended" state via the existing PTY exit-handling path** (acceptable graceful degradation — VSCode shows the closed terminal with its last output; the user can close the tab manually). The remove action does NOT force-close the VSCode tab.
@@ -319,7 +323,7 @@ When a sibling is removed, the dashboard's active-tab state must not be left poi
 Architect resolutions for the four blocking OQs were applied in iter-3 and remain valid after iter-2 CMAP. Iter-3 work integrated into iter-4 with iter-2 CMAP corrections.
 
 ## Approval
-- [ ] Architect Review (spec-approval gate)
+- [x] Architect Review (spec-approval gate, approved 2026-05-22)
 - [x] Expert AI Consultation iter-1 complete
 - [x] Expert AI Consultation iter-2 complete (Gemini & Claude APPROVE; Codex REQUEST_CHANGES addressed)
 - [x] Expert AI Consultation iter-3 complete (Gemini & Claude APPROVE; Codex narrower REQUEST_CHANGES addressed in iter-5)
