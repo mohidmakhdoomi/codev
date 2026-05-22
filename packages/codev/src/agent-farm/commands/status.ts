@@ -66,7 +66,12 @@ export async function status(): Promise<void> {
             const name = term.architectName || term.label;
             const pid = term.pid ? `pid=${term.pid}` : 'pid=?';
             const port = term.port ? ` port=${term.port}` : '';
-            const termId = ` terminal=${term.id}`;
+            // Spec 786 Phase 5: prefer `terminalId` (the actual PtySession id)
+            // over `id` (the Spec 761 tab identifier, e.g. `architect` or
+            // `architect:<name>`). Falls back to `id` for older Tower versions
+            // that haven't shipped the Phase 5 extension yet.
+            const termIdValue = term.terminalId ?? term.id;
+            const termId = ` terminal=${termIdValue}`;
             logger.info(`  ${chalk.cyan(name)} (${pid}${port}${termId})`);
           }
         }

@@ -80,6 +80,15 @@ export interface TerminalEntry {
    * Spec 786 Phase 5: port assigned to the architect terminal, if any.
    */
   port?: number;
+  /**
+   * Spec 786 Phase 5: the actual PtySession id backing this terminal. For
+   * builders/shells the `id` field already IS the session id; for architects
+   * the `id` field carries the tab identifier (`'architect'` or
+   * `'architect:<name>'`) per Spec 761's deep-link convention, so the
+   * underlying session id is exposed separately here. `afx status` displays
+   * this so users can correlate architect entries with terminal-attach flows.
+   */
+  terminalId?: string;
 }
 
 /** Instance status returned to tower UI */

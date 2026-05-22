@@ -887,9 +887,11 @@ export async function getTerminalsForWorkspace(
     if (dbSession.type === 'architect') {
       // Spec 755: role_id stores the architect's name; v13 backfill ensures
       // legacy null role_ids become 'main' before this point. We register
-      // every named architect into freshEntry.architects, but emit only one
-      // Architect terminal entry (after the loop) — the v1 UI contract keeps
-      // a single architect tab. Multi-architect UI is deferred to issue #2.
+      // every named architect into freshEntry.architects; the actual emission
+      // of one terminal entry per architect (with tab id `architect` for main
+      // and `architect:<name>` for siblings) happens in the dedicated loop
+      // after this main pass (Spec 786 Phase 5 — replaces the Spec 755 v1
+      // single-entry collapse).
       const architectName = dbSession.role_id || 'main';
       freshEntry.architects.set(architectName, dbSession.id);
     } else if (dbSession.type === 'builder') {
@@ -989,6 +991,10 @@ export async function getTerminalsForWorkspace(
       pid: session.pid || undefined,
       // No port assigned to architect terminals today; preserved as an extension
       // point for future per-architect HTTP surfaces.
+      // Spec 786 Phase 5: the actual PtySession id (the `id` above is the tab
+      // id per Spec 761). Surfaced so `afx status` can show terminal-attach-
+      // ready identifiers.
+      terminalId,
     });
   }
 

@@ -58,6 +58,15 @@ export interface TowerWorkspaceStatus {
      * Same Tower-only constraint as `pid`.
      */
     port?: number;
+    /**
+     * Spec 786 Phase 5: the actual PtySession id. The `id` field above
+     * carries the tab identifier (`'architect'` or `'architect:<name>'`) per
+     * Spec 761's deep-link convention; this field exposes the underlying
+     * session id so consumers like `afx status` can show it for terminal-
+     * attach correlation. Optional for backward compat with older clients
+     * that only emit `id`.
+     */
+    terminalId?: string;
   }>;
 }
 

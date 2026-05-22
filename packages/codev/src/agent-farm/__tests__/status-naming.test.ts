@@ -116,3 +116,140 @@ describe('afx status naming display (Phase 4)', () => {
     expect(builderRows.length).toBe(0);
   });
 });
+
+// ============================================================================
+// Spec 786 Phase 5 — Architect enumeration in `afx status`
+// ============================================================================
+//
+// The Spec 755 v1 display showed a single "Architect" line. Spec 786 Phase 5
+// surfaces ALL registered architects. In Tower-running mode, names/PIDs come
+// from the `TowerWorkspaceStatus.terminals[]` entries (with the new
+// architectName/pid/port/terminalId fields). In Tower-down mode, names/cmds
+// come from `state.architects` (loadState now populates the collection).
+
+describe('afx status — Spec 786 Phase 5 architect enumeration', () => {
+  const mockLoggerInfo = vi.fn();
+  const mockLoggerKv = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLoggerInfo.mockReset();
+    mockLoggerKv.mockReset();
+  });
+
+  describe('Tower-running mode', () => {
+    beforeEach(async () => {
+      mockIsRunning.mockResolvedValue(true);
+      mockGetHealth.mockResolvedValue({ uptime: 100, activeWorkspaces: 1, memoryUsage: 1024 * 1024 });
+    });
+
+    it('lists all registered architects with name + PID + terminal id', async () => {
+      mockGetWorkspaceStatus.mockResolvedValue({
+        name: 'project',
+        active: true,
+        terminals: [
+          { type: 'architect', id: 'architect', label: 'main', url: '', active: true,
+            architectName: 'main', pid: 1234, terminalId: 'sess-main-uuid' },
+          { type: 'architect', id: 'architect:ob-refine', label: 'ob-refine', url: '', active: true,
+            architectName: 'ob-refine', pid: 5678, terminalId: 'sess-ob-uuid' },
+          { type: 'builder', id: 'b1', label: 'b1', url: '', active: true },
+        ],
+      });
+
+      // Re-import logger mock with .info capture for this test block.
+      const { logger } = await import('../utils/logger.js');
+      (logger as any).info = mockLoggerInfo;
+
+      await status();
+
+      const lines = mockLoggerInfo.mock.calls.map(c => String(c[0]));
+      // Architects section header.
+      expect(lines.some(l => l === 'Architects:')).toBe(true);
+      // Both architects listed by name with PID and terminal id (the
+      // session id, not the tab id).
+      const mainLine = lines.find(l => l.includes('main') && l.includes('pid=1234'));
+      expect(mainLine).toBeDefined();
+      expect(mainLine).toContain('terminal=sess-main-uuid');
+      const obLine = lines.find(l => l.includes('ob-refine') && l.includes('pid=5678'));
+      expect(obLine).toBeDefined();
+      expect(obLine).toContain('terminal=sess-ob-uuid');
+    });
+
+    it('falls back to tab id when terminalId is absent (older Tower)', async () => {
+      mockGetWorkspaceStatus.mockResolvedValue({
+        name: 'project',
+        active: true,
+        terminals: [
+          { type: 'architect', id: 'architect', label: 'main', url: '', active: true,
+            architectName: 'main', pid: 1234 /* no terminalId */ },
+        ],
+      });
+
+      const { logger } = await import('../utils/logger.js');
+      (logger as any).info = mockLoggerInfo;
+
+      await status();
+
+      const lines = mockLoggerInfo.mock.calls.map(c => String(c[0]));
+      // Falls back to `term.id` for terminal=… when terminalId is undefined.
+      expect(lines.some(l => l.includes('terminal=architect'))).toBe(true);
+    });
+  });
+
+  describe('Tower-down fallback mode', () => {
+    beforeEach(() => {
+      mockIsRunning.mockResolvedValue(false);
+    });
+
+    it('lists all architects from state.db with name + cmd; notes "Tower not running"', async () => {
+      mockLoadState.mockReturnValue({
+        architect: { name: 'main', cmd: 'claude', startedAt: '2026-05-22T10:00:00Z', terminalId: 'term-1' },
+        architects: [
+          { name: 'main', cmd: 'claude', startedAt: '2026-05-22T10:00:00Z', terminalId: 'term-1' },
+          { name: 'ob-refine', cmd: 'claude --resume', startedAt: '2026-05-22T11:00:00Z', terminalId: 'term-2' },
+        ],
+        builders: [],
+        utils: [],
+        annotations: [],
+      });
+
+      const { logger } = await import('../utils/logger.js');
+      (logger as any).info = mockLoggerInfo;
+      (logger as any).kv = mockLoggerKv;
+
+      await status();
+
+      // The "Architects" kv row reports the count.
+      const archKv = mockLoggerKv.mock.calls.find(c => c[0] === 'Architects');
+      expect(archKv).toBeDefined();
+      // The "Tower not running" note is emitted.
+      const lines = mockLoggerInfo.mock.calls.map(c => String(c[0]));
+      expect(lines.some(l => l.includes('Tower not running'))).toBe(true);
+      // Both architects listed with cmd.
+      const mainLine = lines.find(l => l.includes('main') && l.includes('claude'));
+      expect(mainLine).toBeDefined();
+      const obLine = lines.find(l => l.includes('ob-refine') && l.includes('claude --resume'));
+      expect(obLine).toBeDefined();
+    });
+
+    it('shows "none registered" when state.architects is empty', async () => {
+      mockLoadState.mockReturnValue({
+        architect: null,
+        architects: [],
+        builders: [],
+        utils: [],
+        annotations: [],
+      });
+
+      const { logger } = await import('../utils/logger.js');
+      (logger as any).kv = mockLoggerKv;
+
+      await status();
+
+      const archKv = mockLoggerKv.mock.calls.find(c => c[0] === 'Architects');
+      expect(archKv).toBeDefined();
+      // Value (second arg) contains "none registered".
+      expect(String(archKv![1])).toMatch(/none registered/);
+    });
+  });
+});
