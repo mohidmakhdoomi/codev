@@ -97,13 +97,27 @@ export class TerminalManager {
    * `'architect'` key meant clicking different architects in the sidebar
    * routed to the same terminal — now each gets its own. Opening the same
    * architect twice reuses its existing slot.
+   *
+   * Spec 786 PR iter-1 review fix: if the existing terminal points at a
+   * stale Tower session id (different from the current `terminalId`), dispose
+   * it before opening a new one. This matches `openBuilder()`'s pattern and
+   * handles the `afx workspace stop`+start / Tower restart / remove+re-add
+   * scenarios where Tower issues a fresh session id for the same architect
+   * name. Without this check, the VSCode sidebar click would refocus a dead
+   * terminal instead of attaching to the live one.
    */
   async openArchitect(terminalId: string, architectName: string = 'main', focus = false): Promise<void> {
     const key = `architect:${architectName}`;
     const existing = this.terminals.get(key);
     if (existing) {
-      existing.terminal.show(!focus);
-      return;
+      if (existing.id === terminalId) {
+        existing.terminal.show(!focus);
+        return;
+      }
+      // Stale session id — dispose the dead terminal and open a fresh one.
+      existing.pty.close();
+      existing.terminal.dispose();
+      this.terminals.delete(key);
     }
     const label = architectName === 'main' ? 'Codev: Architect' : `Codev: Architect (${architectName})`;
     await this.openTerminal(terminalId, 'architect', label, key, focus);

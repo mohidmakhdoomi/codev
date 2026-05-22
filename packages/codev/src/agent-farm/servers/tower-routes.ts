@@ -2116,6 +2116,24 @@ async function handleWorkspaceTabDelete(
       terminalId = entry.architects.get(name);
       entry.architects.delete(name);
     }
+  } else if (tabId.startsWith('architect:')) {
+    // Spec 786 Phase 4 / PR iter-1 review fix: sibling architect tabs (Spec
+    // 761 ids `architect:<name>`) are closable from the mobile TabBar, which
+    // dispatches `DELETE /api/tabs/<tabId>`. Route the sibling close through
+    // `removeArchitect()` so the full lifecycle (kills PTY, deletes state.db
+    // row, suppresses cascaded delete via intentional-stop flag) runs the
+    // same way as the desktop close button + CLI.
+    const name = tabId.slice('architect:'.length);
+    const result = await removeArchitect(workspacePath, name);
+    if (result.success) {
+      res.writeHead(204);
+      res.end();
+    } else {
+      const status = result.error?.includes('not found') || result.error?.includes('not running') ? 404 : 400;
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: result.error }));
+    }
+    return;
   }
 
   if (terminalId) {
