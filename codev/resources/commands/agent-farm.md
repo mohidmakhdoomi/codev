@@ -257,7 +257,7 @@ Spec 786 Phase 3 added graceful-restart persistence for sibling architects:
 - **`afx workspace stop` → `afx workspace start`**: sibling architects survive. Tower's `stopInstance` marks the workspace as "intentionally stopping" so the cascaded exit handlers skip deleting `state.db.architect` rows. On next start, `launchInstance` creates `main` and then re-spawns persisted siblings via `addArchitect`.
 - **Tower crash**: `terminal_sessions` rows + shellper processes survive. Tower's `reconcileTerminalSessions()` reconnects on startup.
 - **Permanent exit (max-restart exhaustion, `remove-architect`)**: rows are auto-deleted from `state.db.architect` (Spec 786 OQ-B — keeps state.db an accurate mirror of reality).
-- **`afx workspace stop-all`** (or the dashboard's stop-all): full wipe, including sibling rows. Use this when you want to start over from scratch.
+- **Dashboard "Stop All"** (or `POST /workspace/<base64>/api/stop` directly): full wipe, including sibling rows. Use this when you want to start over from scratch. There is no `afx workspace stop-all` CLI today — the full-wipe path is currently API-only via the dashboard.
 
 ---
 
@@ -347,19 +347,47 @@ afx status
 
 **Description:**
 
-Displays the current state of all builders and the architect:
+Displays the current state of Tower, the registered architects (one per
+sibling — Spec 786 Phase 5 replaces the pre-786 single-row collapse), and the
+running builders.
+
+**Example output (Tower running):**
 
 ```
-┌────────┬──────────────┬─────────────┬─────────┐
-│ ID     │ Name         │ Status      │ Branch  │
-├────────┼──────────────┼─────────────┼─────────┤
-│ arch   │ Architect    │ running     │ main    │
-│ 0042   │ auth-feature │ implementing│ builder/0042-auth │
-│ 0043   │ api-refactor │ pr    │ builder/0043-api  │
-└────────┴──────────────┴─────────────┴─────────┘
+Agent Farm Status
+  Tower: running
+    Uptime: 1342s
+    Active Workspaces: 1
+    Memory: 87MB
+
+  Workspace: my-project
+    Status: active
+    Terminals: 3
+
+  Architects:
+    main      (pid=12345 terminal=sess-abc-123)
+    ob-refine (pid=12346 terminal=sess-def-456)
+
+  Terminals:
+    builder - builder-spir-0042 (active)
 ```
 
-Status values:
+**Example output (Tower not running — fallback mode):**
+
+```
+Agent Farm Status
+  Tower: not running
+  Run 'afx tower start' to start the tower daemon
+
+  Architects: 2 registered
+    (Tower not running — PID/port not available)
+    main:      cmd=claude started=2026-05-22T10:00:00Z
+    ob-refine: cmd=claude started=2026-05-22T11:00:00Z
+
+  Builders: none
+```
+
+Builder status values:
 - `spawning` - Worktree created, builder starting
 - `implementing` - Actively working
 - `blocked` - Stuck, needs architect help

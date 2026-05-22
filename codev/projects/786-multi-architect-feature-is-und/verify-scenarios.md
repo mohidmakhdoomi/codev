@@ -25,7 +25,7 @@ nobody ever ran this scenario end-to-end before tagging.
 
 - [ ] `afx workspace add-architect --name ob-refine`
 - [ ] Dashboard sidebar shows an `ob-refine` tab in the architect strip
-- [ ] Click the `ob-refine` tab — its terminal opens (or `afx open architect:ob-refine`)
+- [ ] Click the `ob-refine` tab in the dashboard — its terminal opens (Spec 761 / 786 Phase 4 strip click). Alternatively, open VSCode's Codev sidebar → expand "Architects" → click `ob-refine` (Spec 786 Phase 6). Note: `afx open` is the file-annotation command, not a terminal opener.
 - [ ] From inside `ob-refine`'s terminal, run a builder: `afx spawn 786 --task "diagnostic"`
 - [ ] Wait for the builder to come up
 - [ ] From the builder's terminal, run: `afx send architect "ping from builder"`
