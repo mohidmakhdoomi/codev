@@ -229,6 +229,36 @@ export class TowerClient {
     };
   }
 
+  /**
+   * Spec 786: remove a named sibling architect from a workspace.
+   *
+   * REST: `DELETE /api/workspaces/:encoded/architects/:name`. The name is URI-
+   * encoded in the path. `main` is rejected server-side (and validated
+   * client-side by the CLI before this call). Removing an architect with
+   * in-flight builders is permitted — those builders fall back to `main`
+   * routing via the existing `tower-messages.ts:336` chain (OQ-A).
+   */
+  async removeArchitect(
+    workspacePath: string,
+    name: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const encodedWorkspace = encodeWorkspacePath(workspacePath);
+    const encodedName = encodeURIComponent(name);
+    const result = await this.request<{ success: boolean; error?: string }>(
+      `/api/workspaces/${encodedWorkspace}/architects/${encodedName}`,
+      { method: 'DELETE' },
+    );
+
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+
+    return {
+      ok: result.data?.success ?? false,
+      error: result.data?.error,
+    };
+  }
+
   async deactivateWorkspace(
     workspacePath: string
   ): Promise<{ ok: boolean; stopped?: number[]; error?: string }> {

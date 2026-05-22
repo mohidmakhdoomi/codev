@@ -57,6 +57,7 @@ import {
   killTerminalWithShellper,
   stopInstance,
   addArchitect,
+  removeArchitect,
 } from './tower-instances.js';
 import { OverviewCache } from './overview.js';
 import { fetchIssue } from '../../lib/github.js';
@@ -230,6 +231,12 @@ export async function handleRequest(
       return await handleAddArchitect(req, res, architectsMatch);
     }
 
+    // Workspace API: DELETE /api/workspaces/:encodedPath/architects/:name (Spec 786)
+    const architectRemoveMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/architects\/([^/]+)$/);
+    if (architectRemoveMatch) {
+      return await handleRemoveArchitect(req, res, architectRemoveMatch);
+    }
+
     // Terminal-specific routes: /api/terminals/:id/* (Spec 0090 Phase 2)
     const terminalRouteMatch = url.pathname.match(/^\/api\/terminals\/([^/]+)(\/.*)?$/);
     if (terminalRouteMatch) {
@@ -338,6 +345,55 @@ async function handleAddArchitect(
   } else {
     // Distinguish "workspace not active" (404) from validation errors (400).
     const status = result.error?.includes('not running') ? 404 : 400;
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: false, error: result.error }));
+  }
+}
+
+/**
+ * DELETE /api/workspaces/:encodedPath/architects/:name (Spec 786)
+ *
+ * Removes a named sibling architect from an active workspace. Refuses to
+ * remove `main` (returns 400). Returns 404 when the workspace isn't active or
+ * the named architect isn't registered.
+ *
+ * Removing an architect with in-flight builders is allowed (per OQ-A) — the
+ * builders fall back to `main` via the existing `tower-messages.ts:336` chain.
+ */
+async function handleRemoveArchitect(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  match: RegExpMatchArray,
+): Promise<void> {
+  if (req.method !== 'DELETE') {
+    res.writeHead(405, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
+    return;
+  }
+
+  const [, encodedPath, encodedName] = match;
+  let workspacePath: string;
+  try {
+    workspacePath = decodeWorkspacePath(encodedPath);
+    if (!workspacePath || (!workspacePath.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(workspacePath))) {
+      throw new Error('Invalid path');
+    }
+    workspacePath = normalizeWorkspacePath(workspacePath);
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid workspace path encoding' }));
+    return;
+  }
+
+  const name = decodeURIComponent(encodedName);
+  const result = await removeArchitect(workspacePath, name);
+  if (result.success) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true }));
+  } else {
+    // Distinguish "not registered" / "not running" (404) from validation
+    // errors like "Cannot remove main" (400).
+    const status = result.error?.includes('not running') || result.error?.includes('not found') ? 404 : 400;
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: false, error: result.error }));
   }
@@ -1398,6 +1454,26 @@ async function handleWorkspaceRoutes(
     // POST /api/stop - Stop all terminals for workspace
     if (req.method === 'POST' && apiPath === 'stop') {
       return handleWorkspaceStopAll(res, workspacePath);
+    }
+
+    // DELETE /api/architects/:name - Remove a sibling architect (Spec 786 Phase 4)
+    // Workspace-scoped variant of /api/workspaces/:encoded/architects/:name —
+    // the workspace path comes from the /workspace/<base64>/ URL prefix already
+    // resolved above. Used by the dashboard's close-button → confirmation
+    // modal flow.
+    const archDeleteMatch = apiPath.match(/^architects\/([^/]+)$/);
+    if (req.method === 'DELETE' && archDeleteMatch) {
+      const name = decodeURIComponent(archDeleteMatch[1]);
+      const result = await removeArchitect(workspacePath, name);
+      if (result.success) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      } else {
+        const status = result.error?.includes('not running') || result.error?.includes('not found') ? 404 : 400;
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: result.error }));
+      }
+      return;
     }
 
     // GET /api/files - Return workspace directory tree for file browser (Spec 0092)

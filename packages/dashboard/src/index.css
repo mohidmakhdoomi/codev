@@ -226,6 +226,79 @@ body {
   background: var(--bg-hover);
 }
 
+/* Spec 786 Phase 4: confirmation modal for `remove-architect`. */
+.remove-architect-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.remove-architect-modal {
+  background: var(--bg-primary, #1e1e1e);
+  color: var(--text-primary, #e0e0e0);
+  border-radius: 6px;
+  padding: 24px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.remove-architect-modal h2 {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+}
+
+.remove-architect-modal p {
+  margin: 0 0 16px 0;
+  line-height: 1.5;
+}
+
+.remove-architect-modal code {
+  background: var(--bg-secondary, #2a2a2a);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: ui-monospace, monospace;
+}
+
+.remove-architect-error {
+  color: var(--text-error, #ff6b6b);
+}
+
+.remove-architect-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.remove-architect-modal-actions button {
+  padding: 6px 14px;
+  border: 1px solid var(--border-color, #444);
+  background: var(--bg-secondary, #2a2a2a);
+  color: var(--text-primary, #e0e0e0);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.remove-architect-modal-actions button:hover:not(:disabled) {
+  background: var(--bg-hover, #333);
+}
+
+.remove-architect-modal-actions button.primary {
+  background: var(--accent-color, #f44747);
+  color: white;
+  border-color: var(--accent-color, #f44747);
+}
+
+.remove-architect-modal-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Tab content */
 .tab-content {
   flex: 1;

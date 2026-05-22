@@ -955,3 +955,84 @@ export async function addArchitect(
 
   return { success: true, name, terminalId: sessionId! };
 }
+
+// ============================================================================
+// removeArchitect (Spec 786 Phase 4) — remove a named sibling architect
+// ============================================================================
+
+/**
+ * Spec 786 Phase 4: remove a sibling architect.
+ *
+ * Refuses `main` (workspace-defining, undeletable). Refuses unknown names with
+ * a 404-mappable error string. For known siblings, raises the intentional-stop
+ * flag so the cascaded exit handler does NOT delete the row twice, kills the
+ * sibling's PTY (disabling shellper auto-restart), then explicitly removes the
+ * in-memory entry and persisted rows. Returns `{ success: true }` on success.
+ *
+ * Removing a sibling with in-flight builders is permitted (per OQ-A) — the
+ * builders' subsequent `afx send architect` calls fall back to `main` via
+ * `tower-messages.ts:336`.
+ */
+export async function removeArchitect(
+  workspacePath: string,
+  name: string,
+): Promise<{ success: boolean; error?: string }> {
+  if (!_deps) return { success: false, error: 'Tower is still starting up. Try again shortly.' };
+
+  // Resolve symlinks for consistent lookup (matches addArchitect / stopInstance).
+  let resolvedPath = workspacePath;
+  try {
+    if (fs.existsSync(workspacePath)) {
+      resolvedPath = fs.realpathSync(workspacePath);
+    }
+  } catch {
+    // Use original path on resolution failure.
+  }
+
+  // Reserved-name check: `main` is workspace-defining and undeletable.
+  if (name === DEFAULT_ARCHITECT_NAME) {
+    return { success: false, error: "Cannot remove the default 'main' architect." };
+  }
+
+  const entry = _deps.workspaceTerminals.get(resolvedPath) || _deps.workspaceTerminals.get(workspacePath);
+  if (!entry || entry.architects.size === 0) {
+    return {
+      success: false,
+      error: `Workspace '${workspacePath}' is not running. Start it with 'afx workspace start' first.`,
+    };
+  }
+
+  const terminalId = entry.architects.get(name);
+  if (!terminalId) {
+    return { success: false, error: `Architect '${name}' not found in workspace '${workspacePath}'.` };
+  }
+
+  const manager = _deps.getTerminalManager();
+
+  // Raise the intentional-stop flag so the cascaded exit handler does NOT also
+  // delete the state.db row (we delete it explicitly below). Without this, the
+  // exit handler would call setArchitectByName(name, null) — harmless but the
+  // double-delete is wasteful and the intent (this is an intentional removal)
+  // is clearer with the flag set.
+  intentionallyStopping.add(resolvedPath);
+  if (resolvedPath !== workspacePath) intentionallyStopping.add(workspacePath);
+  try {
+    await killTerminalWithShellper(manager, terminalId);
+    entry.architects.delete(name);
+
+    // Explicitly delete persisted rows (the intentional-stop flag suppressed
+    // the exit-handler delete; we want the row gone for this remove path).
+    try {
+      setArchitectByName(name, null);
+    } catch { /* best-effort cleanup */ }
+    try {
+      _deps.deleteTerminalSession(terminalId);
+    } catch { /* best-effort cleanup */ }
+  } finally {
+    intentionallyStopping.delete(resolvedPath);
+    if (resolvedPath !== workspacePath) intentionallyStopping.delete(workspacePath);
+  }
+
+  _deps.log('INFO', `Removed architect '${name}' from workspace ${workspacePath}`);
+  return { success: true };
+}

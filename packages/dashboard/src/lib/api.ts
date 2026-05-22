@@ -41,6 +41,30 @@ export async function fetchState(): Promise<DashboardState> {
   return res.json();
 }
 
+/**
+ * Spec 786 Phase 4: remove a sibling architect from the current workspace.
+ *
+ * Uses the workspace-scoped `DELETE /api/architects/:name` route which
+ * resolves the workspace from the `/workspace/<base64>/` URL prefix. Returns
+ * `{ success: true }` on success, `{ success: false, error }` on failure.
+ * `main` is rejected server-side (and gated client-side by the modal UX).
+ */
+export async function removeArchitect(name: string): Promise<{ success: boolean; error?: string }> {
+  const res = await fetch(apiUrl(`api/architects/${encodeURIComponent(name)}`), {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  if (res.ok) return { success: true };
+  // Server returns 400/404 with { success: false, error } JSON for both
+  // validation and not-found errors.
+  try {
+    const body = await res.json();
+    return { success: false, error: body?.error ?? `HTTP ${res.status}` };
+  } catch {
+    return { success: false, error: `HTTP ${res.status}` };
+  }
+}
+
 // Shared types from @cluesmith/codev-types
 export type {
   OverviewBuilder,

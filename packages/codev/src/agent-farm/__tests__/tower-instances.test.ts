@@ -20,6 +20,7 @@ import {
   launchInstance,
   killTerminalWithShellper,
   stopInstance,
+  removeArchitect,
   type InstanceDeps,
 } from '../servers/tower-instances.js';
 
@@ -835,6 +836,81 @@ describe('tower-instances', () => {
 
       // And it must call deleteWorkspaceTerminalSessions to wipe rows.
       expect(fnBody).toMatch(/deleteWorkspaceTerminalSessions/);
+    });
+
+    // =========================================================================
+    // Spec 786 Phase 4 — removeArchitect (Tower-side handler)
+    // =========================================================================
+
+    it('removeArchitect: refuses to remove main', async () => {
+      const deps = makeDeps();
+      initInstances(deps);
+
+      const result = await removeArchitect('/project/path', 'main');
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Cannot remove.*main/i);
+    });
+
+    it('removeArchitect: refuses unknown sibling name', async () => {
+      const workspaceTerminals = new Map();
+      workspaceTerminals.set('/project/path', {
+        architects: new Map([['main', 'arch-1']]),
+        builders: new Map(),
+        shells: new Map(),
+      });
+      const deps = makeDeps({ workspaceTerminals });
+      initInstances(deps);
+
+      const result = await removeArchitect('/project/path', 'nonexistent');
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/not found/i);
+    });
+
+    it('removeArchitect: refuses when workspace not running', async () => {
+      const deps = makeDeps(); // empty workspaceTerminals
+      initInstances(deps);
+
+      const result = await removeArchitect('/project/path', 'ob-refine');
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/not running/i);
+    });
+
+    it('removeArchitect: returns startup error when called before initInstances', async () => {
+      const result = await removeArchitect('/some/path', 'sibling');
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/still starting/i);
+    });
+
+    it('removeArchitect: success path — removes sibling from in-memory map and clears persisted rows', async () => {
+      const workspaceTerminals = new Map();
+      workspaceTerminals.set('/project/path', {
+        architects: new Map([['main', 'arch-main'], ['ob-refine', 'arch-sibling']]),
+        builders: new Map(),
+        shells: new Map(),
+      });
+
+      const mockManager = {
+        getSession: vi.fn().mockReturnValue({ pid: 42, shellperBacked: false }),
+        killSession: vi.fn().mockReturnValue(true),
+      };
+
+      const deps = makeDeps({
+        workspaceTerminals,
+        getTerminalManager: vi.fn().mockReturnValue(mockManager) as any,
+      });
+      initInstances(deps);
+
+      const result = await removeArchitect('/project/path', 'ob-refine');
+
+      expect(result.success).toBe(true);
+      // In-memory: sibling gone, main preserved.
+      const entry = workspaceTerminals.get('/project/path');
+      expect(entry?.architects.has('ob-refine')).toBe(false);
+      expect(entry?.architects.has('main')).toBe(true);
+      // Tower's deleteTerminalSession was called with the sibling's terminal id.
+      expect(deps.deleteTerminalSession).toHaveBeenCalledWith('arch-sibling');
+      // Kill was called.
+      expect(mockManager.killSession).toHaveBeenCalledWith('arch-sibling');
     });
 
     it('clears the intentional-stop flag via finally even when a kill throws', async () => {

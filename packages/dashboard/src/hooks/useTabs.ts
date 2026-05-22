@@ -40,6 +40,12 @@ function buildArchitectTabs(state: DashboardState | null): Tab[] {
   // window where dashboard.js is newer than the server response.
   const architects: ArchitectState[] = state?.architects
     ?? (state?.architect ? [state.architect] : []);
+  // Spec 786 / Issue #764: when there's only ONE architect registered, the
+  // tab label is the literal 'Architect' (pre-#762 behaviour). This avoids
+  // surfacing the internal 'main' identifier in single-architect workspaces
+  // where the user has no concept of named architects. When N>1, fall back
+  // to per-architect names so siblings are distinguishable.
+  const soloArchitect = architects.length === 1;
   return architects.map((a, index) => {
     // Deploy-window safety: scalar architect from an older server response
     // may lack `name`. Default to 'main' so the label and architectName are
@@ -48,8 +54,11 @@ function buildArchitectTabs(state: DashboardState | null): Tab[] {
     return {
       id: architectTabId(index, name),
       type: 'architect' as const,
-      label: name,
-      closable: false,
+      label: soloArchitect ? 'Architect' : name,
+      // Spec 786 Phase 4: 'main' is workspace-defining and non-closable;
+      // siblings always show a close button (with confirmation prompt
+      // handled in App.tsx).
+      closable: name !== 'main',
       terminalId: a.terminalId,
       persistent: a.persistent,
       architectName: name,
@@ -184,8 +193,23 @@ export function useTabs(state: DashboardState | null) {
         setActiveTabId(tab.id);
       }
     }
+    // Spec 786 Phase 4: if the active tab disappeared (sibling architect
+    // removed), fall back to `'architect'` — main's tab id per Spec 761's
+    // first-architect-is-bare convention. The default fallback at `:203`
+    // (`tabs[0]`) is order-dependent and points at the first architect, which
+    // is *usually* main but isn't guaranteed during deploy-window state shape
+    // transitions. The explicit `'architect'` fallback is robust.
+    if (!currentIds.has(activeTabId)) {
+      const mainTab = tabs.find(t => t.id === 'architect');
+      if (mainTab) {
+        setActiveTabId('architect');
+      } else if (tabs.length > 0) {
+        // Defensive: if main is somehow absent, fall back to the first tab.
+        setActiveTabId(tabs[0].id);
+      }
+    }
     knownTabIds.current = currentIds;
-  }, [tabs.map(t => t.id).join(','), state !== null]);
+  }, [tabs.map(t => t.id).join(','), state !== null, activeTabId]);
 
   const selectTab = useCallback((id: string) => {
     setActiveTabId(id);

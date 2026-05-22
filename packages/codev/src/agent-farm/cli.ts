@@ -118,6 +118,20 @@ export async function runAgentFarm(args: string[]): Promise<void> {
       }
     });
 
+  // Spec 786: remove a previously-added sibling architect. Refuses 'main'.
+  workspaceCmd
+    .command('remove-architect <name>')
+    .description('Remove a sibling architect from the active workspace (cannot remove main)')
+    .action(async (name: string) => {
+      const { workspaceRemoveArchitect } = await import('./commands/workspace-remove-architect.js');
+      try {
+        await workspaceRemoveArchitect({ name });
+      } catch (error) {
+        logger.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
+    });
+
   // Deprecated alias: `afx dash` → `afx workspace`
   const dashCmd = program
     .command('dash')
