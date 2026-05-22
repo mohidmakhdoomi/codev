@@ -20,10 +20,18 @@ export const DEFAULT_ARCHITECT_NAME = 'main';
  * Validate an architect name. Returns `null` if valid, or a human-readable
  * error message otherwise. Callers should treat a non-null return as "reject
  * with this message" — the text is intentionally operator-facing.
+ *
+ * Spec 786: the name `main` is reserved for the workspace's default architect
+ * and is rejected here. Pre-#786, `main` was rejected only by collision check
+ * at the add-architect call site (which depended on a race-free in-memory map);
+ * rejecting in the pure validator is more robust.
  */
 export function validateArchitectName(name: string): string | null {
   if (!name) {
     return 'Architect name cannot be empty.';
+  }
+  if (name === DEFAULT_ARCHITECT_NAME) {
+    return `Architect name '${DEFAULT_ARCHITECT_NAME}' is reserved for the workspace's default architect.`;
   }
   if (name.length > MAX_ARCHITECT_NAME_LENGTH) {
     return `Architect name must be at most ${MAX_ARCHITECT_NAME_LENGTH} characters (got ${name.length}).`;

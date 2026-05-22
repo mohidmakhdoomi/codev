@@ -35,6 +35,8 @@ import type { SessionManager, ReconnectRestartOptions } from '../../terminal/ses
 import type { PtySession } from '../../terminal/pty-session.js';
 import type { WorkspaceTerminals, TerminalEntry, DbTerminalSession } from './tower-types.js';
 import { normalizeWorkspacePath, buildArchitectArgs } from './tower-utils.js';
+import { setArchitectByName } from '../state.js';
+import { isIntentionallyStopping } from './tower-instances.js';
 
 // ============================================================================
 // Module-private state (lifecycle driven by orchestrator)
@@ -558,6 +560,13 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
       const cmdParts = architectCmd.split(/\s+/);
       const cleanEnv = { ...process.env } as Record<string, string>;
       delete cleanEnv['CLAUDECODE'];
+      // Spec 786 Phase 2: preserve architect identity across shellper auto-
+      // restart. Without this, the new claude process would inherit Tower's
+      // CODEV_ARCHITECT_NAME (or none), and builders spawned by a restarted
+      // sibling would lose affinity to the sibling. The `|| 'main'` fallback
+      // covers legacy rows where role_id is null (v13 backfill should have
+      // populated them; this is belt-and-suspenders).
+      cleanEnv['CODEV_ARCHITECT_NAME'] = dbSession.role_id || 'main';
       try {
         const { args: architectArgs, env: harnessEnv } = buildArchitectArgs(cmdParts.slice(1), workspacePath);
         restartOptions = {
@@ -570,7 +579,10 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
         };
       } catch (err) {
         _deps.log('WARN', `Harness resolution failed for workspace ${workspacePath}: ${err instanceof Error ? err.message : err}`);
-        // Fall back to plain command without role injection so the session can still reconnect
+        // Fall back to plain command without harness role-prompt args so the
+        // session can still reconnect. `cleanEnv` still carries
+        // CODEV_ARCHITECT_NAME (set above for Spec 786 Phase 2), so identity
+        // is preserved even on harness failure.
         restartOptions = {
           command: cmdParts[0],
           args: cmdParts.slice(1),
@@ -664,16 +676,26 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
     if (ptySession) {
       ptySession.on('exit', () => {
         const currentEntry = getWorkspaceTerminalsEntry(workspacePath);
+        let exitedArchitectName: string | null = null;
         if (dbSession.type === 'architect') {
           // Spec 755: remove the entry whose terminalId matches session.id.
           for (const [name, tid] of currentEntry.architects) {
             if (tid === session.id) {
+              exitedArchitectName = name;
               currentEntry.architects.delete(name);
               break;
             }
           }
         }
         deleteTerminalSession(session.id);
+        // Spec 786 Phase 3 / OQ-B: delete the persisted architect row on
+        // permanent exit; preserve on intentional stop. Symmetric with the
+        // four exit handlers in tower-instances.ts.
+        if (exitedArchitectName && !isIntentionallyStopping(workspacePath)) {
+          try {
+            setArchitectByName(exitedArchitectName, null);
+          } catch { /* best-effort cleanup */ }
+        }
       });
     }
 
@@ -769,6 +791,9 @@ export async function getTerminalsForWorkspace(
           const cmdParts = architectCmd.split(/\s+/);
           const cleanEnv = { ...process.env } as Record<string, string>;
           delete cleanEnv['CLAUDECODE'];
+          // Spec 786 Phase 2: preserve architect identity across shellper auto-
+          // restart (see matching block in reconcileTerminalSessionsInner above).
+          cleanEnv['CODEV_ARCHITECT_NAME'] = dbSession.role_id || 'main';
           try {
             const { args: architectArgs, env: harnessEnv } = buildArchitectArgs(cmdParts.slice(1), dbSession.workspace_path);
             restartOptions = {
@@ -817,16 +842,27 @@ export async function getTerminalsForWorkspace(
             // Clean up on exit (only fires for permanent death when restartOnExit is set)
             ptySession.on('exit', () => {
               const currentEntry = getWorkspaceTerminalsEntry(dbSession.workspace_path);
+              let exitedArchitectName: string | null = null;
               if (dbSession.type === 'architect') {
                 // Spec 755: remove the entry whose terminalId matches newSession.id.
                 for (const [name, tid] of currentEntry.architects) {
                   if (tid === newSession.id) {
+                    exitedArchitectName = name;
                     currentEntry.architects.delete(name);
                     break;
                   }
                 }
               }
               deleteTerminalSession(newSession.id);
+              // Spec 786 Phase 3 / OQ-B: delete the persisted architect row on
+              // permanent exit; preserve on intentional stop. Symmetric with
+              // the five other exit handlers (4 in tower-instances.ts, 1 in
+              // the reconciliation path above).
+              if (exitedArchitectName && !isIntentionallyStopping(dbSession.workspace_path)) {
+                try {
+                  setArchitectByName(exitedArchitectName, null);
+                } catch { /* best-effort cleanup */ }
+              }
             });
           }
           const originalSessionId = dbSession.id;
@@ -851,9 +887,11 @@ export async function getTerminalsForWorkspace(
     if (dbSession.type === 'architect') {
       // Spec 755: role_id stores the architect's name; v13 backfill ensures
       // legacy null role_ids become 'main' before this point. We register
-      // every named architect into freshEntry.architects, but emit only one
-      // Architect terminal entry (after the loop) — the v1 UI contract keeps
-      // a single architect tab. Multi-architect UI is deferred to issue #2.
+      // every named architect into freshEntry.architects; the actual emission
+      // of one terminal entry per architect (with tab id `architect` for main
+      // and `architect:<name>` for siblings) happens in the dedicated loop
+      // after this main pass (Spec 786 Phase 5 — replaces the Spec 755 v1
+      // single-entry collapse).
       const architectName = dbSession.role_id || 'main';
       freshEntry.architects.set(architectName, dbSession.id);
     } else if (dbSession.type === 'builder') {
@@ -925,17 +963,38 @@ export async function getTerminalsForWorkspace(
     }
   }
 
-  // Spec 755: emit a single Architect terminal entry when ANY architect is
-  // registered. The v1 UI contract keeps one architect tab; the underlying
-  // collection holds all named architects. Multi-architect UI is deferred to
-  // issue #2.
-  if (freshEntry.architects.size > 0) {
+  // Spec 786 Phase 5: emit ONE entry per registered architect. Replaces the
+  // Spec 755 v1 collapse that emitted a single "Architect" entry regardless of
+  // how many architects existed. The Spec 761 `architectTabId` convention is
+  // preserved: `main` always gets the bare `'architect'` id (for deep-link
+  // stability), siblings get `architect:<name>`. Iteration order is `main`
+  // first (sorted to handle the case where `launchInstance`'s sibling
+  // reconciliation could otherwise insert siblings before main).
+  const architectNames = [...freshEntry.architects.keys()].sort((a, b) => {
+    if (a === 'main') return -1;
+    if (b === 'main') return 1;
+    return 0;
+  });
+  for (const architectName of architectNames) {
+    const terminalId = freshEntry.architects.get(architectName)!;
+    const session = manager.getSession(terminalId);
+    if (!session) continue;
+    const tabId = architectName === 'main' ? 'architect' : `architect:${architectName}`;
     terminals.push({
       type: 'architect',
-      id: 'architect',
-      label: 'Architect',
-      url: `${proxyUrl}?tab=architect`,
+      id: tabId,
+      label: architectName,
+      url: `${proxyUrl}?tab=${tabId}`,
       active: true,
+      // Spec 786 Phase 5: extra fields for `afx status` and other enumerators.
+      architectName,
+      pid: session.pid || undefined,
+      // No port assigned to architect terminals today; preserved as an extension
+      // point for future per-architect HTTP surfaces.
+      // Spec 786 Phase 5: the actual PtySession id (the `id` above is the tab
+      // id per Spec 761). Surfaced so `afx status` can show terminal-attach-
+      // ready identifiers.
+      terminalId,
     });
   }
 

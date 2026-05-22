@@ -3,7 +3,7 @@ import { useBuilderStatus } from '../hooks/useBuilderStatus.js';
 import { useTabs, type Tab } from '../hooks/useTabs.js';
 import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import { MOBILE_BREAKPOINT } from '../lib/constants.js';
-import { getTerminalWsPath, createFileTab } from '../lib/api.js';
+import { getTerminalWsPath, createFileTab, removeArchitect as removeArchitectApi } from '../lib/api.js';
 import { readActiveArchitect, writeActiveArchitect } from '../lib/architectPersistence.js';
 import { SplitPane } from './SplitPane.js';
 import { TabBar } from './TabBar.js';
@@ -41,6 +41,14 @@ export function App() {
   const [activeArchitectName, setActiveArchitectName] = useState<string | null>(
     () => readActiveArchitect(),
   );
+
+  // Spec 786 Phase 4: confirmation-modal state for the remove-architect flow.
+  // ArchitectTabStrip's close button fires `onRequestRemove(name)`; App.tsx
+  // opens this modal with the target name. Confirm → call removeArchitect RPC.
+  // Cancel → close modal without action.
+  const [pendingRemoveArchitect, setPendingRemoveArchitect] = useState<string | null>(null);
+  const [removingArchitect, setRemovingArchitect] = useState(false);
+  const [removeArchitectError, setRemoveArchitectError] = useState<string | null>(null);
 
   // Spec 761: when activeTabId (driven by useTabs) lands on an architect —
   // via deep link (?tab=architect:<name>) or the post-load auto-switch for
@@ -319,6 +327,13 @@ export function App() {
               writeActiveArchitect(picked.architectName);
             }
           }}
+          onRequestRemove={(name) => {
+            // Spec 786 Phase 4: open the confirmation modal. The modal
+            // shows in-flight builders count (informational, non-blocking
+            // per OQ-A). User can Confirm (calls the API) or Cancel.
+            setPendingRemoveArchitect(name);
+            setRemoveArchitectError(null);
+          }}
         />
         <div className="architect-pane-body">
           {renderPersistentTerminals(architectTabs, activeArchitectTabId, architectToolbarExtra)}
@@ -357,6 +372,81 @@ export function App() {
           onExpandLeft={() => setCollapsedPane(null)}
           onExpandRight={() => setCollapsedPane(null)}
         />
+      </div>
+      {pendingRemoveArchitect && (
+        <RemoveArchitectModal
+          name={pendingRemoveArchitect}
+          inFlightBuilders={(state?.builders ?? []).filter(b => b.spawnedByArchitect === pendingRemoveArchitect)}
+          submitting={removingArchitect}
+          error={removeArchitectError}
+          onCancel={() => {
+            if (removingArchitect) return;
+            setPendingRemoveArchitect(null);
+            setRemoveArchitectError(null);
+          }}
+          onConfirm={async () => {
+            if (removingArchitect) return;
+            setRemovingArchitect(true);
+            setRemoveArchitectError(null);
+            try {
+              const result = await removeArchitectApi(pendingRemoveArchitect);
+              if (result.success) {
+                setPendingRemoveArchitect(null);
+                // Refresh state so the removed sibling's tab disappears.
+                refresh();
+              } else {
+                setRemoveArchitectError(result.error ?? 'Failed to remove architect.');
+              }
+            } catch (err) {
+              setRemoveArchitectError(err instanceof Error ? err.message : String(err));
+            } finally {
+              setRemovingArchitect(false);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Spec 786 Phase 4: confirmation modal for `remove-architect`.
+ *
+ * Shows the architect name and any in-flight builders that were spawned by
+ * this architect (informational only — removal proceeds anyway per OQ-A;
+ * builders fall back to `main` routing afterwards).
+ */
+interface RemoveArchitectModalProps {
+  name: string;
+  inFlightBuilders: Array<{ id?: string; name?: string }>;
+  submitting: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function RemoveArchitectModal({ name, inFlightBuilders, submitting, error, onCancel, onConfirm }: RemoveArchitectModalProps) {
+  return (
+    <div className="remove-architect-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="remove-arch-title">
+      <div className="remove-architect-modal">
+        <h2 id="remove-arch-title">Remove architect <code>{name}</code>?</h2>
+        {inFlightBuilders.length > 0 ? (
+          <p>
+            <strong>{inFlightBuilders.length} in-flight builder{inFlightBuilders.length === 1 ? '' : 's'}</strong>{' '}
+            spawned by <code>{name}</code>:
+            {' '}{inFlightBuilders.map(b => b.name || b.id).filter(Boolean).join(', ')}.
+            {' '}They&rsquo;ll continue running and fall back to <code>main</code> for routing.
+          </p>
+        ) : (
+          <p>This architect has no in-flight builders.</p>
+        )}
+        {error && <p className="remove-architect-error" role="alert">{error}</p>}
+        <div className="remove-architect-modal-actions">
+          <button type="button" onClick={onCancel} disabled={submitting}>Cancel</button>
+          <button type="button" onClick={onConfirm} disabled={submitting} className="primary">
+            {submitting ? 'Removing…' : 'Remove'}
+          </button>
+        </div>
       </div>
     </div>
   );

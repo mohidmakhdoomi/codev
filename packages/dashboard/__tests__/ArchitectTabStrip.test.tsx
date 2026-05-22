@@ -64,7 +64,7 @@ describe('ArchitectTabStrip (Spec 761)', () => {
     expect(onSelectTab).toHaveBeenCalledWith('architect:sibling');
   });
 
-  it('renders no close buttons (architect tabs are non-closable)', () => {
+  it('renders no close buttons when tabs are non-closable (e.g. main)', () => {
     render(
       <ArchitectTabStrip
         tabs={[archTab('main', 'architect'), archTab('sibling', 'architect:sibling')]}
@@ -74,5 +74,76 @@ describe('ArchitectTabStrip (Spec 761)', () => {
     );
 
     expect(screen.queryByLabelText(/close/i)).toBeNull();
+  });
+
+  // Spec 786 Phase 4: sibling architect tabs gain a close button. `main` does
+  // not (the tab object's `closable: false` controls the X render).
+  describe('Spec 786 Phase 4 — close-button affordance', () => {
+    function closableSiblingTab(name: string, id: string): Tab {
+      return { ...archTab(name, id), closable: true };
+    }
+
+    it('renders a close button on closable sibling tabs', () => {
+      render(
+        <ArchitectTabStrip
+          tabs={[archTab('main', 'architect'), closableSiblingTab('sibling', 'architect:sibling')]}
+          activeTabId="architect"
+          onSelectTab={vi.fn()}
+          onRequestRemove={vi.fn()}
+        />,
+      );
+      // Exactly one close button — for the sibling.
+      const closeButtons = screen.getAllByRole('button', { name: /Close sibling/ });
+      expect(closeButtons).toHaveLength(1);
+      // `main`'s tab has no close button.
+      expect(screen.queryByRole('button', { name: /Close main/ })).toBeNull();
+    });
+
+    it('invokes onRequestRemove with the architect name when close is clicked', () => {
+      const onRequestRemove = vi.fn();
+      render(
+        <ArchitectTabStrip
+          tabs={[archTab('main', 'architect'), closableSiblingTab('sibling', 'architect:sibling')]}
+          activeTabId="architect"
+          onSelectTab={vi.fn()}
+          onRequestRemove={onRequestRemove}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: /Close sibling/ }));
+      expect(onRequestRemove).toHaveBeenCalledExactlyOnceWith('sibling');
+    });
+
+    it('does NOT call onSelectTab when the close button is clicked (stopPropagation)', () => {
+      const onSelectTab = vi.fn();
+      render(
+        <ArchitectTabStrip
+          tabs={[archTab('main', 'architect'), closableSiblingTab('sibling', 'architect:sibling')]}
+          activeTabId="architect"
+          onSelectTab={onSelectTab}
+          onRequestRemove={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: /Close sibling/ }));
+      // The click on the close button should NOT bubble up to the parent
+      // tab button and trigger a tab-switch.
+      expect(onSelectTab).not.toHaveBeenCalled();
+    });
+
+    it('close button is silent when onRequestRemove prop is not provided', () => {
+      // Defensive: the component must not throw when used without the new
+      // callback (e.g. by callers that haven't migrated to Spec 786 yet).
+      expect(() =>
+        render(
+          <ArchitectTabStrip
+            tabs={[archTab('main', 'architect'), closableSiblingTab('sibling', 'architect:sibling')]}
+            activeTabId="architect"
+            onSelectTab={vi.fn()}
+            // onRequestRemove intentionally omitted
+          />,
+        ),
+      ).not.toThrow();
+      // Clicking the close button is a silent no-op (no error, no callbacks).
+      fireEvent.click(screen.getByRole('button', { name: /Close sibling/ }));
+    });
   });
 });

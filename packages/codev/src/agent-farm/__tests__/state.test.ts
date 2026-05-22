@@ -64,12 +64,60 @@ describe('State Management', () => {
     it('should return default state when database is empty', () => {
       const result = state.loadState();
 
+      // Spec 786 Phase 5: loadState now returns `architects: []` alongside the
+      // scalar `architect` shim (empty array when no rows in state.db.architect).
       expect(result).toEqual({
         architect: null,
+        architects: [],
         builders: [],
         utils: [],
         annotations: [],
       });
+    });
+
+    // Spec 786 Phase 5: loadState populates `architects` with `main` first.
+    it('returns architects collection with main first then siblings by started_at', () => {
+      // Insert in a deliberately scrambled order: a sibling first, then main,
+      // then another sibling. loadState must sort main to position 0.
+      state.setArchitectByName('ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude',
+        startedAt: '2026-05-22T10:00:00Z',
+        terminalId: 'term-ob',
+      });
+      state.setArchitect({
+        cmd: 'claude',
+        startedAt: '2026-05-22T11:00:00Z',
+        terminalId: 'term-main',
+      });
+      state.setArchitectByName('architect-3', {
+        name: 'architect-3',
+        cmd: 'claude',
+        startedAt: '2026-05-22T12:00:00Z',
+        terminalId: 'term-a3',
+      });
+
+      const result = state.loadState();
+      expect(result.architects).toHaveLength(3);
+      expect(result.architects[0].name).toBe('main');
+      // Siblings in started_at order (ob-refine before architect-3).
+      expect(result.architects[1].name).toBe('ob-refine');
+      expect(result.architects[2].name).toBe('architect-3');
+    });
+
+    it('scalar `architect` shim points at architects[0] for backward-compat', () => {
+      // With only a sibling registered (no main row), the scalar shim points
+      // at the sibling (architects[0]) — preserving the Spec 755 fallback.
+      state.setArchitectByName('ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude',
+        startedAt: '2026-05-22T10:00:00Z',
+      });
+
+      const result = state.loadState();
+      expect(result.architects).toHaveLength(1);
+      expect(result.architects[0].name).toBe('ob-refine');
+      expect(result.architect?.name).toBe('ob-refine');
     });
   });
 
@@ -327,12 +375,118 @@ describe('State Management', () => {
       state.clearState();
 
       const result = state.loadState();
+      // Spec 786 Phase 5: loadState now returns `architects: []` alongside the
+      // scalar `architect` shim (empty array when no rows in state.db.architect).
       expect(result).toEqual({
         architect: null,
+        architects: [],
         builders: [],
         utils: [],
         annotations: [],
       });
+    });
+  });
+
+  // Spec 786 Phase 1: removeArchitect helper and clearRuntime variant.
+  describe('removeArchitect (Spec 786)', () => {
+    it('removes a named architect row from state.db', () => {
+      state.setArchitectByName('ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude',
+        startedAt: new Date().toISOString(),
+        terminalId: 'term-1',
+      });
+      // Confirm it was inserted
+      let architects = state.getArchitects();
+      expect(architects.some(a => a.name === 'ob-refine')).toBe(true);
+
+      state.removeArchitect('ob-refine');
+
+      architects = state.getArchitects();
+      expect(architects.some(a => a.name === 'ob-refine')).toBe(false);
+    });
+
+    it('is idempotent — removing a non-existent name is a no-op', () => {
+      expect(() => state.removeArchitect('nonexistent')).not.toThrow();
+    });
+
+    it('does not affect other architects', () => {
+      state.setArchitect({
+        cmd: 'claude',
+        startedAt: new Date().toISOString(),
+        terminalId: 'main-term',
+      });
+      state.setArchitectByName('ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude',
+        startedAt: new Date().toISOString(),
+        terminalId: 'sibling-term',
+      });
+
+      state.removeArchitect('ob-refine');
+
+      const architects = state.getArchitects();
+      expect(architects.some(a => a.name === 'main')).toBe(true);
+      expect(architects.some(a => a.name === 'ob-refine')).toBe(false);
+    });
+  });
+
+  describe('clearRuntime (Spec 786)', () => {
+    it('preserves all architect rows while wiping runtime tables', () => {
+      // Set up: main + a sibling + a builder + a util + an annotation
+      state.setArchitect({
+        cmd: 'claude',
+        startedAt: new Date().toISOString(),
+        terminalId: 'main-term',
+      });
+      state.setArchitectByName('ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude',
+        startedAt: new Date().toISOString(),
+        terminalId: 'sibling-term',
+      });
+      state.upsertBuilder({
+        id: 'B001',
+        name: 'test-builder',
+        status: 'implementing' as const,
+        phase: 'init',
+        worktree: '/tmp/worktree',
+        branch: 'feature-branch',
+        type: 'spec' as const,
+      });
+
+      state.clearRuntime();
+
+      // Architects survive
+      const architects = state.getArchitects();
+      expect(architects).toHaveLength(2);
+      expect(architects.some(a => a.name === 'main')).toBe(true);
+      expect(architects.some(a => a.name === 'ob-refine')).toBe(true);
+
+      // Builders are gone
+      const result = state.loadState();
+      expect(result.builders).toEqual([]);
+      expect(result.utils).toEqual([]);
+      expect(result.annotations).toEqual([]);
+    });
+
+    it('differs from clearState which wipes architects too', () => {
+      // Confirm the differential behaviour: clearState removes architects;
+      // clearRuntime preserves them.
+      state.setArchitect({
+        cmd: 'claude',
+        startedAt: new Date().toISOString(),
+      });
+      state.setArchitectByName('ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude',
+        startedAt: new Date().toISOString(),
+      });
+
+      state.clearState();
+
+      const architectsAfterClear = state.getArchitects();
+      expect(architectsAfterClear).toHaveLength(0);
     });
   });
 });

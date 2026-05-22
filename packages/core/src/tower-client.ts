@@ -41,6 +41,32 @@ export interface TowerWorkspaceStatus {
     label: string;
     url: string;
     active: boolean;
+    /**
+     * Spec 786 Phase 5: when `type === 'architect'`, the architect's stable
+     * name (`'main'` or a sibling). Older clients ignore this field.
+     */
+    architectName?: string;
+    /**
+     * Spec 786 Phase 5: live process ID from Tower's in-memory `PtySession`,
+     * surfaced for `afx status`. Not persisted in `state.db.architect` (the
+     * row stores `pid: 0` — see state.ts:79, :103), so this field is only
+     * available when Tower is running.
+     */
+    pid?: number;
+    /**
+     * Spec 786 Phase 5: port assigned to the architect terminal, if any.
+     * Same Tower-only constraint as `pid`.
+     */
+    port?: number;
+    /**
+     * Spec 786 Phase 5: the actual PtySession id. The `id` field above
+     * carries the tab identifier (`'architect'` or `'architect:<name>'`) per
+     * Spec 761's deep-link convention; this field exposes the underlying
+     * session id so consumers like `afx status` can show it for terminal-
+     * attach correlation. Optional for backward compat with older clients
+     * that only emit `id`.
+     */
+    terminalId?: string;
   }>;
 }
 
@@ -225,6 +251,36 @@ export class TowerClient {
       ok: result.data?.success ?? false,
       name: result.data?.name,
       terminalId: result.data?.terminalId,
+      error: result.data?.error,
+    };
+  }
+
+  /**
+   * Spec 786: remove a named sibling architect from a workspace.
+   *
+   * REST: `DELETE /api/workspaces/:encoded/architects/:name`. The name is URI-
+   * encoded in the path. `main` is rejected server-side (and validated
+   * client-side by the CLI before this call). Removing an architect with
+   * in-flight builders is permitted — those builders fall back to `main`
+   * routing via the existing `tower-messages.ts:336` chain (OQ-A).
+   */
+  async removeArchitect(
+    workspacePath: string,
+    name: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const encodedWorkspace = encodeWorkspacePath(workspacePath);
+    const encodedName = encodeURIComponent(name);
+    const result = await this.request<{ success: boolean; error?: string }>(
+      `/api/workspaces/${encodedWorkspace}/architects/${encodedName}`,
+      { method: 'DELETE' },
+    );
+
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+
+    return {
+      ok: result.data?.success ?? false,
       error: result.data?.error,
     };
   }

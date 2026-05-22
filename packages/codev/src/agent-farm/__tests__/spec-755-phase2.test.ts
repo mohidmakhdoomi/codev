@@ -18,8 +18,11 @@ import {
 
 describe('Spec 755 Phase 2 — architect-name helpers', () => {
   describe('validateArchitectName', () => {
-    it('accepts the default name', () => {
-      expect(validateArchitectName('main')).toBeNull();
+    // Spec 786: `main` is now reserved at the validator level (was previously
+    // accepted, with collision-rejection happening at the add-architect call
+    // site). The reserved-name check provides defence in depth.
+    it('rejects the reserved default name `main`', () => {
+      expect(validateArchitectName('main')).toMatch(/reserved/i);
     });
 
     it('accepts simple lowercase names', () => {

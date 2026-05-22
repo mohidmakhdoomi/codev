@@ -245,6 +245,46 @@ All architect sessions (at all 3 creation points) receive a role prompt injected
 - `tower-terminals.ts` → `reconcileTerminalSessions()` (startup reconnection with auto-restart options)
 - `tower-terminals.ts` → `getTerminalsForWorkspace()` (on-the-fly shellper reconnection)
 
+#### Multi-Architect Support (Spec 755 / Spec 786)
+
+A workspace can host more than one architect terminal. Each architect has a stable name (`main` for the workspace's default; siblings via `afx workspace add-architect`). The primary use case is letting a sibling architect drive a focused workflow without monopolising `main`.
+
+**Identity flow**:
+- Every architect terminal Tower spawns has `CODEV_ARCHITECT_NAME` injected into its env (see all three creation points above + Spec 786 Phase 2 which re-injects on shellper auto-restart).
+- `afx spawn` reads the variable and tags the new builder row with `spawned_by_architect = <name>`.
+- `afx send architect` from a builder uses the recorded name (via `tower-messages.ts:320-342`'s spawning-architect chain) to route back to the correct architect; falls back to `main` when the spawning architect is gone (Spec 786 OQ-A).
+- `afx send architect:<name>` is the explicit-target form; works from any sender.
+
+**Lifecycle (Spec 786 Phase 3 / OQ-B)**:
+- **Add**: `afx workspace add-architect [--name <name>]`. Validator at `utils/architect-name.ts` enforces `[a-z][a-z0-9-]*` (max 64), rejects `main` as reserved (Spec 786). Auto-numbers via `autoNumberArchitectName` when `--name` is omitted (smallest unused `architect-<N>` integer ≥ 2).
+- **Remove**: `afx workspace remove-architect <name>` (also dashboard close-X + VSCode right-click). Server refuses `main`. Removing an architect with in-flight builders proceeds — builders fall back to `main` routing.
+- **Graceful stop**: `afx workspace stop` sets the `intentionallyStopping` flag (`tower-instances.ts`) so the six cascaded exit handlers (4 in `tower-instances.ts`, 2 in `tower-terminals.ts`) skip the `setArchitectByName(name, null)` call. Sibling rows in `state.db.architect` survive the stop.
+- **Graceful start**: `launchInstance` creates `main` if absent (gate changed from `entry.architects.size === 0` to `!entry.architects.has('main')`), then iterates persisted siblings via `getArchitects()` and re-spawns each via `addArchitect`. Critical ordering: main FIRST (otherwise `addArchitect`'s `size > 0` guard rejects the sibling spawn).
+- **Crash recovery**: rows in `terminal_sessions` survive because Tower didn't clean them up; `reconcileTerminalSessions()` reconnects via shellper sockets.
+- **Permanent exit** (max-restart exhaustion): exit handlers run WITHOUT the intentional-stop flag set, so `setArchitectByName(name, null)` fires and the row is auto-deleted (Spec 786 OQ-B — `state.db` mirrors reality).
+- **Stop-all** (`tower-routes.ts:handleWorkspaceStopAll`): explicit "tear everything down" — full wipe of `terminal_sessions` and `state.db.architect`. Semantically distinct from `stopInstance` which preserves sibling registration.
+
+**Persistence layers**:
+- `state.db.architect` — durable per-architect registration (`id, pid, port, cmd, started_at, terminal_id`). `pid`/`port` persist as `0` (Spec 755 limitation); the live values come from Tower's `PtySession` only.
+- `terminal_sessions` — global runtime session registry. Wiped on graceful stop (`stopInstance` and `stop-all`); preserved on crash. Reconciliation reads `role_id` to re-key the in-memory architect map.
+- In-memory `WorkspaceTerminals.architects: Map<string,string>` — name → terminal id. Rebuilt on every `launchInstance`/reconciliation.
+
+**Surface enumeration (Spec 786 Phase 5)**:
+- Tower `/status` API emits ONE terminal entry per architect (replacing the Spec 755 v1 collapse to a single `'Architect'` entry). Each entry carries: `type='architect'`, `id` (tab id — `'architect'` for main, `'architect:<name>'` for siblings per Spec 761's deep-link convention), `label`, `architectName`, `pid` (live from PtySession), `terminalId` (actual session id).
+- `loadState()` populates `DashboardState.architects[]` sorted main-first, with the scalar `state.architect` shim pointing at `architects[0]` for backward compat.
+- `afx status` enumerates ALL architects (Tower-up: name + PID + port + terminal id; Tower-down: name + cmd, with `"Tower not running — PID/port not available"` note).
+
+**Dashboard surfaces**:
+- Right-pane tabs (builders, shells, file annotations) carry close buttons via the existing `TabBar.tsx` + `closable` flag.
+- Left-pane architect tab strip (`ArchitectTabStrip.tsx`) shows one tab per architect. `main`'s tab is non-closable; sibling tabs render a close button that triggers a confirmation modal (informational list of in-flight builders; remove proceeds regardless per OQ-A). Phase 4 of Spec 786.
+- Spec 786 / Issue #764: when only one architect is registered (N=1), the tab label is the literal `'Architect'` rather than the internal `'main'` identifier. When N>1, labels use the architect name. The `architectName` property carries identity for deep-link/persistence regardless of label.
+
+**VSCode extension (Spec 786 Phase 6)**:
+- The Workspace sidebar has an expandable "Architects" tree section (replacing the pre-786 singleton "Open Architect" row). One child per architect. Click → opens that architect's terminal.
+- `terminal-manager.ts` keys terminal slots by architect name (`architect:${name}`), not the pre-786 singleton `'architect'`. Each architect gets its own VSCode terminal.
+- Right-click context menu on a sibling entry → "Remove Architect" (gated on `viewItem == workspace-architect-sibling`; `main` uses `'workspace-architect-main'` and gets no remove option).
+- `codev.referenceIssueInArchitect` (Backlog inline button) always targets `main` regardless of how many siblings exist — preserves the pre-786 Backlog UX.
+
 #### Builder Gate Notifications (Spec 0100, replaced by Spec 0108)
 
 As of Spec 0108, porch sends direct `afx send architect` notifications via `execFile` when gates transition to pending. The `notifyArchitect()` function in `commands/porch/notify.ts` is fire-and-forget: 10s timeout, errors logged to stderr but never thrown. Called at the two gate-transition points in `next.ts`.
@@ -268,7 +308,7 @@ Each session has a unique name based on its purpose:
 
 | Session Type | Name Pattern | Example |
 |--------------|--------------|---------|
-| Architect | `architect` | `architect` |
+| Architect | `architect:{name}` (Spec 786) | `architect:main`, `architect:sibling`, `architect:architect-2` |
 | Builder | `builder-{protocol}-{id}` | `builder-spir-126` |
 | Shell | `shell-{id}` | `shell-U1A2B3C4` |
 

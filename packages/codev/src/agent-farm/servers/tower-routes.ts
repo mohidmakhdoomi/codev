@@ -28,6 +28,7 @@ const execAsync = promisify(exec);
 import type { SessionManager } from '../../terminal/session-manager.js';
 import type { PtySessionInfo } from '../../terminal/pty-session.js';
 import type { BuilderSpawnedPayload, DashboardState, ArchitectState } from '@cluesmith/codev-types';
+import { getBuilders, setArchitectByName } from '../state.js';
 import { DEFAULT_COLS, defaultSessionOptions } from '../../terminal/index.js';
 import type { SSEClient } from './tower-types.js';
 import { parseJsonBody, isRequestAllowed } from '../utils/server-utils.js';
@@ -57,6 +58,7 @@ import {
   killTerminalWithShellper,
   stopInstance,
   addArchitect,
+  removeArchitect,
 } from './tower-instances.js';
 import { OverviewCache } from './overview.js';
 import { fetchIssue } from '../../lib/github.js';
@@ -230,6 +232,12 @@ export async function handleRequest(
       return await handleAddArchitect(req, res, architectsMatch);
     }
 
+    // Workspace API: DELETE /api/workspaces/:encodedPath/architects/:name (Spec 786)
+    const architectRemoveMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/architects\/([^/]+)$/);
+    if (architectRemoveMatch) {
+      return await handleRemoveArchitect(req, res, architectRemoveMatch);
+    }
+
     // Terminal-specific routes: /api/terminals/:id/* (Spec 0090 Phase 2)
     const terminalRouteMatch = url.pathname.match(/^\/api\/terminals\/([^/]+)(\/.*)?$/);
     if (terminalRouteMatch) {
@@ -338,6 +346,55 @@ async function handleAddArchitect(
   } else {
     // Distinguish "workspace not active" (404) from validation errors (400).
     const status = result.error?.includes('not running') ? 404 : 400;
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: false, error: result.error }));
+  }
+}
+
+/**
+ * DELETE /api/workspaces/:encodedPath/architects/:name (Spec 786)
+ *
+ * Removes a named sibling architect from an active workspace. Refuses to
+ * remove `main` (returns 400). Returns 404 when the workspace isn't active or
+ * the named architect isn't registered.
+ *
+ * Removing an architect with in-flight builders is allowed (per OQ-A) — the
+ * builders fall back to `main` via the existing `tower-messages.ts:336` chain.
+ */
+async function handleRemoveArchitect(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  match: RegExpMatchArray,
+): Promise<void> {
+  if (req.method !== 'DELETE') {
+    res.writeHead(405, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
+    return;
+  }
+
+  const [, encodedPath, encodedName] = match;
+  let workspacePath: string;
+  try {
+    workspacePath = decodeWorkspacePath(encodedPath);
+    if (!workspacePath || (!workspacePath.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(workspacePath))) {
+      throw new Error('Invalid path');
+    }
+    workspacePath = normalizeWorkspacePath(workspacePath);
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid workspace path encoding' }));
+    return;
+  }
+
+  const name = decodeURIComponent(encodedName);
+  const result = await removeArchitect(workspacePath, name);
+  if (result.success) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true }));
+  } else {
+    // Distinguish "not registered" / "not running" (404) from validation
+    // errors like "Cannot remove main" (400).
+    const status = result.error?.includes('not running') || result.error?.includes('not found') ? 404 : 400;
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: false, error: result.error }));
   }
@@ -1400,6 +1457,26 @@ async function handleWorkspaceRoutes(
       return handleWorkspaceStopAll(res, workspacePath);
     }
 
+    // DELETE /api/architects/:name - Remove a sibling architect (Spec 786 Phase 4)
+    // Workspace-scoped variant of /api/workspaces/:encoded/architects/:name —
+    // the workspace path comes from the /workspace/<base64>/ URL prefix already
+    // resolved above. Used by the dashboard's close-button → confirmation
+    // modal flow.
+    const archDeleteMatch = apiPath.match(/^architects\/([^/]+)$/);
+    if (req.method === 'DELETE' && archDeleteMatch) {
+      const name = decodeURIComponent(archDeleteMatch[1]);
+      const result = await removeArchitect(workspacePath, name);
+      if (result.success) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      } else {
+        const status = result.error?.includes('not running') || result.error?.includes('not found') ? 404 : 400;
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: result.error }));
+      }
+      return;
+    }
+
     // GET /api/files - Return workspace directory tree for file browser (Spec 0092)
     if (req.method === 'GET' && apiPath === 'files') {
       return handleWorkspaceFiles(res, url, workspacePath);
@@ -1595,6 +1672,23 @@ async function handleWorkspaceState(
     }
   }
 
+  // Spec 786 Phase 4: build a lookup from builder id → spawned_by_architect so
+  // the dashboard's remove-architect confirmation modal can show which builders
+  // would lose their spawning architect (informational; per OQ-A removal
+  // proceeds regardless and they fall back to `main` routing). The data lives
+  // in `state.db.builders.spawned_by_architect` but the in-memory cache used by
+  // /api/state doesn't carry it — we read it explicitly here. Single query
+  // amortised across all builders rather than per-builder lookups.
+  const spawnedByMap = new Map<string, string | null>();
+  try {
+    for (const b of getBuilders()) {
+      spawnedByMap.set(b.id, b.spawnedByArchitect ?? null);
+    }
+  } catch {
+    // DB unavailable — modal degrades to "no in-flight builders" display.
+    // Acceptable since the modal text is informational per OQ-A.
+  }
+
   // Add builders from refreshed cache
   for (const [builderId, terminalId] of entry.builders) {
     const session = manager.getSession(terminalId);
@@ -1611,6 +1705,10 @@ async function handleWorkspaceState(
         type: 'spec',
         terminalId,
         persistent: isSessionPersistent(terminalId, session),
+        // Spec 786 Phase 4: surface spawning architect to the dashboard so the
+        // remove-architect modal can show affected builders. May be undefined
+        // when the builder row isn't in state.db (e.g. ephemeral test builders).
+        spawnedByArchitect: spawnedByMap.get(builderId) ?? null,
       });
     }
   }
@@ -2018,6 +2116,24 @@ async function handleWorkspaceTabDelete(
       terminalId = entry.architects.get(name);
       entry.architects.delete(name);
     }
+  } else if (tabId.startsWith('architect:')) {
+    // Spec 786 Phase 4 / PR iter-1 review fix: sibling architect tabs (Spec
+    // 761 ids `architect:<name>`) are closable from the mobile TabBar, which
+    // dispatches `DELETE /api/tabs/<tabId>`. Route the sibling close through
+    // `removeArchitect()` so the full lifecycle (kills PTY, deletes state.db
+    // row, suppresses cascaded delete via intentional-stop flag) runs the
+    // same way as the desktop close button + CLI.
+    const name = tabId.slice('architect:'.length);
+    const result = await removeArchitect(workspacePath, name);
+    if (result.success) {
+      res.writeHead(204);
+      res.end();
+    } else {
+      const status = result.error?.includes('not found') || result.error?.includes('not running') ? 404 : 400;
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: result.error }));
+    }
+    return;
   }
 
   if (terminalId) {
@@ -2041,6 +2157,28 @@ async function handleWorkspaceStopAll(
 ): Promise<void> {
   const entry = getWorkspaceTerminalsEntry(workspacePath);
   const manager = getTerminalManager();
+
+  // Spec 786 PR iter-2 race-fix (Codex): explicitly delete every architect's
+  // `state.db.architect` row BEFORE killing or clearing the registry. The
+  // cascaded architect exit handlers in tower-instances.ts (lines 452-...,
+  // 501-..., etc.) and tower-terminals.ts work by scanning
+  // `currentEntry.architects` to recover the architect name from a dead
+  // terminal id. But stop-all clears that registry synchronously after the
+  // kills, before node-pty's async 'exit' events fire — so by the time the
+  // exit handlers look up the name, it's already gone, and they silently
+  // skip the row deletion. Result: stale `state.db.architect` rows survive
+  // what's supposed to be a full wipe, and `launchInstance` reconciliation
+  // re-spawns them on the next workspace start.
+  //
+  // The intentional-stop flag isn't the right tool here either — stop-all
+  // explicitly wants the rows gone. Pre-emptive deletion makes it
+  // explicit and order-independent: even if the exit handler somehow runs
+  // first, `setArchitectByName(name, null)` is idempotent.
+  for (const name of entry.architects.keys()) {
+    try {
+      setArchitectByName(name, null);
+    } catch { /* best-effort cleanup */ }
+  }
 
   // Kill all terminals (disable shellper auto-restart if applicable).
   // Spec 755: iterate all named architects, not just the singleton.

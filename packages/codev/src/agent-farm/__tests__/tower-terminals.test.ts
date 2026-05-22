@@ -597,5 +597,317 @@ describe('tower-terminals', () => {
 
       vi.restoreAllMocks();
     });
+
+    // =========================================================================
+    // Spec 786 Phase 2 — Identity preservation on shellper auto-restart
+    // =========================================================================
+    //
+    // The reconciliation path builds `restartOptions.env` that shellper uses
+    // when it auto-restarts a dead process. Prior to Spec 786, the env was
+    // `{ ...process.env }` minus CLAUDECODE — without `CODEV_ARCHITECT_NAME`
+    // re-injection. That meant a restarted sibling's claude process inherited
+    // Tower's env (default 'main' or unset), and builders spawned afterward
+    // lost affinity to the sibling. Phase 2 injects
+    // `CODEV_ARCHITECT_NAME: dbSession.role_id || 'main'` into the restart env.
+
+    describe('Spec 786 Phase 2 — CODEV_ARCHITECT_NAME re-injection', () => {
+      beforeEach(() => {
+        mockDbRun.mockReset();
+        mockDbAll.mockReset();
+        mockDbPrepare.mockReturnValue({ run: mockDbRun, all: mockDbAll });
+      });
+
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it('injects CODEV_ARCHITECT_NAME=<role_id> into restartOptions.env for a sibling architect', async () => {
+        let capturedRestartOptions: any = null;
+        const mockReconnectSession = vi.fn(async (_id, _socket, _pid, _start, restartOptions) => {
+          capturedRestartOptions = restartOptions;
+          return null; // stale — phase 2 cares only about restartOptions construction
+        });
+
+        const deps = makeDeps({ shellperManager: { reconnectSession: mockReconnectSession } as any });
+        initTerminals(deps);
+
+        mockDbAll.mockReturnValue([{
+          id: 'arch-ob-refine',
+          workspace_path: '/real/project',
+          type: 'architect',
+          role_id: 'ob-refine',
+          pid: 5000,
+          shellper_socket: '/tmp/shellper-ob-refine.sock',
+          shellper_pid: 6000,
+          shellper_start_time: Date.now(),
+          created_at: new Date().toISOString(),
+        }]);
+
+        vi.spyOn(fs, 'existsSync').mockImplementation((p: fs.PathLike) => {
+          if (String(p) === '/real/project') return true;
+          // No .codev/config.json — buildArchitectArgs will see no role and
+          // return empty harnessEnv (early return when loadRolePrompt is null).
+          return false;
+        });
+
+        const { reconcileTerminalSessions } = await import('../servers/tower-terminals.js');
+        await reconcileTerminalSessions();
+
+        expect(capturedRestartOptions).not.toBeNull();
+        expect(capturedRestartOptions.env.CODEV_ARCHITECT_NAME).toBe('ob-refine');
+      });
+
+      it('falls back to CODEV_ARCHITECT_NAME=main when role_id is null (legacy rows)', async () => {
+        let capturedRestartOptions: any = null;
+        const mockReconnectSession = vi.fn(async (_id, _socket, _pid, _start, restartOptions) => {
+          capturedRestartOptions = restartOptions;
+          return null;
+        });
+
+        const deps = makeDeps({ shellperManager: { reconnectSession: mockReconnectSession } as any });
+        initTerminals(deps);
+
+        mockDbAll.mockReturnValue([{
+          id: 'arch-legacy',
+          workspace_path: '/real/project',
+          type: 'architect',
+          role_id: null, // pre-v13 backfill — should fall back to 'main'
+          pid: 5000,
+          shellper_socket: '/tmp/shellper-legacy.sock',
+          shellper_pid: 6000,
+          shellper_start_time: Date.now(),
+          created_at: new Date().toISOString(),
+        }]);
+
+        vi.spyOn(fs, 'existsSync').mockImplementation((p: fs.PathLike) => {
+          if (String(p) === '/real/project') return true;
+          return false;
+        });
+
+        const { reconcileTerminalSessions } = await import('../servers/tower-terminals.js');
+        await reconcileTerminalSessions();
+
+        expect(capturedRestartOptions).not.toBeNull();
+        expect(capturedRestartOptions.env.CODEV_ARCHITECT_NAME).toBe('main');
+      });
+
+      it('keeps main`s restart env unchanged in behaviour (role_id=main → CODEV_ARCHITECT_NAME=main)', async () => {
+        let capturedRestartOptions: any = null;
+        const mockReconnectSession = vi.fn(async (_id, _socket, _pid, _start, restartOptions) => {
+          capturedRestartOptions = restartOptions;
+          return null;
+        });
+
+        const deps = makeDeps({ shellperManager: { reconnectSession: mockReconnectSession } as any });
+        initTerminals(deps);
+
+        mockDbAll.mockReturnValue([{
+          id: 'arch-main',
+          workspace_path: '/real/project',
+          type: 'architect',
+          role_id: 'main',
+          pid: 5000,
+          shellper_socket: '/tmp/shellper-main.sock',
+          shellper_pid: 6000,
+          shellper_start_time: Date.now(),
+          created_at: new Date().toISOString(),
+        }]);
+
+        vi.spyOn(fs, 'existsSync').mockImplementation((p: fs.PathLike) => {
+          if (String(p) === '/real/project') return true;
+          return false;
+        });
+
+        const { reconcileTerminalSessions } = await import('../servers/tower-terminals.js');
+        await reconcileTerminalSessions();
+
+        expect(capturedRestartOptions).not.toBeNull();
+        expect(capturedRestartOptions.env.CODEV_ARCHITECT_NAME).toBe('main');
+      });
+
+      it('injects CODEV_ARCHITECT_NAME on the on-the-fly reconnect path (getTerminalsForWorkspace)', async () => {
+        // Site 2 (workspace-status reconnect at tower-terminals.ts:777-798)
+        // is structurally identical to site 1 but lives in a different
+        // function. The plan explicitly requires "Tests assert env contents
+        // on each path", so this test exercises getTerminalsForWorkspace
+        // directly rather than reconcileTerminalSessions.
+        let capturedRestartOptions: any = null;
+        const mockReconnectSession = vi.fn(async (_id, _socket, _pid, _start, restartOptions) => {
+          capturedRestartOptions = restartOptions;
+          return null; // stale — phase 2 cares only about restartOptions construction
+        });
+
+        const deps = makeDeps({ shellperManager: { reconnectSession: mockReconnectSession } as any });
+        initTerminals(deps);
+
+        // getTerminalSessionsForWorkspace queries via mockDbAll. Return a
+        // sibling architect session whose runtime PTY is gone (so the on-the-
+        // fly reconnect path is triggered).
+        mockDbAll.mockReturnValue([{
+          id: 'arch-sibling-onthefly',
+          workspace_path: '/real/project',
+          type: 'architect',
+          role_id: 'team-a',
+          pid: 7000,
+          shellper_socket: '/tmp/shellper-team-a.sock',
+          shellper_pid: 8000,
+          shellper_start_time: Date.now(),
+          created_at: new Date().toISOString(),
+        }]);
+
+        vi.spyOn(fs, 'existsSync').mockImplementation((p: fs.PathLike) => {
+          if (String(p) === '/real/project') return true;
+          return false;
+        });
+
+        const { getTerminalsForWorkspace } = await import('../servers/tower-terminals.js');
+        await getTerminalsForWorkspace('/real/project', 'http://example.test');
+
+        expect(mockReconnectSession).toHaveBeenCalledTimes(1);
+        expect(capturedRestartOptions).not.toBeNull();
+        expect(capturedRestartOptions.env.CODEV_ARCHITECT_NAME).toBe('team-a');
+      });
+
+      it('does not set CODEV_ARCHITECT_NAME for non-architect sessions (builders/shells)', async () => {
+        let capturedRestartOptions: any = null;
+        const mockReconnectSession = vi.fn(async (_id, _socket, _pid, _start, restartOptions) => {
+          capturedRestartOptions = restartOptions;
+          return null;
+        });
+
+        const deps = makeDeps({ shellperManager: { reconnectSession: mockReconnectSession } as any });
+        initTerminals(deps);
+
+        mockDbAll.mockReturnValue([{
+          id: 'builder-1',
+          workspace_path: '/real/project',
+          type: 'builder',
+          role_id: 'builder-1',
+          pid: 5000,
+          shellper_socket: '/tmp/shellper-b1.sock',
+          shellper_pid: 6000,
+          shellper_start_time: Date.now(),
+          created_at: new Date().toISOString(),
+        }]);
+
+        vi.spyOn(fs, 'existsSync').mockImplementation((p: fs.PathLike) => {
+          if (String(p) === '/real/project') return true;
+          return false;
+        });
+
+        const { reconcileTerminalSessions } = await import('../servers/tower-terminals.js');
+        await reconcileTerminalSessions();
+
+        // Builders take the non-architect branch — restartOptions is undefined,
+        // so this is a no-op for env-injection purposes. (Builders restart via
+        // their own mechanism handled by spawn-worktree.)
+        expect(capturedRestartOptions).toBeUndefined();
+      });
+    });
+  });
+
+  // =========================================================================
+  // Spec 786 Phase 5 — Surface enumeration (v1 collapse removal)
+  // =========================================================================
+  //
+  // Replaces the Spec 755 v1 single-entry emission with one terminal entry per
+  // registered architect. Verifies tab id scheme (main → bare `'architect'`,
+  // siblings → `'architect:<name>'`), main-first ordering, and the new
+  // `architectName` / `pid` fields on each entry.
+
+  describe('Spec 786 Phase 5 — per-architect emission', () => {
+    let workspaceTerminals: ReturnType<typeof getWorkspaceTerminals>;
+
+    beforeEach(() => {
+      mockDbRun.mockReset();
+      mockDbAll.mockReset();
+      mockDbAll.mockReturnValue([]);
+      mockDbPrepare.mockReturnValue({ run: mockDbRun, all: mockDbAll });
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    function setupWorkspaceWithArchitects(names: string[]) {
+      const deps = makeDeps();
+      initTerminals(deps);
+      const wsPath = '/real/project';
+      vi.spyOn(fs, 'existsSync').mockImplementation((p: fs.PathLike) => {
+        if (String(p) === wsPath) return true;
+        return false;
+      });
+      // Seed in-memory architects via the entry helper, then mock the manager
+      // to return live PtySessions for each.
+      const entry = getWorkspaceTerminalsEntry(wsPath);
+      const manager = getTerminalManager();
+      const sessions = new Map<string, { id: string; pid: number; label: string; status: string }>();
+      for (const name of names) {
+        const terminalId = `term-${name}`;
+        entry.architects.set(name, terminalId);
+        sessions.set(terminalId, { id: terminalId, pid: 1000 + sessions.size, label: name, status: 'running' });
+      }
+      vi.spyOn(manager, 'getSession').mockImplementation((id: string) => {
+        return sessions.get(id) as any;
+      });
+      workspaceTerminals = getWorkspaceTerminals();
+      return { wsPath };
+    }
+
+    it('emits ONE entry per registered architect (no v1 collapse)', async () => {
+      const { wsPath } = setupWorkspaceWithArchitects(['main', 'ob-refine', 'architect-3']);
+      const { getTerminalsForWorkspace } = await import('../servers/tower-terminals.js');
+      const result = await getTerminalsForWorkspace(wsPath, 'http://example.test');
+
+      const architectEntries = result.terminals.filter(t => t.type === 'architect');
+      expect(architectEntries).toHaveLength(3);
+    });
+
+    it('uses bare "architect" id for main and "architect:<name>" for siblings', async () => {
+      const { wsPath } = setupWorkspaceWithArchitects(['main', 'ob-refine']);
+      const { getTerminalsForWorkspace } = await import('../servers/tower-terminals.js');
+      const result = await getTerminalsForWorkspace(wsPath, 'http://example.test');
+
+      const architectEntries = result.terminals.filter(t => t.type === 'architect');
+      const ids = architectEntries.map(t => t.id);
+      expect(ids).toContain('architect');
+      expect(ids).toContain('architect:ob-refine');
+    });
+
+    it('sorts main first regardless of insertion order', async () => {
+      // Insert sibling BEFORE main — main must still appear at index 0.
+      const { wsPath } = setupWorkspaceWithArchitects(['ob-refine', 'main', 'architect-3']);
+      const { getTerminalsForWorkspace } = await import('../servers/tower-terminals.js');
+      const result = await getTerminalsForWorkspace(wsPath, 'http://example.test');
+
+      const architectEntries = result.terminals.filter(t => t.type === 'architect');
+      expect(architectEntries[0].architectName).toBe('main');
+      expect(architectEntries[0].id).toBe('architect');
+    });
+
+    it('populates architectName, pid, label per entry', async () => {
+      const { wsPath } = setupWorkspaceWithArchitects(['main', 'ob-refine']);
+      const { getTerminalsForWorkspace } = await import('../servers/tower-terminals.js');
+      const result = await getTerminalsForWorkspace(wsPath, 'http://example.test');
+
+      const mainEntry = result.terminals.find(t => t.id === 'architect')!;
+      expect(mainEntry.architectName).toBe('main');
+      expect(mainEntry.label).toBe('main');
+      expect(mainEntry.pid).toBeGreaterThan(0);
+
+      const siblingEntry = result.terminals.find(t => t.id === 'architect:ob-refine')!;
+      expect(siblingEntry.architectName).toBe('ob-refine');
+      expect(siblingEntry.label).toBe('ob-refine');
+      expect(siblingEntry.pid).toBeGreaterThan(0);
+    });
+
+    it('emits no architect entries when none are registered', async () => {
+      const { wsPath } = setupWorkspaceWithArchitects([]);
+      const { getTerminalsForWorkspace } = await import('../servers/tower-terminals.js');
+      const result = await getTerminalsForWorkspace(wsPath, 'http://example.test');
+
+      const architectEntries = result.terminals.filter(t => t.type === 'architect');
+      expect(architectEntries).toHaveLength(0);
+    });
   });
 });

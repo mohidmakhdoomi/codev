@@ -71,7 +71,7 @@ describe('useTabs — architect tabs (Spec 761)', () => {
     expect(result.current.tabs.filter(t => t.type === 'architect')).toHaveLength(0);
   });
 
-  it('emits one architect tab with bare id "architect" when N=1', () => {
+  it('emits one architect tab with bare id "architect" and label "Architect" when N=1 (Spec 786 / #764)', () => {
     const { result } = renderHook(() => useTabs(makeState({
       architects: [archEntry('main')],
     })));
@@ -79,8 +79,13 @@ describe('useTabs — architect tabs (Spec 761)', () => {
     const archTabs = result.current.tabs.filter(t => t.type === 'architect');
     expect(archTabs).toHaveLength(1);
     expect(archTabs[0].id).toBe('architect');
-    expect(archTabs[0].label).toBe('main');
+    // Spec 786 / Issue #764: solo-architect tab label is 'Architect', not
+    // the internal 'main' identifier. The architectName property still
+    // carries the internal name for deep-link/persistence purposes.
+    expect(archTabs[0].label).toBe('Architect');
     expect(archTabs[0].architectName).toBe('main');
+    // Spec 786 Phase 4: `main` is non-closable.
+    expect(archTabs[0].closable).toBe(false);
   });
 
   it('emits N architect tabs with the first using bare id "architect" and rest prefixed', () => {
@@ -95,6 +100,26 @@ describe('useTabs — architect tabs (Spec 761)', () => {
       'architect:architect-3',
     ]);
     expect(archTabs.map(t => t.architectName)).toEqual(['main', 'sibling', 'architect-3']);
+    // Spec 786 / Issue #764: with N>1, labels use the architect name (not the
+    // solo-architect 'Architect' literal).
+    expect(archTabs.map(t => t.label)).toEqual(['main', 'sibling', 'architect-3']);
+    // Spec 786 Phase 4: `main` is non-closable; siblings are closable.
+    expect(archTabs.map(t => t.closable)).toEqual([false, true, true]);
+  });
+
+  it('falls back to label "Architect" when state.architect (scalar shim) provides only one architect (Spec 786 #764)', () => {
+    // The N=1 detection counts the resolved `architects` array length, so the
+    // scalar-shim fallback at N=1 still triggers the 'Architect' label.
+    const { result } = renderHook(() => useTabs({
+      architect: archEntry('main'),
+      builders: [],
+      utils: [],
+      annotations: [],
+    } as unknown as DashboardState));
+
+    const archTabs = result.current.tabs.filter(t => t.type === 'architect');
+    expect(archTabs).toHaveLength(1);
+    expect(archTabs[0].label).toBe('Architect');
   });
 
   it('falls back to scalar state.architect when state.architects is absent (deploy-window safety)', () => {
@@ -185,5 +210,50 @@ describe('useTabs — architect tabs (Spec 761)', () => {
     rerender();
 
     expect(result.current.activeTabId).toBe('architect:sibling');
+  });
+
+  // Spec 786 Phase 4: when the active tab disappears (sibling removed),
+  // useTabs falls back to 'architect' (main's bare id per Spec 761).
+  it('Spec 786: falls back active tab to "architect" when active sibling is removed', () => {
+    // Seed with main only so the post-load add of `sibling` triggers
+    // auto-switch (which makes sibling the active tab). Then remove the
+    // sibling to exercise the fallback.
+    let stateRef = makeState({ architects: [archEntry('main')] });
+    const { result, rerender } = renderHook(() => useTabs(stateRef));
+
+    // Add sibling — auto-switches to it.
+    stateRef = makeState({ architects: [archEntry('main'), archEntry('sibling')] });
+    rerender();
+    expect(result.current.activeTabId).toBe('architect:sibling');
+
+    // Remove sibling. The active tab id no longer matches any current tab.
+    stateRef = makeState({ architects: [archEntry('main')] });
+    rerender();
+
+    // The fallback must land on 'architect' (main's bare id), NOT 'tabs[0]'
+    // (which could be 'work' or vary by ordering) or some stale value.
+    expect(result.current.activeTabId).toBe('architect');
+  });
+
+  it('Spec 786: does NOT switch active tab when an inactive sibling is removed', () => {
+    let stateRef = makeState({ architects: [archEntry('main')] });
+    const { result, rerender } = renderHook(() => useTabs(stateRef));
+
+    // Add sibling — auto-switches to it.
+    stateRef = makeState({ architects: [archEntry('main'), archEntry('sibling')] });
+    rerender();
+    expect(result.current.activeTabId).toBe('architect:sibling');
+
+    // Click main to make it active.
+    act(() => {
+      result.current.selectTab('architect');
+    });
+    expect(result.current.activeTabId).toBe('architect');
+
+    // Remove the inactive sibling — main should stay active.
+    stateRef = makeState({ architects: [archEntry('main')] });
+    rerender();
+
+    expect(result.current.activeTabId).toBe('architect');
   });
 });

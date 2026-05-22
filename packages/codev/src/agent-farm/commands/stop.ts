@@ -5,7 +5,7 @@
  * Does NOT stop the tower - other workspaces may be using it.
  */
 
-import { loadState, clearState, getArchitects } from '../state.js';
+import { loadState, clearRuntime, getArchitects } from '../state.js';
 import { logger } from '../utils/logger.js';
 import { getConfig } from '../utils/config.js';
 import { getTowerClient } from '../lib/tower-client.js';
@@ -38,8 +38,12 @@ export async function stop(): Promise<void> {
         logger.info('Workspace was not running');
       }
 
-      // Clear local state as well
-      clearState();
+      // Spec 786 Phase 3: clear runtime state (builders/utils/annotations) but
+      // PRESERVE the architect registry so sibling architects survive
+      // `afx workspace stop` + `start`. The full-wipe `clearState()` would
+      // have undone Tower's intentional-stop preservation. Use `clearRuntime`
+      // for graceful stop; `clearState` remains for uninstall / nuke flows.
+      clearRuntime();
       return;
     }
 
@@ -89,8 +93,8 @@ export async function stop(): Promise<void> {
     }
   }
 
-  // Clear state
-  clearState();
+  // Spec 786 Phase 3: clear runtime state but preserve architects (see top).
+  clearRuntime();
 
   logger.blank();
   if (stopped > 0) {

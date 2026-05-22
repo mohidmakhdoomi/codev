@@ -35,6 +35,14 @@ export interface Builder {
   projectId?: string;
   terminalId?: string;
   persistent?: boolean;
+  /**
+   * Spec 755 / Spec 786: the architect that spawned this builder, if any.
+   * `null` for builders spawned outside of an architect context; the
+   * architect's name (`'main'` or a sibling name) otherwise. Surfaced to the
+   * dashboard so the remove-architect confirmation modal (Phase 4) can show
+   * users which builders are affected before they confirm the removal.
+   */
+  spawnedByArchitect?: string | null;
 }
 
 export interface UtilTerminal {
@@ -93,6 +101,27 @@ export interface TerminalEntry {
   label: string;
   url: string;
   active: boolean;
+  /**
+   * Spec 786 Phase 5: when `type === 'architect'`, the architect's stable
+   * name (`'main'` or a sibling). Allows consumers to enumerate architects
+   * without parsing the tab id.
+   */
+  architectName?: string;
+  /**
+   * Spec 786 Phase 5: live PID from Tower's in-memory PtySession (architect
+   * entries only; not persisted in `state.db`).
+   */
+  pid?: number;
+  /**
+   * Spec 786 Phase 5: port assigned to the terminal, if any.
+   */
+  port?: number;
+  /**
+   * Spec 786 Phase 5: the underlying PtySession id. For architects, the
+   * `id` field carries the tab identifier (Spec 761 deep-link convention);
+   * this field exposes the actual session id for terminal-attach correlation.
+   */
+  terminalId?: string;
 }
 
 // --- Overview (GET /api/overview) ---

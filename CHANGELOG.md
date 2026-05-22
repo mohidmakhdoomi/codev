@@ -9,6 +9,27 @@ For detailed release notes, see [docs/releases/](docs/releases/).
 
 ## [Unreleased]
 
+### Added (Spec 786 — Multi-architect lifecycle, persistence, and UX)
+
+- **`afx workspace remove-architect <name>`**: first-class CLI to evict a sibling architect. Refuses to remove `main`. Removing an architect with in-flight builders proceeds; those builders fall back to `main` routing.
+- **Dashboard close-button on sibling architect tabs**: clicking the X opens a confirmation modal that lists any in-flight builders this architect spawned (informational; remove proceeds regardless). The active tab falls back to `main` when the removed sibling was active.
+- **VSCode "Architects" expandable tree**: replaces the singleton "Open Architect" entry. One child per architect; click → opens that architect's terminal in its own VSCode terminal slot. Right-click a sibling → "Remove Architect" with modal confirmation. `main` gets no remove option.
+- **Identity preservation on shellper auto-restart**: when an architect's claude process exits and shellper restarts it, the new process receives `CODEV_ARCHITECT_NAME=<name>` so builders spawned afterward retain affinity to the right architect. Closes the silent regression in Spec 755 v1.
+- **Graceful-restart persistence for siblings**: sibling architects now survive both `afx workspace stop` + `afx workspace start` AND `afx tower stop` + start. Both paths were broken pre-Spec-786 because the cascaded exit handlers indiscriminately deleted the `state.db.architect` rows during shutdown. Crash recovery (Tower process killed without graceful shutdown — `terminal_sessions` rows survive and `reconcileTerminalSessions()` reconnects on startup) was already working; the matrix is now complete.
+- **Per-architect surface enumeration**: Tower `/status` API returns one terminal entry per architect (with `architectName`, `pid`, `port`, `terminalId` fields). `afx status` lists ALL architects by name + PID + terminal id. The pre-786 Spec 755 v1 "single Architect entry" collapse is removed.
+- **Reserved-name validation**: `validateArchitectName` rejects `'main'` (was previously rejected by collision only).
+- **#764 mobile-solo-architect label fix**: when N=1, the dashboard tab label is `'Architect'` (pre-#762 behaviour). When N>1, labels use the architect name.
+
+### Changed (Spec 786)
+
+- **`afx workspace stop` no longer wipes the architect registry**: the CLI command now calls `clearRuntime()` (new function) instead of `clearState()`. `clearState()` is preserved for callers that want the full wipe (uninstall / nuke flows). The Tower-side `handleWorkspaceStopAll` route also remains a full wipe.
+- **Tower `/status` API contract extension**: terminal entries now carry optional `architectName`, `pid`, `port`, `terminalId` fields when `type === 'architect'`. Backward-compatible (older clients ignore unknown fields).
+- **`DashboardState.architects`**: `loadState()` now populates the `architects` collection (was previously a placeholder). Sorted `main`-first. The scalar `state.architect` shim points at `architects[0]` for backward compat.
+
+### Breaking-ish change
+
+- Callers of `afx workspace stop` that depended on the architect registry being wiped should switch to `afx workspace stop-all` (full wipe) or call `clearState()` directly. The new graceful-stop semantics are the documented design; the old wipe-on-stop behaviour was an accident of Spec 755's incomplete persistence story.
+
 ## [2.0.6] - 2026-02-16 "Hagia Sophia"
 
 Major stabilization release with project management rework, shellper reliability improvements, and multi-agent consultation metrics.

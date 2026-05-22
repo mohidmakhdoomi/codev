@@ -55,6 +55,11 @@
         "title": "Codev: Open Architect Terminal"
       },
       {
+        "command": "codev.removeArchitect",
+        "title": "Codev: Remove Architect",
+        "category": "Codev"
+      },
+      {
         "command": "codev.openBuilderTerminal",
         "title": "Codev: Open Builder Terminal"
       },
@@ -234,6 +239,10 @@
           "when": "false"
         },
         {
+          "command": "codev.removeArchitect",
+          "when": "false"
+        },
+        {
           "command": "codev.openBacklogIssue",
           "when": "false"
         },
@@ -259,6 +268,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "codev.removeArchitect",
+          "when": "view == codev.workspace && viewItem == workspace-architect-sibling",
+          "group": "1_primary@1"
+        },
         {
           "command": "codev.approveGate",
           "when": "view == codev.builders && viewItem =~ /^blocked-builder-/",
@@ -570,6 +584,7 @@
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vscode-test",
+    "test:unit": "vitest run",
     "vsix": "vsce package --no-dependencies",
     "vscode:publish": "sh scripts/publish.sh",
     "vscode:publish:pre": "sh scripts/publish.sh --pre-release"
@@ -589,6 +604,7 @@
     "esbuild": "^0.27.1",
     "typescript": "^5.9.3",
     "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "@vscode/test-electron": "^2.5.2",
+    "vitest": "^4.0.15"
   }
 }

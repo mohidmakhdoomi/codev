@@ -33,7 +33,7 @@ import {
   validateArchitectName,
   DEFAULT_ARCHITECT_NAME,
 } from '../utils/architect-name.js';
-import { setArchitect, setArchitectByName } from '../state.js';
+import { setArchitect, setArchitectByName, getArchitects } from '../state.js';
 
 // ============================================================================
 // Dependency interface
@@ -71,6 +71,73 @@ export interface InstanceDeps {
 // ============================================================================
 
 let _deps: InstanceDeps | null = null;
+
+/**
+ * Spec 786 Phase 3: workspaces currently mid-`stopInstance` shutdown.
+ *
+ * When a workspace is added to this set, the architect exit handlers (here and
+ * in `tower-terminals.ts`) skip deleting the architect's `state.db.architect`
+ * row — preserving the registration so the architect survives `afx workspace
+ * stop` + `start` and is re-spawned by `launchInstance`'s sibling reconciliation
+ * loop. Permanent exit (max-restart exhaustion, explicit `remove-architect`)
+ * runs WITHOUT the workspace being in this set, so OQ-B's auto-delete behaviour
+ * is preserved.
+ *
+ * `stopInstance` adds to the set before iterating kills and removes in a
+ * `finally` block so the flag is always cleared even on error.
+ *
+ * Workspace paths are stored as resolved (realpath) paths to match the resolution
+ * already done by `stopInstance` and the exit handlers.
+ */
+const intentionallyStopping = new Set<string>();
+
+/**
+ * Spec 786 Phase 3: is the workspace currently mid-graceful-stop?
+ * Used by exit handlers (here AND in `tower-terminals.ts`) to decide whether to
+ * delete the architect's persisted row. See `intentionallyStopping` above.
+ *
+ * Exported so `tower-terminals.ts`'s reconciliation exit handler can call it.
+ */
+export function isIntentionallyStopping(workspacePath: string): boolean {
+  return intentionallyStopping.has(workspacePath);
+}
+
+/**
+ * Spec 786 Phase 3 / PR iter-2 race-fix: await a terminal's `'exit'` event
+ * with a timeout safety so callers (`stopInstance`, `removeArchitect`) can
+ * ensure the cascaded exit handler has finished BEFORE the
+ * `intentionallyStopping` flag is cleared.
+ *
+ * Why this exists: `killTerminalWithShellper` returns after sending SIGTERM,
+ * not after the process is reaped. node-pty's 'exit' event fires later, on
+ * its own tick. Without this await, the `finally` block in `stopInstance`
+ * clears the flag before the exit handler runs — the handler then reads
+ * `isIntentionallyStopping === false` and incorrectly deletes the persisted
+ * architect row. Unit tests don't catch it because they mock timing.
+ *
+ * The timeout (5s) is belt-and-suspenders: if 'exit' never fires (e.g.
+ * because the session was already gone), the promise still resolves so we
+ * don't block the stop indefinitely.
+ */
+function waitForTerminalExit(manager: TerminalManager, terminalId: string, timeoutMs = 5000): Promise<void> {
+  const session = manager.getSession(terminalId);
+  // Defensive: if the session is gone or doesn't look like an EventEmitter
+  // (e.g. a test stub), there's nothing to wait for — resolve immediately so
+  // callers aren't blocked.
+  if (!session || typeof (session as { once?: unknown }).once !== 'function') {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    session.once('exit', finish);
+    setTimeout(finish, timeoutMs);
+  });
+}
 
 // ============================================================================
 // Public lifecycle
@@ -356,10 +423,16 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
     // Initialize workspace terminal entry
     const entry = _deps.getWorkspaceTerminalsEntry(resolvedPath);
 
-    // Create architect terminal if not already present.
-    // Spec 755: this is the workspace-start path; it only creates the default
+    // Create architect terminal if `main` is not already present.
+    // Spec 755: this is the workspace-start path; it creates the default
     // 'main' architect. Additional named architects come via the Phase 2 CLI.
-    if (entry.architects.size === 0) {
+    // Spec 786 Phase 3: gate changed from `size === 0` to `!has('main')`. The
+    // size-based gate was unsafe once `state.db.architect` can carry sibling
+    // rows across stop+start — if a reconciliation path repopulated siblings
+    // before launchInstance ran, the old gate would have skipped main creation
+    // entirely. Gating on `main` specifically guarantees main is always
+    // created/present after launchInstance returns success.
+    if (!entry.architects.has('main')) {
       const manager = _deps.getTerminalManager();
 
       // Read architect command: env var override (for CI/testing), unified config, or default
@@ -451,13 +524,23 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
             if (ptySession) {
               ptySession.on('exit', (exitCode?: number, signal?: number | string | null) => {
                 const currentEntry = _deps!.getWorkspaceTerminalsEntry(resolvedPath);
+                let exitedName: string | null = null;
                 for (const [name, tid] of currentEntry.architects) {
                   if (tid === session.id) {
+                    exitedName = name;
                     currentEntry.architects.delete(name);
                     break;
                   }
                 }
                 _deps!.deleteTerminalSession(session.id);
+                // Spec 786 Phase 3 / OQ-B: delete the persisted architect row
+                // on permanent exit so state.db mirrors reality. Skip on
+                // intentional stop so the row survives a graceful stop+start.
+                if (exitedName && !isIntentionallyStopping(resolvedPath)) {
+                  try {
+                    setArchitectByName(exitedName, null);
+                  } catch { /* best-effort cleanup */ }
+                }
                 _deps!.log('INFO', `Architect shellper session exited for ${workspacePath} (code=${exitCode ?? null}, signal=${signal ?? null})`);
               });
             }
@@ -500,13 +583,22 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
           if (ptySession) {
             ptySession.on('exit', () => {
               const currentEntry = _deps!.getWorkspaceTerminalsEntry(resolvedPath);
+              let exitedName: string | null = null;
               for (const [name, tid] of currentEntry.architects) {
                 if (tid === session.id) {
+                  exitedName = name;
                   currentEntry.architects.delete(name);
                   break;
                 }
               }
               _deps!.deleteTerminalSession(session.id);
+              // Spec 786 Phase 3 / OQ-B: delete the persisted architect row
+              // on permanent exit; preserve on intentional stop.
+              if (exitedName && !isIntentionallyStopping(resolvedPath)) {
+                try {
+                  setArchitectByName(exitedName, null);
+                } catch { /* best-effort cleanup */ }
+              }
               _deps!.log('INFO', `Architect pty exited for ${workspacePath}`);
             });
           }
@@ -520,6 +612,30 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         _deps.log('ERROR', errMsg);
         return { success: false, error: errMsg, adopted };
       }
+    }
+
+    // Spec 786 Phase 3: re-spawn persisted sibling architects.
+    //
+    // After `main` is guaranteed present (above), iterate any non-main rows in
+    // `state.db.architect` and call `addArchitect()` for each. This restores
+    // siblings that survived `afx workspace stop` (the intentional-stop flag
+    // preserved their rows). The ordering is critical: `addArchitect()` rejects
+    // when `entry.architects.size === 0`, so it MUST run after main creation.
+    //
+    // Idempotency: skip names already in `entry.architects` so a re-entrant
+    // launch (or a race with `reconcileTerminalSessions`) doesn't double-spawn.
+    try {
+      const persisted = getArchitects();
+      for (const a of persisted) {
+        if (a.name === 'main') continue;
+        if (entry.architects.has(a.name)) continue;
+        const res = await addArchitect(workspacePath, a.name);
+        if (!res.success) {
+          _deps.log('WARN', `Failed to re-spawn persisted sibling architect '${a.name}': ${res.error}`);
+        }
+      }
+    } catch (siblingErr) {
+      _deps.log('WARN', `Sibling reconciliation failed: ${(siblingErr as Error).message}`);
     }
 
     return { success: true, adopted };
@@ -571,50 +687,89 @@ export async function stopInstance(workspacePath: string): Promise<{ success: bo
   // Get workspace terminals
   const entry = _deps.workspaceTerminals.get(resolvedPath) || _deps.workspaceTerminals.get(workspacePath);
 
-  if (entry) {
-    // Kill all architects (disable shellper auto-restart if applicable)
-    // Spec 755: iterate the named-architect Map instead of the old scalar.
-    for (const terminalId of entry.architects.values()) {
-      const session = manager.getSession(terminalId);
-      if (session) {
-        await killTerminalWithShellper(manager, terminalId);
-        stopped.push(session.pid);
+  // Spec 786 Phase 3: mark the workspace as "intentionally stopping" so the
+  // architect exit handlers triggered by the upcoming kills know NOT to delete
+  // the persisted `state.db.architect` rows. The flag is cleared in `finally`
+  // so any thrown error still releases it. Without this, the cascaded exit
+  // handlers in tower-instances.ts (4 handlers) and tower-terminals.ts (1
+  // handler) would delete sibling rows on every stop — making it impossible
+  // for siblings to survive `afx workspace stop` + `start`.
+  intentionallyStopping.add(resolvedPath);
+  if (resolvedPath !== workspacePath) intentionallyStopping.add(workspacePath);
+  try {
+    if (entry) {
+      // Spec 786 Phase 3 / PR iter-2 race-fix: register exit-promises for
+      // every terminal BEFORE we kill anything. `killTerminalWithShellper`
+      // sends SIGTERM and returns; node-pty's 'exit' event fires later, on
+      // its own tick. If we cleared the flag in `finally` before 'exit'
+      // fired, the cascaded architect exit handler would see
+      // `isIntentionallyStopping === false` and incorrectly delete the
+      // persisted `state.db.architect` row — defeating the entire Phase 3
+      // persistence story. We await all 'exit' events (with a 5s safety
+      // timeout per terminal) before falling through to the finally.
+      const exitPromises: Promise<void>[] = [];
+
+      // Kill all architects (disable shellper auto-restart if applicable)
+      // Spec 755: iterate the named-architect Map instead of the old scalar.
+      for (const terminalId of entry.architects.values()) {
+        const session = manager.getSession(terminalId);
+        if (session) {
+          exitPromises.push(waitForTerminalExit(manager, terminalId));
+          await killTerminalWithShellper(manager, terminalId);
+          stopped.push(session.pid);
+        }
+      }
+
+      // Kill all shells (disable shellper auto-restart if applicable)
+      for (const terminalId of entry.shells.values()) {
+        const session = manager.getSession(terminalId);
+        if (session) {
+          exitPromises.push(waitForTerminalExit(manager, terminalId));
+          await killTerminalWithShellper(manager, terminalId);
+          stopped.push(session.pid);
+        }
+      }
+
+      // Kill all builders (disable shellper auto-restart if applicable)
+      for (const terminalId of entry.builders.values()) {
+        const session = manager.getSession(terminalId);
+        if (session) {
+          exitPromises.push(waitForTerminalExit(manager, terminalId));
+          await killTerminalWithShellper(manager, terminalId);
+          stopped.push(session.pid);
+        }
+      }
+
+      // Await every 'exit' event before clearing the intentional-stop flag.
+      // Each promise has its own 5s safety timeout so a stuck process never
+      // blocks the stop indefinitely.
+      if (exitPromises.length > 0) {
+        await Promise.all(exitPromises);
+      }
+
+      // Clear workspace from registry
+      _deps.workspaceTerminals.delete(resolvedPath);
+      _deps.workspaceTerminals.delete(workspacePath);
+
+      // TICK-001: Delete all terminal sessions from SQLite
+      // Spec 786 Phase 3 Cl2: this is a full wipe of `terminal_sessions` rows.
+      // Sibling architect rows in `state.db.architect` are preserved by the
+      // intentional-stop flag above; on next launchInstance, siblings are
+      // re-spawned via addArchitect which creates fresh terminal_sessions rows.
+      _deps.deleteWorkspaceTerminalSessions(resolvedPath);
+      if (resolvedPath !== workspacePath) {
+        _deps.deleteWorkspaceTerminalSessions(workspacePath);
+      }
+
+      // Bugfix #474: Delete all file tabs for this workspace
+      _deps.deleteFileTabsForWorkspace(resolvedPath);
+      if (resolvedPath !== workspacePath) {
+        _deps.deleteFileTabsForWorkspace(workspacePath);
       }
     }
-
-    // Kill all shells (disable shellper auto-restart if applicable)
-    for (const terminalId of entry.shells.values()) {
-      const session = manager.getSession(terminalId);
-      if (session) {
-        await killTerminalWithShellper(manager, terminalId);
-        stopped.push(session.pid);
-      }
-    }
-
-    // Kill all builders (disable shellper auto-restart if applicable)
-    for (const terminalId of entry.builders.values()) {
-      const session = manager.getSession(terminalId);
-      if (session) {
-        await killTerminalWithShellper(manager, terminalId);
-        stopped.push(session.pid);
-      }
-    }
-
-    // Clear workspace from registry
-    _deps.workspaceTerminals.delete(resolvedPath);
-    _deps.workspaceTerminals.delete(workspacePath);
-
-    // TICK-001: Delete all terminal sessions from SQLite
-    _deps.deleteWorkspaceTerminalSessions(resolvedPath);
-    if (resolvedPath !== workspacePath) {
-      _deps.deleteWorkspaceTerminalSessions(workspacePath);
-    }
-
-    // Bugfix #474: Delete all file tabs for this workspace
-    _deps.deleteFileTabsForWorkspace(resolvedPath);
-    if (resolvedPath !== workspacePath) {
-      _deps.deleteFileTabsForWorkspace(workspacePath);
-    }
+  } finally {
+    intentionallyStopping.delete(resolvedPath);
+    if (resolvedPath !== workspacePath) intentionallyStopping.delete(workspacePath);
   }
 
   if (stopped.length === 0) {
@@ -785,9 +940,13 @@ export async function addArchitect(
           }
           _deps!.deleteTerminalSession(session.id);
           // Spec 755: remove the architect row from local state.db too.
-          try {
-            setArchitectByName(name, null);
-          } catch { /* best-effort cleanup */ }
+          // Spec 786 Phase 3: skip the row deletion when the workspace is
+          // mid-intentional-stop so the sibling survives `afx workspace stop`.
+          if (!isIntentionallyStopping(resolvedPath)) {
+            try {
+              setArchitectByName(name, null);
+            } catch { /* best-effort cleanup */ }
+          }
           _deps!.log('INFO', `Architect shellper session '${name}' exited (code=${exitCode ?? null}, signal=${signal ?? null})`);
         });
       }
@@ -834,9 +993,13 @@ export async function addArchitect(
             }
           }
           _deps!.deleteTerminalSession(session.id);
-          try {
-            setArchitectByName(name, null);
-          } catch { /* best-effort cleanup */ }
+          // Spec 786 Phase 3: skip the row deletion when the workspace is
+          // mid-intentional-stop so the sibling survives `afx workspace stop`.
+          if (!isIntentionallyStopping(resolvedPath)) {
+            try {
+              setArchitectByName(name, null);
+            } catch { /* best-effort cleanup */ }
+          }
           _deps!.log('INFO', `Architect pty '${name}' exited`);
         });
       }
@@ -849,4 +1012,98 @@ export async function addArchitect(
   }
 
   return { success: true, name, terminalId: sessionId! };
+}
+
+// ============================================================================
+// removeArchitect (Spec 786 Phase 4) — remove a named sibling architect
+// ============================================================================
+
+/**
+ * Spec 786 Phase 4: remove a sibling architect.
+ *
+ * Refuses `main` (workspace-defining, undeletable). Refuses unknown names with
+ * a 404-mappable error string. For known siblings, raises the intentional-stop
+ * flag so the cascaded exit handler does NOT delete the row twice, kills the
+ * sibling's PTY (disabling shellper auto-restart), then explicitly removes the
+ * in-memory entry and persisted rows. Returns `{ success: true }` on success.
+ *
+ * Removing a sibling with in-flight builders is permitted (per OQ-A) — the
+ * builders' subsequent `afx send architect` calls fall back to `main` via
+ * `tower-messages.ts:336`.
+ */
+export async function removeArchitect(
+  workspacePath: string,
+  name: string,
+): Promise<{ success: boolean; error?: string }> {
+  if (!_deps) return { success: false, error: 'Tower is still starting up. Try again shortly.' };
+
+  // Resolve symlinks for consistent lookup (matches addArchitect / stopInstance).
+  let resolvedPath = workspacePath;
+  try {
+    if (fs.existsSync(workspacePath)) {
+      resolvedPath = fs.realpathSync(workspacePath);
+    }
+  } catch {
+    // Use original path on resolution failure.
+  }
+
+  // Reserved-name check: `main` is workspace-defining and undeletable.
+  if (name === DEFAULT_ARCHITECT_NAME) {
+    return { success: false, error: "Cannot remove the default 'main' architect." };
+  }
+
+  const entry = _deps.workspaceTerminals.get(resolvedPath) || _deps.workspaceTerminals.get(workspacePath);
+  if (!entry || entry.architects.size === 0) {
+    return {
+      success: false,
+      error: `Workspace '${workspacePath}' is not running. Start it with 'afx workspace start' first.`,
+    };
+  }
+
+  const terminalId = entry.architects.get(name);
+  if (!terminalId) {
+    return { success: false, error: `Architect '${name}' not found in workspace '${workspacePath}'.` };
+  }
+
+  const manager = _deps.getTerminalManager();
+
+  // Raise the intentional-stop flag so the cascaded exit handler does NOT also
+  // delete the state.db row (we delete it explicitly below). Without this, the
+  // exit handler would call setArchitectByName(name, null) — harmless but the
+  // double-delete is wasteful and the intent (this is an intentional removal)
+  // is clearer with the flag set.
+  intentionallyStopping.add(resolvedPath);
+  if (resolvedPath !== workspacePath) intentionallyStopping.add(workspacePath);
+  try {
+    // Spec 786 Phase 4 / PR iter-2 race-fix: register the exit-promise
+    // BEFORE the kill so the listener is attached before node-pty can emit
+    // 'exit'. Without awaiting it, the `finally` clears the flag too early
+    // and the exit handler racing to re-delete the row sees the flag as
+    // false. (In remove-architect's case, the double-delete would be
+    // harmless — `setArchitectByName` is idempotent — but the same pattern
+    // bites `stopInstance` where the row should NOT be deleted at all. Keep
+    // both paths symmetric so a future contributor doesn't accidentally
+    // diverge them.)
+    const exitPromise = waitForTerminalExit(manager, terminalId);
+    await killTerminalWithShellper(manager, terminalId);
+    entry.architects.delete(name);
+
+    // Explicitly delete persisted rows (the intentional-stop flag suppressed
+    // the exit-handler delete; we want the row gone for this remove path).
+    try {
+      setArchitectByName(name, null);
+    } catch { /* best-effort cleanup */ }
+    try {
+      _deps.deleteTerminalSession(terminalId);
+    } catch { /* best-effort cleanup */ }
+
+    // Wait for the actual 'exit' event before clearing the flag.
+    await exitPromise;
+  } finally {
+    intentionallyStopping.delete(resolvedPath);
+    if (resolvedPath !== workspacePath) intentionallyStopping.delete(workspacePath);
+  }
+
+  _deps.log('INFO', `Removed architect '${name}' from workspace ${workspacePath}`);
+  return { success: true };
 }
