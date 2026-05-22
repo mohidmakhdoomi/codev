@@ -325,7 +325,10 @@ The "< 300 LOC" threshold is measured as **net diff** (additions + deletions):
 
 ```bash
 DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
-git diff --stat "${DEFAULT_BRANCH:-main}" | tail -1
+DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
+# Anchor at the merge-base so commits the base branch picked up after you
+# branched aren't counted toward this PR's LOC budget.
+git diff --stat "$(git merge-base "$DEFAULT_BRANCH" HEAD)" | tail -1
 # Example: "3 files changed, 145 insertions(+), 52 deletions(-)"
 # Net diff = 145 + 52 = 197 LOC ✓ (under 300)
 ```

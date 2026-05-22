@@ -38,7 +38,7 @@ Fixes #{{issue.number}}
 
 ## Files Changed
 
-Output of `git diff --stat "$DEFAULT_BRANCH"`, formatted as a list (resolve once: `DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||'); DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}`):
+Output of `git diff --stat "$MERGE_BASE"`, formatted as a list (resolve once: `DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||'); DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}; MERGE_BASE=$(git merge-base "$DEFAULT_BRANCH" HEAD)`. Anchoring at the merge-base keeps the file list scoped to *your* changes, not commits the base branch absorbed after you branched.):
 
 - `path/to/file.ts` (+12 / -3)
 - `path/to/new-file.ts` (+45 / -0)
