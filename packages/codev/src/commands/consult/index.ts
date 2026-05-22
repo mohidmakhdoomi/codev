@@ -9,7 +9,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execSync, execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import chalk from 'chalk';
 import { query as claudeQuery } from '@anthropic-ai/claude-agent-sdk';
@@ -779,10 +779,13 @@ async function runConsultation(
 
 /**
  * Get a compact diff stat summary and list of changed files.
+ *
+ * `ref` is passed as a single argv element so branch names with shell
+ * metacharacters can't break out of the command (#777 cmap-3 follow-up).
  */
 function getDiffStat(workspaceRoot: string, ref: string): { stat: string; files: string[] } {
-  const stat = execSync(`git diff --stat ${ref}`, { cwd: workspaceRoot, encoding: 'utf-8' }).toString();
-  const nameOnly = execSync(`git diff --name-only ${ref}`, { cwd: workspaceRoot, encoding: 'utf-8' }).toString();
+  const stat = execFileSync('git', ['diff', '--stat', ref], { cwd: workspaceRoot, encoding: 'utf-8' });
+  const nameOnly = execFileSync('git', ['diff', '--name-only', ref], { cwd: workspaceRoot, encoding: 'utf-8' });
   const files = nameOnly.trim().split('\n').filter(Boolean);
   return { stat, files };
 }
@@ -1359,14 +1362,14 @@ function resolveArchitectQuery(workspaceRoot: string, type: string, options: Con
 
     case 'impl': {
       const pr = findPRForIssue(workspaceRoot, issueId);
-      // Fetch both the PR head and its base so merge-base + diff have local
-      // refs to work with. Fetch failures are non-fatal in the
-      // already-cached case, but auth/network failures can leave us with
-      // stale local tracking refs — surface them so the architect knows the
-      // diff may be misleading.
+      // Fetch both the PR head and its base so the diff has local refs to
+      // work with. Fetch failures are non-fatal in the already-cached case,
+      // but auth/network failures can leave us with stale local tracking
+      // refs — surface them so the architect knows the diff may be
+      // misleading.
       for (const ref of [pr.headRefName, pr.baseRefName]) {
         try {
-          execSync(`git fetch origin ${ref}`, { cwd: workspaceRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+          execFileSync('git', ['fetch', 'origin', ref], { cwd: workspaceRoot, stdio: ['ignore', 'pipe', 'pipe'] });
         } catch (err) {
           const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr).trim() : '';
           console.error(
@@ -1378,42 +1381,32 @@ function resolveArchitectQuery(workspaceRoot: string, type: string, options: Con
       }
 
       // Use the PR's actual base (not the repo's default branch) as the
-      // merge-base counterparty. cmap-3 finding: when a PR targets a
-      // non-default integration branch, defaultBranch was the wrong anchor
-      // and produced phantom scope-creep verdicts of the same shape as the
-      // hardcoded-`main` bug — one layer deeper.
+      // merge-base anchor. cmap-3 finding: when a PR targets a non-default
+      // integration branch, defaultBranch was the wrong anchor and produced
+      // phantom scope-creep verdicts of the same shape as the hardcoded-
+      // `main` bug — one layer deeper.
+      //
+      // Three-dot in `git diff A...B` is documented as `git diff
+      // $(git merge-base A B) B` — git computes the merge-base internally,
+      // so an explicit `git merge-base` call would be redundant. We just
+      // verify the base ref is locally resolvable and let the three-dot
+      // form do the rest. If verification fails, crash explicitly rather
+      // than silently degrade to reviewing the architect's checked-out
+      // tree (cmap-3 Gemini finding).
       let diffRef: string;
       try {
-        const mergeBase = execSync(
-          `git merge-base origin/${pr.baseRefName} origin/${pr.headRefName}`,
-          { cwd: workspaceRoot, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] },
-        ).trim();
-        // Three-dot is the canonical PR-diff semantics (symmetric difference,
-        // anchored at the merge-base). Equivalent to two-dot when the LHS is
-        // already the merge-base SHA, but disambiguates intent.
-        diffRef = `${mergeBase}...origin/${pr.headRefName}`;
-      } catch {
-        // Explicit merge-base failed (e.g. base ref not fetched, no common
-        // history). Fall back to three-dot against the base ref directly,
-        // which lets git compute the merge-base inline.
-        try {
-          execSync(
-            `git rev-parse --verify origin/${pr.baseRefName}`,
-            { cwd: workspaceRoot, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] },
-          );
-          diffRef = `origin/${pr.baseRefName}...origin/${pr.headRefName}`;
-        } catch (err) {
-          // Both attempts failed — degrading silently would let reviewers
-          // emit verdicts against the architect's local checkout (typically
-          // the integration branch), producing bogus APPROVE/REQUEST_CHANGES
-          // verdicts on the wrong code. Crash explicitly instead.
-          // cmap-3 finding (Gemini).
-          throw new Error(
-            `Cannot compute diff scope for PR #${pr.number} (${pr.headRefName} → ${pr.baseRefName}). ` +
-            `Ensure both refs are fetched: \`git fetch origin ${pr.baseRefName} ${pr.headRefName}\`. ` +
-            `Underlying error: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
+        execFileSync('git', ['rev-parse', '--verify', `origin/${pr.baseRefName}`], {
+          cwd: workspaceRoot,
+          encoding: 'utf-8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        diffRef = `origin/${pr.baseRefName}...origin/${pr.headRefName}`;
+      } catch (err) {
+        throw new Error(
+          `Cannot compute diff scope for PR #${pr.number} (${pr.headRefName} → ${pr.baseRefName}). ` +
+          `Ensure both refs are fetched: \`git fetch origin ${pr.baseRefName} ${pr.headRefName}\`. ` +
+          `Underlying error: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
 
       // Read spec/plan from the PR's branch by default so they match the
