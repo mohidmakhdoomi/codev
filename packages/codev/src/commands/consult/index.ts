@@ -15,6 +15,7 @@ import chalk from 'chalk';
 import { query as claudeQuery } from '@anthropic-ai/claude-agent-sdk';
 import { Codex } from '@openai/codex-sdk';
 import { readCodevFile, findWorkspaceRoot } from '../../lib/skeleton.js';
+import { resolveDefaultBranch } from '../../lib/default-branch.js';
 import { getResolver } from '../porch/artifacts.js';
 import { MetricsDB } from './metrics.js';
 import { extractUsage, extractReviewText, type SDKResultLike, type UsageData } from './usage-extractor.js';
@@ -986,7 +987,8 @@ function buildImplQuery(
   let diffStat = '';
   let changedFiles: string[] = [];
   try {
-    const ref = diffRef ?? execSync('git merge-base HEAD main', { cwd: workspaceRoot, encoding: 'utf-8' }).trim();
+    const defaultBranch = resolveDefaultBranch(workspaceRoot);
+    const ref = diffRef ?? execSync(`git merge-base HEAD ${defaultBranch}`, { cwd: workspaceRoot, encoding: 'utf-8' }).trim();
     const result = getDiffStat(workspaceRoot, ref);
     diffStat = result.stat;
     changedFiles = result.files;
@@ -1025,9 +1027,15 @@ function buildImplQuery(
     query += `\n\n## How to Review\n`;
     query += `**Read the changed files from disk** to review their actual content. You have full filesystem access.\n`;
     query += `For each file listed above, read it and evaluate the implementation against the spec/plan.\n`;
-    query += `Do NOT rely on git diffs to determine the current state of code — diffs miss uncommitted changes in worktrees.\n`;
+    query += `\n### Scope is the file list above\n`;
+    query += `The files above are the canonical scope of this PR (three-dot diff against the PR's base, equivalent to GitHub's PR view). `;
+    query += `If this PR targets an integration branch, the file list reflects the diff against that integration branch — not necessarily \`main\`. `;
+    query += `Do not flag files outside this list, even if you see other changes in the worktree. `;
+    query += `If you compute a diff yourself, use \`git diff <base>...HEAD\` (three-dot) — never two-dot, which over-includes commits the base branch picked up since this branch was created.\n`;
   } else {
-    query += `\n## Instructions\n\nExplore the filesystem to find and review the implementation changes.\n`;
+    query += `\n## Instructions\n\n`;
+    query += `Explore the filesystem to find and review the implementation changes. `;
+    query += `If you compute a diff yourself, use \`git diff <base>...HEAD\` (three-dot, anchored at the merge-base) — never two-dot, which over-includes commits the base branch picked up since this branch was created.\n`;
   }
 
   query += `
@@ -1294,13 +1302,29 @@ function resolveArchitectQuery(workspaceRoot: string, type: string, options: Con
       } catch {
         // May already be fetched
       }
-      const mergeBase = execSync(`git merge-base main origin/${pr.headRefName}`, { cwd: workspaceRoot, encoding: 'utf-8' }).trim();
+      const defaultBranch = resolveDefaultBranch(workspaceRoot);
+      let diffRef: string | undefined;
+      try {
+        const mergeBase = execSync(
+          `git merge-base ${defaultBranch} origin/${pr.headRefName}`,
+          { cwd: workspaceRoot, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] },
+        ).trim();
+        // Three-dot is the canonical PR-diff semantics (symmetric difference,
+        // anchored at the merge-base). Semantically equivalent to two-dot when
+        // the LHS is already the merge-base SHA, but disambiguates in code review
+        // and stays correct if the LHS shape ever changes.
+        diffRef = `${mergeBase}...origin/${pr.headRefName}`;
+      } catch {
+        // Merge-base lookup failed (dangling origin/HEAD, default branch not
+        // locally present, etc.). Let buildImplQuery hit its empty-changedFiles
+        // fallback rather than crashing the whole command.
+      }
       const spec = findSpecContent(workspaceRoot, issueId);
       const plan = findPlanContent(workspaceRoot, issueId);
       console.error(`Project: ${issueId} (PR #${pr.number}, branch: ${pr.headRefName})`);
       if (spec) console.error(`Spec: ${spec.label}`);
       if (plan) console.error(`Plan: ${plan.label}`);
-      return buildImplQuery(workspaceRoot, spec, plan, options.planPhase, `${mergeBase}..origin/${pr.headRefName}`);
+      return buildImplQuery(workspaceRoot, spec, plan, options.planPhase, diffRef);
     }
 
     case 'pr': {
