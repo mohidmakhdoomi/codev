@@ -1198,18 +1198,37 @@ function findPRForCurrentBranch(workspaceRoot: string): string {
  * repo's default branch. This matters when the PR targets a non-default
  * integration branch — same #777 false-positive class as Layer 1, one layer
  * deeper. Found by cmap-3 review.
+ *
+ * Defensive fallback: if a project ships its own `pr-search.sh` override at
+ * `.codev/scripts/forge/github/pr-search.sh` that pre-dates the baseRefName
+ * addition, the JSON won't include it. Rather than crashing on a stale
+ * override (which is the kind of thing users only discover at the worst
+ * possible moment), substitute the repo's default branch and warn loudly.
  */
 function findPRForIssue(workspaceRoot: string, issueId: string): { number: number; headRefName: string; baseRefName: string } {
   const result = executeForgeCommandSync('pr-search', {
     CODEV_SEARCH_QUERY: issueId,
   }, { cwd: workspaceRoot });
 
-  const prs = Array.isArray(result) ? result as Array<{ number: number; headRefName: string; baseRefName: string }> : [];
+  const prs = Array.isArray(result) ? result as Array<{ number: number; headRefName: string; baseRefName?: string }> : [];
   if (prs.length === 0 || !prs[0]?.number) {
     throw new Error(`No PR found for issue #${issueId}`);
   }
 
-  return prs[0];
+  const pr = prs[0];
+  if (!pr.baseRefName) {
+    const defaultBranch = resolveDefaultBranch(workspaceRoot);
+    console.error(
+      `Warning: forge pr-search did not return baseRefName for PR #${pr.number}; ` +
+      `falling back to repo default branch \`${defaultBranch}\`. ` +
+      `This usually means a stale \`pr-search.sh\` override exists at ` +
+      `.codev/scripts/forge/github/pr-search.sh — refresh it (see the bundled version under ` +
+      `\`packages/codev/scripts/forge/github/pr-search.sh\` for the current shape).`
+    );
+    return { number: pr.number, headRefName: pr.headRefName, baseRefName: defaultBranch };
+  }
+
+  return { number: pr.number, headRefName: pr.headRefName, baseRefName: pr.baseRefName };
 }
 
 /**
