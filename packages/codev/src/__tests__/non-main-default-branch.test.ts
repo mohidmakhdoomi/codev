@@ -176,3 +176,88 @@ describe('#777 Defect A: GitRefResolver reads artifacts from a specific ref', ()
     expect(ref.findSpecBaseName('777', '')).toBe('777-feature');
   });
 });
+
+describe('#777 architect impl: diff scope anchors on PR.baseRefName, not repo default', () => {
+  // cmap-3 Codex finding (D3): when a PR targets a non-default integration
+  // branch, the impl-review must compute its scope against the PR's actual
+  // base — not the repo's `origin/HEAD`. This test exercises the merge-base
+  // arithmetic directly to confirm the right anchor is picked.
+  let tmpDir: string;
+  let originDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'baseref-'));
+    originDir = fs.mkdtempSync(path.join(os.tmpdir(), 'baseref-origin-'));
+
+    // origin/HEAD → main (repo default), but the PR will target `ci`.
+    execSync(`git init --bare -b main "${originDir}"`);
+    shell('git init -b main', tmpDir);
+    shell('git config user.email "test@test.com"', tmpDir);
+    shell('git config user.name "Test"', tmpDir);
+    fs.writeFileSync(path.join(tmpDir, 'shared.txt'), 'shared');
+    shell('git add shared.txt', tmpDir);
+    shell('git commit -m "initial on main"', tmpDir);
+    shell(`git remote add origin "${originDir}"`, tmpDir);
+    shell('git push origin main', tmpDir);
+    shell('git remote set-head origin main', tmpDir);
+
+    // Cut `ci` off main. ci then advances with its own commit (this is what
+    // makes the merge-bases diverge below — if ci stayed at initial, both
+    // anchors compute the same SHA).
+    shell('git checkout -b ci', tmpDir);
+    fs.writeFileSync(path.join(tmpDir, 'ci-only.txt'), 'ci-only commit');
+    shell('git add ci-only.txt', tmpDir);
+    shell('git commit -m "ci-only work"', tmpDir);
+    shell('git push origin ci', tmpDir);
+
+    // Main also advances independently.
+    shell('git checkout main', tmpDir);
+    fs.writeFileSync(path.join(tmpDir, 'main-only.txt'), 'main-only commit');
+    shell('git add main-only.txt', tmpDir);
+    shell('git commit -m "advance main"', tmpDir);
+    shell('git push origin main', tmpDir);
+
+    // Builder cuts feature off ci (after ci-only) and adds its own work.
+    shell('git checkout ci', tmpDir);
+    shell('git checkout -b builder/feature', tmpDir);
+    fs.writeFileSync(path.join(tmpDir, 'feature.txt'), 'feature work');
+    shell('git add feature.txt', tmpDir);
+    shell('git commit -m "feature work"', tmpDir);
+    shell('git push origin builder/feature', tmpDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(originDir, { recursive: true, force: true });
+  });
+
+  it('merge-base against origin/<baseRefName> (ci) excludes ci-only commits — the fix', () => {
+    // The fix: compute against the PR's actual base (origin/ci), not the
+    // repo default (main). The merge-base is the ci-after-ci-only commit,
+    // so the three-dot scope is exactly feature.txt — no ci-only.txt,
+    // no main-only.txt.
+    const mergeBaseCorrect = execSync(
+      'git merge-base origin/ci origin/builder/feature',
+      { cwd: tmpDir, encoding: 'utf-8' },
+    ).trim();
+    const correct = getDiffStat(tmpDir, `${mergeBaseCorrect}...origin/builder/feature`);
+    expect(correct.files).toContain('feature.txt');
+    expect(correct.files).not.toContain('ci-only.txt');
+    expect(correct.files).not.toContain('main-only.txt');
+  });
+
+  it('merge-base against main (repo default) sweeps in ci-only commits — the bug', () => {
+    // Pre-fix behavior anchor: when the merge-base uses the repo default
+    // (main) for a PR that actually targets `ci`, the common ancestor falls
+    // back to the initial commit (before ci forked). The three-dot diff
+    // then includes the ci-only commit as "scope creep" attributed to the
+    // builder, even though ci-only.txt is on the base branch.
+    const mergeBaseWrong = execSync(
+      'git merge-base origin/main origin/builder/feature',
+      { cwd: tmpDir, encoding: 'utf-8' },
+    ).trim();
+    const wrong = getDiffStat(tmpDir, `${mergeBaseWrong}...origin/builder/feature`);
+    expect(wrong.files).toContain('feature.txt');
+    expect(wrong.files).toContain('ci-only.txt');
+  });
+});
