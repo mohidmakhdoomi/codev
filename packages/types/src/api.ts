@@ -35,6 +35,14 @@ export interface Builder {
   projectId?: string;
   terminalId?: string;
   persistent?: boolean;
+  /**
+   * Spec 755 / Spec 786: the architect that spawned this builder, if any.
+   * `null` for builders spawned outside of an architect context; the
+   * architect's name (`'main'` or a sibling name) otherwise. Surfaced to the
+   * dashboard so the remove-architect confirmation modal (Phase 4) can show
+   * users which builders are affected before they confirm the removal.
+   */
+  spawnedByArchitect?: string | null;
 }
 
 export interface UtilTerminal {

@@ -28,6 +28,7 @@ const execAsync = promisify(exec);
 import type { SessionManager } from '../../terminal/session-manager.js';
 import type { PtySessionInfo } from '../../terminal/pty-session.js';
 import type { BuilderSpawnedPayload, DashboardState, ArchitectState } from '@cluesmith/codev-types';
+import { getBuilders } from '../state.js';
 import { DEFAULT_COLS, defaultSessionOptions } from '../../terminal/index.js';
 import type { SSEClient } from './tower-types.js';
 import { parseJsonBody, isRequestAllowed } from '../utils/server-utils.js';
@@ -1671,6 +1672,23 @@ async function handleWorkspaceState(
     }
   }
 
+  // Spec 786 Phase 4: build a lookup from builder id → spawned_by_architect so
+  // the dashboard's remove-architect confirmation modal can show which builders
+  // would lose their spawning architect (informational; per OQ-A removal
+  // proceeds regardless and they fall back to `main` routing). The data lives
+  // in `state.db.builders.spawned_by_architect` but the in-memory cache used by
+  // /api/state doesn't carry it — we read it explicitly here. Single query
+  // amortised across all builders rather than per-builder lookups.
+  const spawnedByMap = new Map<string, string | null>();
+  try {
+    for (const b of getBuilders()) {
+      spawnedByMap.set(b.id, b.spawnedByArchitect ?? null);
+    }
+  } catch {
+    // DB unavailable — modal degrades to "no in-flight builders" display.
+    // Acceptable since the modal text is informational per OQ-A.
+  }
+
   // Add builders from refreshed cache
   for (const [builderId, terminalId] of entry.builders) {
     const session = manager.getSession(terminalId);
@@ -1687,6 +1705,10 @@ async function handleWorkspaceState(
         type: 'spec',
         terminalId,
         persistent: isSessionPersistent(terminalId, session),
+        // Spec 786 Phase 4: surface spawning architect to the dashboard so the
+        // remove-architect modal can show affected builders. May be undefined
+        // when the builder row isn't in state.db (e.g. ephemeral test builders).
+        spawnedByArchitect: spawnedByMap.get(builderId) ?? null,
       });
     }
   }

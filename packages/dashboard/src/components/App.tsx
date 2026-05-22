@@ -376,7 +376,7 @@ export function App() {
       {pendingRemoveArchitect && (
         <RemoveArchitectModal
           name={pendingRemoveArchitect}
-          inFlightBuilders={(state?.builders ?? []).filter(b => (b as any).spawnedByArchitect === pendingRemoveArchitect)}
+          inFlightBuilders={(state?.builders ?? []).filter(b => b.spawnedByArchitect === pendingRemoveArchitect)}
           submitting={removingArchitect}
           error={removeArchitectError}
           onCancel={() => {

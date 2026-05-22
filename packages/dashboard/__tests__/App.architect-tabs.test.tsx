@@ -292,4 +292,107 @@ describe('App multi-architect dashboard (Spec 761)', () => {
     // Restore the URL for subsequent tests.
     window.history.replaceState({}, '', '/');
   });
+
+  // Spec 786 Phase 4: remove-architect confirmation modal flow.
+  describe('Spec 786 Phase 4 — remove-architect modal', () => {
+    function setupTwoArchitects(builders: Array<{ id: string; spawnedByArchitect?: string | null }> = []) {
+      mockUseBuilderStatus.mockReturnValue({
+        state: {
+          architect: archEntry('main', 'term-main'),
+          architects: [
+            archEntry('main', 'term-main'),
+            archEntry('sibling', 'term-sibling'),
+          ],
+          builders: builders.map(b => ({
+            id: b.id,
+            name: b.id,
+            port: 0,
+            pid: 1,
+            status: 'running',
+            phase: '',
+            worktree: '',
+            branch: '',
+            type: 'spec',
+            terminalId: `term-${b.id}`,
+            spawnedByArchitect: b.spawnedByArchitect ?? null,
+          })),
+          utils: [],
+          annotations: [],
+        },
+        refresh: vi.fn(),
+      });
+    }
+
+    it('opens the modal when a sibling tab close-button is clicked', () => {
+      setupTwoArchitects();
+      render(<App />);
+
+      // Modal not visible initially.
+      expect(screen.queryByRole('dialog')).toBeNull();
+
+      // Click the close button on the sibling tab.
+      const closeBtn = screen.getByRole('button', { name: /Close sibling/ });
+      fireEvent.click(closeBtn);
+
+      // Modal opens with the architect name in the heading.
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveTextContent(/Remove architect/);
+      expect(dialog).toHaveTextContent('sibling');
+    });
+
+    it('shows "no in-flight builders" when no builders were spawned by this architect', () => {
+      setupTwoArchitects(); // no builders
+      render(<App />);
+
+      fireEvent.click(screen.getByRole('button', { name: /Close sibling/ }));
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveTextContent(/no in-flight builders/i);
+    });
+
+    it('lists in-flight builders that were spawned by this architect', () => {
+      // Two builders: one spawned by 'sibling' (the one we're removing) and one
+      // spawned by 'main' (should not appear in the modal).
+      setupTwoArchitects([
+        { id: 'b1', spawnedByArchitect: 'sibling' },
+        { id: 'b2', spawnedByArchitect: 'main' },
+      ]);
+      render(<App />);
+
+      fireEvent.click(screen.getByRole('button', { name: /Close sibling/ }));
+      const dialog = screen.getByRole('dialog');
+      // The builder spawned by sibling appears.
+      expect(dialog).toHaveTextContent('1 in-flight builder');
+      expect(dialog).toHaveTextContent('b1');
+      // The builder spawned by main does NOT appear in this modal.
+      expect(dialog).not.toHaveTextContent('b2');
+    });
+
+    it('closes the modal on Cancel without removing', () => {
+      setupTwoArchitects();
+      const refresh = vi.fn();
+      mockUseBuilderStatus.mockReturnValue({
+        state: {
+          architect: archEntry('main', 'term-main'),
+          architects: [archEntry('main', 'term-main'), archEntry('sibling', 'term-sibling')],
+          builders: [],
+          utils: [],
+          annotations: [],
+        },
+        refresh,
+      });
+      render(<App />);
+
+      fireEvent.click(screen.getByRole('button', { name: /Close sibling/ }));
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+      // Click Cancel.
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      // Modal closes.
+      expect(screen.queryByRole('dialog')).toBeNull();
+      // No refresh triggered (no RPC call).
+      expect(refresh).not.toHaveBeenCalled();
+    });
+  });
 });
