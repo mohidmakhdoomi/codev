@@ -44,6 +44,13 @@ export interface ArchitectState {
 
 export interface DashboardState {
   architect: ArchitectState | null;
+  /**
+   * Spec 786 Phase 5: full collection of registered architects, sorted with
+   * `main` first (then by `started_at` ASC). The `architect` field above is
+   * a scalar shim pointing at `architects[0]` for backward-compat with legacy
+   * callers; new callers should iterate `architects` directly.
+   */
+  architects: ArchitectState[];
   builders: Builder[];
   utils: UtilTerminal[];
   annotations: Annotation[];

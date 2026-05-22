@@ -22,22 +22,31 @@ import { isPortConflictError } from './db/errors.js';
 /**
  * Load complete state from database
  *
- * Spec 755: `DashboardState.architect` remains a scalar shape in v1. We load
- * the architect named 'main' if present, otherwise the first registered
- * architect (alphabetical by name). The /api/state contract is preserved so
- * the dashboard and VSCode extension see no shape change. Multi-architect UI
- * is deferred to issue #2 — see plan codev/plans/755-*.md.
+ * Spec 755: `DashboardState.architect` retains its scalar shape for
+ * backward-compat — it's a shim pointing at `architects[0]` for legacy callers.
+ * Spec 786 Phase 5: `DashboardState.architects` is now populated as a
+ * main-first sorted collection so callers like `afx status` (Tower-down mode)
+ * can enumerate ALL architects without re-querying. Main is always
+ * `architects[0]` when present.
  */
 export function loadState(): DashboardState {
   const db = getDb();
 
-  // Load architect (Spec 755: scalar shim — prefer 'main', else the
-  // first-registered architect, ordered by started_at, not lexicographic name).
-  let architectRow = db.prepare("SELECT * FROM architect WHERE id = 'main'").get() as DbArchitect | undefined;
-  if (!architectRow) {
-    architectRow = db.prepare('SELECT * FROM architect ORDER BY started_at LIMIT 1').get() as DbArchitect | undefined;
-  }
-  const architect = architectRow ? dbArchitectToArchitectState(architectRow) : null;
+  // Spec 786 Phase 5: load ALL architects, ordered `main` first then by
+  // started_at (so siblings appear in spawn order). The previous code loaded
+  // only the scalar — that left `afx status` blind to siblings in Tower-down
+  // fallback mode.
+  //
+  // The ORDER BY uses `id != 'main'` so that 'main' sorts first
+  // (0 < 1 with this expression), then started_at ASC for siblings.
+  const architectRows = db.prepare(
+    "SELECT * FROM architect ORDER BY (id != 'main'), started_at"
+  ).all() as DbArchitect[];
+  const architects = architectRows.map(dbArchitectToArchitectState);
+  // The scalar shim points at architects[0] (which is `main` when present,
+  // else the first-registered architect by started_at). Preserves the legacy
+  // /api/state contract.
+  const architect = architects[0] ?? null;
 
   // Load builders
   const builderRows = db.prepare('SELECT * FROM builders ORDER BY started_at').all() as DbBuilder[];
@@ -53,6 +62,7 @@ export function loadState(): DashboardState {
 
   return {
     architect,
+    architects,
     builders,
     utils,
     annotations,

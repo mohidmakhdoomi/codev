@@ -805,4 +805,109 @@ describe('tower-terminals', () => {
       });
     });
   });
+
+  // =========================================================================
+  // Spec 786 Phase 5 — Surface enumeration (v1 collapse removal)
+  // =========================================================================
+  //
+  // Replaces the Spec 755 v1 single-entry emission with one terminal entry per
+  // registered architect. Verifies tab id scheme (main → bare `'architect'`,
+  // siblings → `'architect:<name>'`), main-first ordering, and the new
+  // `architectName` / `pid` fields on each entry.
+
+  describe('Spec 786 Phase 5 — per-architect emission', () => {
+    let workspaceTerminals: ReturnType<typeof getWorkspaceTerminals>;
+
+    beforeEach(() => {
+      mockDbRun.mockReset();
+      mockDbAll.mockReset();
+      mockDbAll.mockReturnValue([]);
+      mockDbPrepare.mockReturnValue({ run: mockDbRun, all: mockDbAll });
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    function setupWorkspaceWithArchitects(names: string[]) {
+      const deps = makeDeps();
+      initTerminals(deps);
+      const wsPath = '/real/project';
+      vi.spyOn(fs, 'existsSync').mockImplementation((p: fs.PathLike) => {
+        if (String(p) === wsPath) return true;
+        return false;
+      });
+      // Seed in-memory architects via the entry helper, then mock the manager
+      // to return live PtySessions for each.
+      const entry = getWorkspaceTerminalsEntry(wsPath);
+      const manager = getTerminalManager();
+      const sessions = new Map<string, { id: string; pid: number; label: string; status: string }>();
+      for (const name of names) {
+        const terminalId = `term-${name}`;
+        entry.architects.set(name, terminalId);
+        sessions.set(terminalId, { id: terminalId, pid: 1000 + sessions.size, label: name, status: 'running' });
+      }
+      vi.spyOn(manager, 'getSession').mockImplementation((id: string) => {
+        return sessions.get(id) as any;
+      });
+      workspaceTerminals = getWorkspaceTerminals();
+      return { wsPath };
+    }
+
+    it('emits ONE entry per registered architect (no v1 collapse)', async () => {
+      const { wsPath } = setupWorkspaceWithArchitects(['main', 'ob-refine', 'architect-3']);
+      const { getTerminalsForWorkspace } = await import('../servers/tower-terminals.js');
+      const result = await getTerminalsForWorkspace(wsPath, 'http://example.test');
+
+      const architectEntries = result.terminals.filter(t => t.type === 'architect');
+      expect(architectEntries).toHaveLength(3);
+    });
+
+    it('uses bare "architect" id for main and "architect:<name>" for siblings', async () => {
+      const { wsPath } = setupWorkspaceWithArchitects(['main', 'ob-refine']);
+      const { getTerminalsForWorkspace } = await import('../servers/tower-terminals.js');
+      const result = await getTerminalsForWorkspace(wsPath, 'http://example.test');
+
+      const architectEntries = result.terminals.filter(t => t.type === 'architect');
+      const ids = architectEntries.map(t => t.id);
+      expect(ids).toContain('architect');
+      expect(ids).toContain('architect:ob-refine');
+    });
+
+    it('sorts main first regardless of insertion order', async () => {
+      // Insert sibling BEFORE main — main must still appear at index 0.
+      const { wsPath } = setupWorkspaceWithArchitects(['ob-refine', 'main', 'architect-3']);
+      const { getTerminalsForWorkspace } = await import('../servers/tower-terminals.js');
+      const result = await getTerminalsForWorkspace(wsPath, 'http://example.test');
+
+      const architectEntries = result.terminals.filter(t => t.type === 'architect');
+      expect(architectEntries[0].architectName).toBe('main');
+      expect(architectEntries[0].id).toBe('architect');
+    });
+
+    it('populates architectName, pid, label per entry', async () => {
+      const { wsPath } = setupWorkspaceWithArchitects(['main', 'ob-refine']);
+      const { getTerminalsForWorkspace } = await import('../servers/tower-terminals.js');
+      const result = await getTerminalsForWorkspace(wsPath, 'http://example.test');
+
+      const mainEntry = result.terminals.find(t => t.id === 'architect')!;
+      expect(mainEntry.architectName).toBe('main');
+      expect(mainEntry.label).toBe('main');
+      expect(mainEntry.pid).toBeGreaterThan(0);
+
+      const siblingEntry = result.terminals.find(t => t.id === 'architect:ob-refine')!;
+      expect(siblingEntry.architectName).toBe('ob-refine');
+      expect(siblingEntry.label).toBe('ob-refine');
+      expect(siblingEntry.pid).toBeGreaterThan(0);
+    });
+
+    it('emits no architect entries when none are registered', async () => {
+      const { wsPath } = setupWorkspaceWithArchitects([]);
+      const { getTerminalsForWorkspace } = await import('../servers/tower-terminals.js');
+      const result = await getTerminalsForWorkspace(wsPath, 'http://example.test');
+
+      const architectEntries = result.terminals.filter(t => t.type === 'architect');
+      expect(architectEntries).toHaveLength(0);
+    });
+  });
 });

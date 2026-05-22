@@ -51,14 +51,35 @@ export async function status(): Promise<void> {
       logger.kv('  Terminals', workspaceStatus.terminals.length);
 
       if (workspaceStatus.terminals.length > 0) {
-        logger.blank();
-        logger.info('Terminals:');
-        for (const term of workspaceStatus.terminals) {
-          const typeColor = term.type === 'architect' ? chalk.cyan
-            : term.type === 'builder' ? chalk.blue
-            : term.type === 'dev' ? chalk.green
-            : chalk.gray;
-          logger.info(`  ${typeColor(term.type)} - ${term.label} (${term.active ? 'active' : 'stopped'})`);
+        // Spec 786 Phase 5: enumerate architects explicitly first, so users see
+        // ALL registered architects (not just one collapsed "Architect" row).
+        // Each architect entry's `architectName`, `pid`, and optional `port`
+        // come from the Tower API (per Spec 786 Phase 5's TowerWorkspaceStatus
+        // extension). Builders/shells/dev remain in the general Terminals list.
+        const architectTerminals = workspaceStatus.terminals.filter(t => t.type === 'architect');
+        const otherTerminals = workspaceStatus.terminals.filter(t => t.type !== 'architect');
+
+        if (architectTerminals.length > 0) {
+          logger.blank();
+          logger.info('Architects:');
+          for (const term of architectTerminals) {
+            const name = term.architectName || term.label;
+            const pid = term.pid ? `pid=${term.pid}` : 'pid=?';
+            const port = term.port ? ` port=${term.port}` : '';
+            const termId = ` terminal=${term.id}`;
+            logger.info(`  ${chalk.cyan(name)} (${pid}${port}${termId})`);
+          }
+        }
+
+        if (otherTerminals.length > 0) {
+          logger.blank();
+          logger.info('Terminals:');
+          for (const term of otherTerminals) {
+            const typeColor = term.type === 'builder' ? chalk.blue
+              : term.type === 'dev' ? chalk.green
+              : chalk.gray;
+            logger.info(`  ${typeColor(term.type)} - ${term.label} (${term.active ? 'active' : 'stopped'})`);
+          }
         }
       }
 
@@ -79,16 +100,20 @@ export async function status(): Promise<void> {
 
   logger.blank();
 
-  // Fall back to local state for legacy display
+  // Fall back to local state for legacy display.
+  // Spec 786 Phase 5: enumerate ALL architects from state.db. PID and port
+  // are not available without Tower (the architect table persists pid=0,
+  // port=0 — see state.ts:79, :103), so the fallback shows name + cmd only.
   const state = loadState();
 
-  // Architect status
-  if (state.architect) {
-    logger.kv('Architect', chalk.green('registered'));
-    logger.kv('  Command', state.architect.cmd);
-    logger.kv('  Started', state.architect.startedAt);
+  if (state.architects && state.architects.length > 0) {
+    logger.kv('Architects', chalk.green(`${state.architects.length} registered`));
+    logger.info(`  (Tower not running — PID/port not available)`);
+    for (const a of state.architects) {
+      logger.info(`  ${chalk.cyan(a.name ?? 'main')}: cmd=${a.cmd} started=${a.startedAt}`);
+    }
   } else {
-    logger.kv('Architect', chalk.gray('not running'));
+    logger.kv('Architects', chalk.gray('none registered'));
   }
 
   logger.blank();

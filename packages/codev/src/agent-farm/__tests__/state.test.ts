@@ -64,12 +64,60 @@ describe('State Management', () => {
     it('should return default state when database is empty', () => {
       const result = state.loadState();
 
+      // Spec 786 Phase 5: loadState now returns `architects: []` alongside the
+      // scalar `architect` shim (empty array when no rows in state.db.architect).
       expect(result).toEqual({
         architect: null,
+        architects: [],
         builders: [],
         utils: [],
         annotations: [],
       });
+    });
+
+    // Spec 786 Phase 5: loadState populates `architects` with `main` first.
+    it('returns architects collection with main first then siblings by started_at', () => {
+      // Insert in a deliberately scrambled order: a sibling first, then main,
+      // then another sibling. loadState must sort main to position 0.
+      state.setArchitectByName('ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude',
+        startedAt: '2026-05-22T10:00:00Z',
+        terminalId: 'term-ob',
+      });
+      state.setArchitect({
+        cmd: 'claude',
+        startedAt: '2026-05-22T11:00:00Z',
+        terminalId: 'term-main',
+      });
+      state.setArchitectByName('architect-3', {
+        name: 'architect-3',
+        cmd: 'claude',
+        startedAt: '2026-05-22T12:00:00Z',
+        terminalId: 'term-a3',
+      });
+
+      const result = state.loadState();
+      expect(result.architects).toHaveLength(3);
+      expect(result.architects[0].name).toBe('main');
+      // Siblings in started_at order (ob-refine before architect-3).
+      expect(result.architects[1].name).toBe('ob-refine');
+      expect(result.architects[2].name).toBe('architect-3');
+    });
+
+    it('scalar `architect` shim points at architects[0] for backward-compat', () => {
+      // With only a sibling registered (no main row), the scalar shim points
+      // at the sibling (architects[0]) — preserving the Spec 755 fallback.
+      state.setArchitectByName('ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude',
+        startedAt: '2026-05-22T10:00:00Z',
+      });
+
+      const result = state.loadState();
+      expect(result.architects).toHaveLength(1);
+      expect(result.architects[0].name).toBe('ob-refine');
+      expect(result.architect?.name).toBe('ob-refine');
     });
   });
 
@@ -327,8 +375,11 @@ describe('State Management', () => {
       state.clearState();
 
       const result = state.loadState();
+      // Spec 786 Phase 5: loadState now returns `architects: []` alongside the
+      // scalar `architect` shim (empty array when no rows in state.db.architect).
       expect(result).toEqual({
         architect: null,
+        architects: [],
         builders: [],
         utils: [],
         annotations: [],

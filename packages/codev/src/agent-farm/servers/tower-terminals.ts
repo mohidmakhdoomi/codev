@@ -961,17 +961,34 @@ export async function getTerminalsForWorkspace(
     }
   }
 
-  // Spec 755: emit a single Architect terminal entry when ANY architect is
-  // registered. The v1 UI contract keeps one architect tab; the underlying
-  // collection holds all named architects. Multi-architect UI is deferred to
-  // issue #2.
-  if (freshEntry.architects.size > 0) {
+  // Spec 786 Phase 5: emit ONE entry per registered architect. Replaces the
+  // Spec 755 v1 collapse that emitted a single "Architect" entry regardless of
+  // how many architects existed. The Spec 761 `architectTabId` convention is
+  // preserved: `main` always gets the bare `'architect'` id (for deep-link
+  // stability), siblings get `architect:<name>`. Iteration order is `main`
+  // first (sorted to handle the case where `launchInstance`'s sibling
+  // reconciliation could otherwise insert siblings before main).
+  const architectNames = [...freshEntry.architects.keys()].sort((a, b) => {
+    if (a === 'main') return -1;
+    if (b === 'main') return 1;
+    return 0;
+  });
+  for (const architectName of architectNames) {
+    const terminalId = freshEntry.architects.get(architectName)!;
+    const session = manager.getSession(terminalId);
+    if (!session) continue;
+    const tabId = architectName === 'main' ? 'architect' : `architect:${architectName}`;
     terminals.push({
       type: 'architect',
-      id: 'architect',
-      label: 'Architect',
-      url: `${proxyUrl}?tab=architect`,
+      id: tabId,
+      label: architectName,
+      url: `${proxyUrl}?tab=${tabId}`,
       active: true,
+      // Spec 786 Phase 5: extra fields for `afx status` and other enumerators.
+      architectName,
+      pid: session.pid || undefined,
+      // No port assigned to architect terminals today; preserved as an extension
+      // point for future per-architect HTTP surfaces.
     });
   }
 

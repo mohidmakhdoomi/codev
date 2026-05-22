@@ -65,6 +65,21 @@ export interface TerminalEntry {
   label: string;
   url: string;
   active: boolean;
+  /**
+   * Spec 786 Phase 5: when `type === 'architect'`, the architect's stable name
+   * (`'main'` or a sibling). Enables consumers like `afx status` to enumerate
+   * architects without parsing the `id`. Older clients ignore this field.
+   */
+  architectName?: string;
+  /**
+   * Spec 786 Phase 5: live process ID from Tower's in-memory `PtySession`
+   * (only meaningful for architect entries; not persisted in `state.db`).
+   */
+  pid?: number;
+  /**
+   * Spec 786 Phase 5: port assigned to the architect terminal, if any.
+   */
+  port?: number;
 }
 
 /** Instance status returned to tower UI */
