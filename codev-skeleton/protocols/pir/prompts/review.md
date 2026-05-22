@@ -249,7 +249,8 @@ Together with the `--pr` record from step 4a and the `--merged` record from step
 **If the PR cannot be created (e.g., merge conflicts with the default branch):**
 - Rebase on the default branch:
   ```bash
-  DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)
+  DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+  DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
   git fetch origin "$DEFAULT_BRANCH" && git rebase "origin/$DEFAULT_BRANCH"
   ```
 - Resolve conflicts (do NOT use destructive shortcuts)

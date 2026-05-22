@@ -20,7 +20,8 @@ Run `porch next {{project_id}}`. If the response is `gate_pending` on `dev-appro
 1. Resolve your repo's default branch (falls back to `main` if `origin/HEAD` isn't set):
 
    ```bash
-   DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)
+   DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+   DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
    ```
 
 2. Check for feedback:
