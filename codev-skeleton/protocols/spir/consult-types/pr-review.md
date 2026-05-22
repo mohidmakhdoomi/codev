@@ -28,7 +28,7 @@ You are performing a final self-check during the Review phase. The builder has c
    - Are any new APIs documented?
 
 5. **PR Readiness**
-   - Is the branch up to date with main?
+   - Is the branch up to date with its base (the integration branch the PR targets)?
    - Are commits atomic and well-described?
    - Is the change diff reasonable in size?
 

@@ -278,7 +278,7 @@ git commit -m "[Bugfix #N] Test: Add regression test"
    git pull
    ```
 
-2. Verify the fix is on main:
+2. Verify the fix is on the integration branch:
    ```bash
    git log --oneline -5  # Should see the bugfix commits
    ```
@@ -324,7 +324,7 @@ Before marking PR ready, the Builder must verify:
 The "< 300 LOC" threshold is measured as **net diff** (additions + deletions):
 
 ```bash
-git diff --stat main | tail -1
+git diff --stat "$(git symbolic-ref --short refs/remotes/origin/HEAD | sed 's|^origin/||')" | tail -1
 # Example: "3 files changed, 145 insertions(+), 52 deletions(-)"
 # Net diff = 145 + 52 = 197 LOC ✓ (under 300)
 ```
@@ -480,7 +480,7 @@ afx send architect "Merged. Ready for cleanup."
 
 # 11. Architect cleans up
 git pull
-git log --oneline -3  # Verify fix is on main
+git log --oneline -3  # Verify fix is on the integration branch
 afx cleanup --issue 42
 # → Removes .builders/bugfix-42/
 # → Deletes origin/builder/bugfix-42-login-fails-when-userna

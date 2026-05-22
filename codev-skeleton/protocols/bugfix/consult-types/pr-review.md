@@ -41,7 +41,7 @@ There is **no `codev/specs/`, `codev/plans/`, or `codev/reviews/` file** for a B
 
 6. **PR Hygiene**
    - Commits use the BUGFIX format: `Fix #<N>: ...` or `[Bugfix #<N>] ...` (**not** `[Spec NNNN][Phase]`).
-   - Branch is up to date with main (or close enough for clean merge).
+   - Branch is up to date with its base (or close enough for clean merge).
    - PR is linked to the issue.
 
 ## Out of Scope (Do NOT request changes for)

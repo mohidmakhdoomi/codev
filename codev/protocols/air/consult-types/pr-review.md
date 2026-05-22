@@ -34,7 +34,7 @@ If the baked decisions themselves contain contradictions, do not pick one — `R
 5. **PR Quality**
    - Does the PR link to the issue?
    - Is the PR body review section informative?
-   - Is the branch up to date with main?
+   - Is the branch up to date with its base (the integration branch the PR targets)?
 
 ## Verdict Format
 
