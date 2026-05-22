@@ -2,7 +2,7 @@
 
 ## Metadata
 - **ID**: plan-2026-05-22-786-multi-architect-feature
-- **Status**: draft (iter-2 — post plan iter-1 CMAP: Gemini APPROVE, Codex REQUEST_CHANGES, Claude COMMENT; both addressed)
+- **Status**: draft (iter-3 — post plan iter-2 CMAP convergence: Gemini APPROVE, Codex COMMENT, Claude APPROVE; minor comments incorporated)
 - **Specification**: [codev/specs/786-multi-architect-feature-is-und.md](../specs/786-multi-architect-feature-is-und.md)
 - **Created**: 2026-05-22
 
@@ -134,8 +134,8 @@ Revert the commit. The two-line addition is trivially reversible. No data migrat
 - Modify `launchInstance` to boot `main` AND reconcile any persisted siblings, instead of only-create-main.
 
 #### Deliverables
-- [ ] Exit handlers at `tower-instances.ts:452-462`, `:507`, `:777-793`, `:830-846` and `tower-terminals.ts:665-677` honour an "intentional stop" signal that suppresses the `setArchitectByName(name, null)` row deletion; permanent-exit semantics (max-restart exhaustion) still delete rows per OQ-B
-- [ ] `stopInstance` (`tower-instances.ts:555-625`) marks the workspace as "intentionally stopping" before killing terminals, so the cascaded exit handlers see the flag. Replace the blanket `deleteWorkspaceTerminalSessions(resolvedPath)` call with a selective version that preserves the `architect` table rows (or refrains from deleting `terminal_sessions` rows whose `type === 'architect' && role_id !== 'main'` for the workspace — pick whichever is cleaner)
+- [ ] Exit handlers at `tower-instances.ts:452-462`, `:507`, `:777-793`, `:830-846` and `tower-terminals.ts:665-677` honour an "intentional stop" signal that suppresses the `setArchitectByName(name, null)` row deletion; permanent-exit semantics (max-restart exhaustion) still delete rows per OQ-B. **Important asymmetry (per Claude iter-2 finding)**: only the two `addArchitect` handlers at `:777-793` and `:830-846` currently call `setArchitectByName(name, null)`. The other three sites (main's two exit handlers at `:452-462` and `:501-512`, and the reconciliation exit handler at `tower-terminals.ts:665-677`) do NOT currently delete the row. The builder must FIRST add the `setArchitectByName(name, null)` deletion at those three sites for OQ-B compliance (so permanent exit cleanly deletes the row), THEN wrap all five sites with the intentional-stop conditional
+- [ ] `stopInstance` (`tower-instances.ts:555-625`) marks the workspace as "intentionally stopping" before killing terminals, so the cascaded exit handlers see the flag and skip the `setArchitectByName(name, null)` call (preserving the `state.db.architect` registration rows). The existing `deleteWorkspaceTerminalSessions(resolvedPath)` call is preserved as a full wipe of `terminal_sessions` (per Claude iter-2 Cl2 — the durable registration is `state.db.architect`, not `terminal_sessions`; preserving `terminal_sessions` rows across stop would create orphans pointing at dead shellpers)
 - [ ] `launchInstance` (`tower-instances.ts:316-555`) no longer gates `main` creation on `entry.architects.size === 0`. Replacement condition: `!entry.architects.has('main')` for main; for siblings, iterate persisted rows from `state.db.architect` and re-spawn each via the existing `addArchitect` code path
 - [ ] `commands/stop.ts:42, :93` switches from `clearState()` to `clearRuntime()` (the registration-preserving variant from Phase 1)
 - [ ] `handleWorkspaceStopAll` in `tower-routes.ts:~2061` explicitly remains a full wipe — confirmed and tested (assertion that after stop-all, both `main` and any siblings are gone)
@@ -147,7 +147,10 @@ Revert the commit. The two-line addition is trivially reversible. No data migrat
   - **Critical ordering constraint** (per Claude iter-1 finding + Codex iter-1 finding): `addArchitect()` at `tower-instances.ts:666` explicitly rejects with "Workspace not running" when `entry.architects.size === 0`. So calling `addArchitect()` from `launchInstance` BEFORE `main` is created would fail.
   - **Required order**: (1) Create `main` if `!entry.architects.has('main')` — same logic as today, just with the new gate condition. (2) Query `state.db.architect` for all rows whose `id !== 'main'`. (3) For each persisted sibling not already in `entry.architects`, call `addArchitect(workspacePath, name)` (which now passes the size>0 guard because `main` exists). The persisted `cmd` is read from the `architect` table row via `getArchitects()`.
   - **`main`-first ordering also satisfies Spec 761's `architectTabId` convention**: the first registered architect gets the bare `'architect'` id; subsequent ones get `architect:<name>`. By always creating `main` first, `main` reliably owns the bare id, and deep-link parsing stays stable. This is the pinned answer to Claude iter-1's "Phase 5 main-first ordering" question.
-- **`deleteWorkspaceTerminalSessions` selectivity**: simplest implementation — leave the existing function alone and add a new `deleteWorkspaceTerminalSessionsExceptSiblings(workspacePath)` variant that runs `DELETE FROM terminal_sessions WHERE workspace_path = ? AND NOT (type = 'architect' AND role_id != 'main')`. `stopInstance` calls the new variant; `handleWorkspaceStopAll` keeps the existing full-wipe call.
+- **`deleteWorkspaceTerminalSessions` simplification** (per Claude iter-2 Cl2): preserving sibling `terminal_sessions` rows across stop+start is unnecessary and creates orphans. `stopInstance` kills shellper sessions; on the next `launchInstance`, the reconciliation loop reads from `state.db.architect` (the durable registration) and calls `addArchitect()` which creates fresh `terminal_sessions` rows. Preserved old rows from the previous stop would point at dead shellpers and become orphans.
+  - **Pinned design**: keep `deleteWorkspaceTerminalSessions` as a full wipe of `terminal_sessions` (existing behaviour). `stopInstance` still calls it. The architect persistence story is carried entirely by `state.db.architect` (which is what `Phase 1`'s `clearRuntime` preserves and what `launchInstance` Phase 3 reads).
+  - **Crash recovery is unchanged**: when Tower crashes, neither `stopInstance` nor `deleteWorkspaceTerminalSessions` runs, so `terminal_sessions` rows naturally survive, shellper processes survive, and `reconcileTerminalSessions()` correctly reconnects via the existing path.
+  - **Trade-off**: on graceful stop+start, sibling architects come back via the addArchitect path (fresh PTY, fresh shellper session), not via the reconnect-to-shellper path. This is acceptable — the visible behaviour is the same (architect is back, identity preserved via `CODEV_ARCHITECT_NAME` from Phase 2), and the implementation is much simpler. `handleWorkspaceStopAll` retains the same full-wipe behaviour and is unchanged.
 
 #### Acceptance Criteria
 - [ ] Integration test: add `ob-refine` → `afx workspace stop` → `afx workspace start` → `ob-refine` is in `entry.architects`, has a working PTY, is visible in dashboard
@@ -203,7 +206,9 @@ Revert the commit. `clearRuntime` from Phase 1 still works (just no caller). Sta
 - [ ] `packages/dashboard/src/hooks/useTabs.ts:52` — `closable: name !== 'main'` (only `main` is non-closable; siblings always have close buttons. At N=1 main is the only architect, so it's non-closable by name anyway. Defensive `architects.length > 1` guard is unnecessary because main-by-name is sufficient)
 - [ ] `packages/dashboard/src/components/ArchitectTabStrip.tsx` — **add close-button rendering** (per Claude iter-1 finding). Today the component renders only `<span className="tab-label">{tab.label}</span>` and has no close button at all, unlike `TabBar.tsx:48-64` which conditionally renders `&times;` when `tab.closable === true`. Add a matching conditional close-button render: `{tab.closable && (<span className="tab-close" onClick={...}>×</span>)}`. The click handler invokes the confirmation modal (next deliverable below) rather than directly calling remove. Without this addition, setting `closable: true` on the tab object would have no visible effect — flagged by Claude iter-1 as a gap in the original plan
 - [ ] `useTabs.ts:buildArchitectTabs` — when `architects.length === 1`, the single architect's tab label is `'Architect'` (restoring pre-#762 behaviour, **folds #764**); when `architects.length > 1`, use `name`
-- [ ] Dashboard click handler for the close-X opens a confirmation modal: "Remove architect `<name>`?" with informational text about in-flight builders (count + names if any). Confirm → calls `removeArchitect` RPC
+- [ ] `packages/dashboard/src/lib/api.ts` (per Codex iter-2 Co1): add a `removeArchitect(name)` client method that calls `DELETE /api/workspaces/:enc/architects/:name` against the dashboard's existing fetch wrapper. Returns the same `{ success, error? }` shape as the CLI client
+- [ ] `packages/dashboard/src/components/App.tsx` (per Codex iter-2 Co1): owns the confirmation-modal open/close state and the pending-architect-to-remove value. `ArchitectTabStrip` invokes a callback prop (`onRequestRemove(name)`) when the close button is clicked; `App.tsx` opens the modal with that name. On Confirm, `App.tsx` calls the client's `removeArchitect` method and closes the modal; the dashboard polls state and tab disappears naturally
+- [ ] Dashboard confirmation modal component (location: new file under `packages/dashboard/src/components/` or inline in `App.tsx` if simple enough): "Remove architect `<name>`?" with informational text about in-flight builders (count + names if any, read from `state.builders.filter(b => b.spawnedByArchitect === name)`). Buttons: "Remove" / "Cancel"
 - [ ] `useTabs` active-tab fallback: explicit logic — if `activeTabId === <removed-architect-tab-id>`, set `activeTabId` to `'architect'` (main's tab id per Spec 761's first-architect-is-bare design). The existing fallback at `:194` goes to `tabs[0]` which is `'work'` — that's wrong; new code is needed
 - [ ] `main` tab has no close button (already handled by `closable: false` on its tab object)
 
@@ -227,7 +232,7 @@ Revert the commit. `clearRuntime` from Phase 1 still works (just no caller). Sta
   ```
   Note: intentional-stop flag prevents the cascaded exit handler from double-deleting (which is fine as a no-op but cleaner to skip).
 - **Confirmation modal**: simple in-component modal in the dashboard. Lists `<name>` and in-flight builders count. Buttons: "Remove" / "Cancel". The informational text is non-blocking per OQ-A — the Remove button is always enabled.
-- **Active-tab fallback**: in `useTabs`, after a sibling is removed from `state.architects`, check `activeTabId === <removed-tab-id>` (the id is `architect:<name>` per Spec 761). If yes, call `setActiveTabId('architect')`. Add to the existing `useEffect` that tracks tab changes.
+- **Active-tab fallback**: in `useTabs`, after a sibling is removed from `state.architects`, check `activeTabId === <removed-tab-id>` (the id is `architect:<name>` per Spec 761). If yes, call `setActiveTabId('architect')` — the bare id reserved for `main` by Spec 761's `architectTabId(0, ...)`. Add to the existing `useEffect` that tracks tab changes. (Note: the existing `:194` fallback `tabs.find(...) ?? tabs[0]` is order-dependent and `tabs[0]` is the first architect, not `'work'` as implied in earlier plan revisions — per Claude iter-2 Cl3. The new explicit fallback to `'architect'` is correct regardless.)
 
 #### Acceptance Criteria
 - [ ] `afx workspace remove-architect ob-refine` succeeds; sibling gone from state, dashboard, in-memory map; corresponding terminal_sessions row gone
@@ -328,7 +333,7 @@ Revert the commit. The Tower API extension is additive (new optional fields); ro
 #### Objectives
 - Replace the singleton "Open Architect" tree item with an expandable "Architects" tree section, one entry per registered architect.
 - Re-key VSCode terminal slots by architect name so each architect gets its own terminal instance.
-- Add right-click "Remove Architect" context menu on sibling entries (NOT on `main`). **Confirm shape with architect at plan-approval gate** — the spec mentions the expandable section but doesn't pin the remove-UX path; the architect's plan-time note recommends right-click context menu.
+- Add right-click "Remove Architect" context menu on sibling entries (NOT on `main`). **Shape pinned** (per Gemini plan iter-1 endorsement + architect's plan-time note + Codex iter-2 Co2 — no longer conditional): right-click context menu via VSCode `view/item/context` menu contribution, gated on `contextValue == 'workspace-architect-sibling'`. `main`'s entry uses `contextValue: 'workspace-architect-main'` and gets no remove option.
 - Decide and implement behaviour of `codev.referenceIssueInArchitect` Backlog inline-button (Gemini iter-3 note): always inject to `main`, or to the active/expanded architect. Recommend always inject to `main` (most conservative; preserves current Backlog UX).
 
 #### Deliverables
@@ -486,6 +491,16 @@ Phase 1 and Phase 2 are independent and could be done in parallel; the plan list
 
 ## Expert Review
 
+**Iter-2 CMAP (2026-05-22)** — convergence reached:
+- **Gemini**: APPROVE. No key issues. "Comprehensive, well-sequenced plan that safely implements the spec while honoring all architectural constraints."
+- **Codex**: COMMENT (not REQUEST_CHANGES). Two finishing-touch points, both incorporated into iter-3:
+  1. Phase 4 missing dashboard `packages/dashboard/src/lib/api.ts` client method and `packages/dashboard/src/components/App.tsx` modal-ownership — added.
+  2. Phase 6 should commit to right-click context menu rather than treat it as "confirm at plan-approval" — committed; the conditional language is removed.
+- **Claude**: APPROVE. Three minor comments, all incorporated:
+  1. Exit handler asymmetry — only 2 of 5 sites currently call `setArchitectByName(name, null)`; the other 3 need it ADDED before the intentional-stop wrap. Clarification added to Phase 3 deliverables.
+  2. Stale `terminal_sessions` rows — simpler design: keep `deleteWorkspaceTerminalSessions` as full wipe of `terminal_sessions` in `stopInstance`; rely on `state.db.architect` for restoration via `addArchitect` path. Avoids orphan rows pointing at dead shellpers. Plan now pins this; the `deleteWorkspaceTerminalSessionsExceptSiblings` variant idea is dropped.
+  3. `tabs[0]` documentation accuracy — clarified that `tabs[0]` is the first architect tab, not `'work'`. The explicit fallback to `'architect'` (main's bare id) is correct regardless.
+
 **Iter-1 CMAP (2026-05-22)**:
 - **Gemini**: APPROVE. Endorsed three implementation choices: VSCode right-click context menu for remove, Tower `/status` extension over a sibling endpoint, and `clearState` split via new `clearRuntime()` function. No key issues.
 - **Codex**: REQUEST_CHANGES, all addressed in iter-2:
@@ -509,8 +524,7 @@ Phase 1 and Phase 2 are independent and could be done in parallel; the plan list
 
 ## Notes
 
-**Open question for architect at plan-approval gate (carried from spec phase):**
-- **VSCode remove-architect UX path** — spec mentions the expandable Architects section but doesn't pin how a user removes a sibling from VSCode. Plan recommends right-click context menu on the architect entry → "Remove Architect" action; `main` gets no remove menu item. Confirm at plan-approval.
+**VSCode remove-architect UX path (resolved during iter-2)**: right-click context menu, gated on `contextValue == 'workspace-architect-sibling'`. Gemini's plan iter-1 review and Codex's iter-2 review both endorsed this shape; the plan no longer treats it as conditional. Architect can still redirect at plan-approval gate if desired.
 
 **Implementation order recommendation**: builder may freely reorder Phase 1 and Phase 2 (independent). Other phases must execute in listed order.
 
