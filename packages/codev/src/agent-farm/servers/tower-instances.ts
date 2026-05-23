@@ -473,13 +473,17 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         // Multi-architect collision guard (Codex / Gemini cmap-3 round 2):
         // Named sibling architects (Spec 755) share `cwd = workspacePath` and
         // write their jsonls into the same encoded-cwd directory as main. The
-        // newest-jsonl heuristic can't distinguish which jsonl belongs to
-        // which architect — so if any sibling has ever existed in this
-        // workspace, main risks resuming a sibling's conversation instead of
-        // its own. Until #832 lands per-architect session UUIDs, the
-        // conservative behavior is: if siblings are persisted, skip resume
-        // for main and spawn fresh with role injection. Single-architect
+        // newest-jsonl heuristic can't tell which jsonl belongs to which
+        // architect — so if any sibling is currently persisted in state.db,
+        // main risks resuming a sibling's conversation instead of its own.
+        // Until #832 lands per-architect session UUIDs, the conservative
+        // behavior is: if state.db reports >1 architect, skip resume for
+        // main and spawn fresh with role injection. Single-architect
         // workspaces (the common case) keep conversation resume.
+        //
+        // Note: this only checks current persisted state, not history. A
+        // sibling that existed before but was removed leaves stale jsonl
+        // files behind; main could still pick one up. Acceptable until #832.
         let safeToResume: boolean;
         try {
           // Single architect (main only, or empty before first spawn) → safe.
@@ -493,7 +497,7 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         }
         const resumeSessionId = safeToResume ? findLatestSessionId(workspacePath) : null;
         if (!safeToResume) {
-          _deps.log('WARN', `Skipping main architect conversation resume for ${workspacePath}: sibling architects detected (or state.db unreadable); cannot disambiguate jsonl by cwd. See #832.`);
+          _deps.log('WARN', `Skipping main architect conversation resume for ${workspacePath}: persisted sibling architects detected (or state.db unreadable); cannot disambiguate jsonl by cwd. See #832.`);
         }
         let cmdArgs: string[];
         let harnessEnv: Record<string, string>;

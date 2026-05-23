@@ -74,16 +74,13 @@ import { executeForgeCommand, loadForgeConfig } from '../../lib/forge.js';
 // =============================================================================
 
 /**
- * Log spawn success with terminal WebSocket URL
- */
-/**
  * On --resume, look up the prior Claude conversation jsonl for the worktree
  * so the revived builder can pick up the saved conversation via
  * `claude --resume <uuid>` instead of starting fresh with a resume-notice
  * prompt. (Issue #831.) Returns undefined when not resuming or when no
  * jsonl exists; callers fall back to the fresh-spawn path in that case.
  */
-function discoverResumeSession(worktreePath: string, isResume: boolean | undefined): string | undefined {
+export function discoverResumeSession(worktreePath: string, isResume: boolean | undefined): string | undefined {
   if (!isResume) return undefined;
   const found = findLatestSessionId(worktreePath);
   if (found) {
