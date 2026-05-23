@@ -2217,7 +2217,8 @@ async function handleWorkspaceStopAll(
   // first, `setArchitectByName(name, null)` is idempotent.
   for (const name of entry.architects.keys()) {
     try {
-      setArchitectByName(name, null);
+      // Bugfix #826: scoped by workspace_path.
+      setArchitectByName(workspacePath, name, null);
     } catch { /* best-effort cleanup */ }
   }
 
@@ -2236,12 +2237,8 @@ async function handleWorkspaceStopAll(
   // Clear registry
   getWorkspaceTerminals().delete(workspacePath);
 
-  // TICK-001: Delete all terminal sessions from SQLite.
-  // Bugfix #826: stopInstance preserves architect rows so the workspace_path
-  // signal that getArchitectsForWorkspace joins on stays alive across
-  // stop+start. stop-all is the explicit FULL wipe — opt in to include the
-  // architect rows too (we already deleted the state.db.architect rows above).
-  deleteWorkspaceTerminalSessions(workspacePath, { includeArchitects: true });
+  // TICK-001: Delete all terminal sessions from SQLite
+  deleteWorkspaceTerminalSessions(workspacePath);
 
   // Bugfix #474: Delete all file tabs for this workspace
   deleteFileTabsForWorkspace(workspacePath);

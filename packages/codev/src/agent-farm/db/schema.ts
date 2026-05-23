@@ -16,14 +16,20 @@ CREATE TABLE IF NOT EXISTS _migrations (
 );
 
 -- Architect sessions (Spec 755: multi-architect — id is the architect's name)
+-- Bugfix #826: workspace_path scopes architect rows per workspace, eliminating
+-- the cross-workspace leak. Composite PK lets the same architect name (e.g.
+-- 'main') exist in multiple workspaces without collision.
 CREATE TABLE IF NOT EXISTS architect (
-  id TEXT PRIMARY KEY,
+  workspace_path TEXT NOT NULL,
+  id TEXT NOT NULL,
   pid INTEGER NOT NULL,
   port INTEGER NOT NULL,
   cmd TEXT NOT NULL,
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
-  terminal_id TEXT
+  terminal_id TEXT,
+  PRIMARY KEY (workspace_path, id)
 );
+CREATE INDEX IF NOT EXISTS idx_architect_workspace ON architect(workspace_path);
 
 -- Builder sessions
 CREATE TABLE IF NOT EXISTS builders (

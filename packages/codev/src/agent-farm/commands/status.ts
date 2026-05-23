@@ -109,7 +109,8 @@ export async function status(): Promise<void> {
   // Spec 786 Phase 5: enumerate ALL architects from state.db. PID and port
   // are not available without Tower (the architect table persists pid=0,
   // port=0 — see state.ts:79, :103), so the fallback shows name + cmd only.
-  const state = loadState();
+  // Bugfix #826: scoped by workspace_path.
+  const state = loadState(workspacePath);
 
   if (state.architects && state.architects.length > 0) {
     logger.kv('Architects', chalk.green(`${state.architects.length} registered`));

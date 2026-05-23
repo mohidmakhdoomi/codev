@@ -49,27 +49,34 @@ describe('Database Schema', () => {
       expect(tableNames).toContain('annotations');
     });
 
-    it('should allow multiple named architects (Spec 755 — singleton lifted)', () => {
+    it('should allow multiple named architects (Spec 755 — singleton lifted; Bugfix #826 — workspace-scoped)', () => {
+      // Bugfix #826: composite PK (workspace_path, id) — same name allowed in
+      // different workspaces, name still unique within a workspace.
       db.prepare(`
-        INSERT INTO architect (id, pid, port, cmd, started_at)
-        VALUES ('main', 1234, 4201, 'claude', datetime('now'))
+        INSERT INTO architect (workspace_path, id, pid, port, cmd, started_at)
+        VALUES ('/workspace/A', 'main', 1234, 4201, 'claude', datetime('now'))
       `).run();
 
-      // A second named architect must succeed — the v9 migration dropped the
-      // singleton CHECK constraint.
+      // A second named architect in the same workspace must succeed.
       db.prepare(`
-        INSERT INTO architect (id, pid, port, cmd, started_at)
-        VALUES ('sibling', 5678, 4201, 'claude', datetime('now'))
+        INSERT INTO architect (workspace_path, id, pid, port, cmd, started_at)
+        VALUES ('/workspace/A', 'sibling', 5678, 4201, 'claude', datetime('now'))
+      `).run();
+
+      // A 'main' architect in a DIFFERENT workspace must also succeed (composite PK).
+      db.prepare(`
+        INSERT INTO architect (workspace_path, id, pid, port, cmd, started_at)
+        VALUES ('/workspace/B', 'main', 9999, 4201, 'claude', datetime('now'))
       `).run();
 
       const count = db.prepare('SELECT COUNT(*) as count FROM architect').get() as { count: number };
-      expect(count.count).toBe(2);
+      expect(count.count).toBe(3);
 
-      // Names are unique (PRIMARY KEY).
+      // (workspace_path, id) is unique — same workspace + same name conflicts.
       expect(() => {
         db.prepare(`
-          INSERT INTO architect (id, pid, port, cmd, started_at)
-          VALUES ('main', 9999, 4201, 'claude', datetime('now'))
+          INSERT INTO architect (workspace_path, id, pid, port, cmd, started_at)
+          VALUES ('/workspace/A', 'main', 1111, 4201, 'claude', datetime('now'))
         `).run();
       }).toThrow();
     });

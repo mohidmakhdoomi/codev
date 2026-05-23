@@ -142,8 +142,10 @@ function ensureLocalDatabase(): Database.Database {
   const migrated = db.prepare('SELECT version FROM _migrations WHERE version = 1').get();
 
   if (!migrated && existsSync(jsonPath)) {
-    // Migrate from JSON
-    migrateLocalFromJson(db, jsonPath);
+    // Migrate from JSON.
+    // Bugfix #826: pass workspaceRoot so the architect row gets tagged
+    // with workspace_path (the new composite-PK column).
+    migrateLocalFromJson(db, jsonPath, config.workspaceRoot);
 
     // Record migration
     db.prepare('INSERT INTO _migrations (version) VALUES (1)').run();
@@ -465,6 +467,107 @@ function ensureLocalDatabase(): Database.Database {
       console.log("[info] Migrated builders table: added 'pir' to type CHECK constraint (v10)");
     }
     db.prepare('INSERT INTO _migrations (version) VALUES (10)').run();
+  }
+
+  // Migration v11: Workspace-scoped architect rows (Bugfix #826).
+  //
+  // The architect table was global per Tower process, anchored to Tower's
+  // startup CWD. With multi-architect (Spec 755 / 786), this meant siblings
+  // registered in workspace A were re-spawned into workspace B at the next
+  // launchInstance(B) — a real PTY leak. Fix by construction: add
+  // `workspace_path` as part of the primary key so rows are explicitly scoped.
+  //
+  // Backfill source: global.db.terminal_sessions has per-architect rows with
+  // workspace_path (its `role_id` column holds the architect name). We ATTACH
+  // global.db and copy that mapping into the new architect rows. Architects
+  // with no current terminal_session row are orphans (their PTY died and was
+  // cleaned up before this migration ran) — they are dropped.
+  //
+  // Idempotent: skips when workspace_path column already exists (handles fresh
+  // installs that ran the updated schema, and re-runs after partial failure).
+  const v11 = db.prepare('SELECT version FROM _migrations WHERE version = 11').get();
+  if (!v11) {
+    // Check if workspace_path column already exists (fresh install via LOCAL_SCHEMA).
+    const cols = db.prepare('PRAGMA table_info(architect)').all() as Array<{ name: string }>;
+    const alreadyMigrated = cols.some(c => c.name === 'workspace_path');
+
+    if (!alreadyMigrated) {
+      const globalDbPath = getGlobalDbPath();
+
+      // Step 1: rebuild table with composite PK (workspace_path, id).
+      //   - Create _v11 table with the new shape.
+      //   - Backfill workspace_path from global.db.terminal_sessions via ATTACH.
+      //     Use LIMIT 1 to handle the (rare) case where multiple rows match.
+      //   - Drop orphans (workspace_path IS NULL).
+      //   - DETACH global.db before swapping table names.
+      //   - Atomic swap: DROP architect, RENAME _v11 → architect.
+      db.exec(`
+        CREATE TABLE architect_v11 (
+          workspace_path TEXT NOT NULL,
+          id TEXT NOT NULL,
+          pid INTEGER NOT NULL,
+          port INTEGER NOT NULL,
+          cmd TEXT NOT NULL,
+          started_at TEXT NOT NULL DEFAULT (datetime('now')),
+          terminal_id TEXT,
+          PRIMARY KEY (workspace_path, id)
+        );
+      `);
+
+      try {
+        // ATTACH global.db so we can read terminal_sessions for the backfill.
+        db.prepare("ATTACH DATABASE ? AS globaldb").run(globalDbPath);
+        try {
+          // Backfill: for each architect row, look up its workspace_path via
+          // matching role_id in global.db.terminal_sessions. Architects without
+          // a matching row get workspace_path = NULL and are dropped below.
+          db.exec(`
+            INSERT INTO architect_v11 (workspace_path, id, pid, port, cmd, started_at, terminal_id)
+            SELECT
+              (SELECT ts.workspace_path
+                 FROM globaldb.terminal_sessions ts
+                WHERE ts.role_id = a.id
+                  AND ts.type = 'architect'
+                LIMIT 1) AS workspace_path,
+              a.id,
+              a.pid,
+              a.port,
+              a.cmd,
+              a.started_at,
+              a.terminal_id
+            FROM architect a
+            WHERE EXISTS (
+              SELECT 1 FROM globaldb.terminal_sessions ts
+              WHERE ts.role_id = a.id AND ts.type = 'architect'
+            );
+          `);
+        } finally {
+          db.prepare('DETACH DATABASE globaldb').run();
+        }
+      } catch (err) {
+        // If global.db can't be opened (e.g. doesn't exist yet in a fresh
+        // install where Tower hasn't started), the architect table must be
+        // empty for the migration to succeed. Verify and proceed; if there
+        // are pre-existing architect rows we genuinely can't backfill, drop
+        // them — they correspond to a never-started workspace.
+        const remaining = db.prepare('SELECT COUNT(*) AS n FROM architect').get() as { n: number };
+        if (remaining.n > 0) {
+          console.log(`[warn] Migration v11: dropping ${remaining.n} architect row(s) — global.db unavailable for backfill: ${(err as Error).message}`);
+        }
+        // architect_v11 is empty in this path; carry on.
+      }
+
+      // Step 2: atomic swap.
+      db.exec(`
+        DROP TABLE architect;
+        ALTER TABLE architect_v11 RENAME TO architect;
+        CREATE INDEX IF NOT EXISTS idx_architect_workspace ON architect(workspace_path);
+      `);
+
+      console.log('[info] Migrated architect table: workspace-scoped rows (Bugfix #826)');
+    }
+
+    db.prepare('INSERT INTO _migrations (version) VALUES (11)').run();
   }
 
   return db;

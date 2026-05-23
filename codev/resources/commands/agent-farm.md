@@ -252,12 +252,12 @@ afx send architect "Status update"
 
 #### Persistence and recovery
 
-Spec 786 Phase 3 added graceful-restart persistence for sibling architects; Bugfix #826 extended it with workspace scoping so architects registered in workspace A don't leak into workspace B at launch.
+Spec 786 Phase 3 added graceful-restart persistence for sibling architects; Bugfix #826 extended it with workspace scoping via a schema change — `state.db.architect` now has `workspace_path` as part of the composite primary key, so architects registered in workspace A cannot appear in queries scoped to workspace B.
 
-- **`afx workspace stop` → `afx workspace start`**: sibling architects survive. Tower's `stopInstance` marks the workspace as "intentionally stopping" so the cascaded architect exit handlers skip BOTH the per-session `deleteTerminalSession` call AND the `setArchitectByName(name, null)` call. The bulk `deleteWorkspaceTerminalSessions` also preserves `type='architect'` rows by default. On next start, `launchInstance` creates `main` and then re-spawns persisted siblings via `addArchitect` — but ONLY those whose `terminal_sessions.workspace_path` matches THIS workspace (Bugfix #826: workspace-scoped reconcile via `getArchitectsForWorkspace`).
+- **`afx workspace stop` → `afx workspace start`**: sibling architects survive. Tower's `stopInstance` marks the workspace as "intentionally stopping" so the cascaded architect exit handlers skip the `setArchitectByName(workspacePath, name, null)` call, preserving rows in `state.db.architect`. On next start, `launchInstance` creates `main` and then re-spawns persisted siblings via `addArchitect` — `getArchitects(resolvedPath)` returns only this workspace's rows (Bugfix #826).
 - **Tower crash**: `terminal_sessions` rows + shellper processes survive. Tower's `reconcileTerminalSessions()` reconnects on startup.
-- **Permanent exit (max-restart exhaustion, `remove-architect`)**: rows are auto-deleted from `state.db.architect` AND `terminal_sessions` (Spec 786 OQ-B — keeps state.db an accurate mirror of reality).
-- **Dashboard "Stop All"** (or `POST /workspace/<base64>/api/stop` directly): full wipe, including sibling rows in both tables (`deleteWorkspaceTerminalSessions(..., { includeArchitects: true })`). Use this when you want to start over from scratch. There is no `afx workspace stop-all` CLI today — the full-wipe path is currently API-only via the dashboard.
+- **Permanent exit (max-restart exhaustion, `remove-architect`)**: rows are auto-deleted from `state.db.architect` (Spec 786 OQ-B — keeps state.db an accurate mirror of reality).
+- **Dashboard "Stop All"** (or `POST /workspace/<base64>/api/stop` directly): full wipe, including sibling rows. Per-workspace `state.db.architect` rows are removed pre-emptively in the route handler. Use this when you want to start over from scratch. There is no `afx workspace stop-all` CLI today — the full-wipe path is currently API-only via the dashboard.
 
 ---
 

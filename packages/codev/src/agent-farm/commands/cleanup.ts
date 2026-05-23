@@ -177,8 +177,10 @@ async function deleteRemoteBranch(branch: string, config: Config): Promise<void>
 export async function cleanup(options: CleanupOptions): Promise<void> {
   const config = getConfig();
 
-  // Load state to find the builder
-  const state = loadState();
+  // Load state to find the builder.
+  // Bugfix #826: loadState scopes the architect read by workspace_path;
+  // builders are global per state.db, so this workspace's scope is fine.
+  const state = loadState(config.workspaceRoot);
   let builder: Builder | undefined;
 
   if (options.issue) {

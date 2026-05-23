@@ -53,13 +53,19 @@ describe('Migration', () => {
       const jsonPath = resolve(testDir, 'state.json');
       writeFileSync(jsonPath, JSON.stringify(jsonState));
 
-      migrateLocalFromJson(db, jsonPath);
+      // Bugfix #826: pass workspacePath; the migrated architect row is tagged
+      // with it (workspace_path is part of the composite PK in v11+).
+      migrateLocalFromJson(db, jsonPath, '/workspace/legacy');
 
-      // Spec 755: legacy singleton row migrates to architect named 'main'
-      const architect = db.prepare("SELECT * FROM architect WHERE id = 'main'").get() as any;
+      // Spec 755: legacy singleton row migrates to architect named 'main'.
+      // Bugfix #826: scoped lookup by workspace_path.
+      const architect = db
+        .prepare("SELECT * FROM architect WHERE workspace_path = ? AND id = 'main'")
+        .get('/workspace/legacy') as any;
       expect(architect.pid).toBe(1234);
       expect(architect.port).toBe(4201);
       expect(architect.cmd).toBe('claude --dangerously-skip-permissions');
+      expect(architect.workspace_path).toBe('/workspace/legacy');
       // tmux_session column removed in Spec 0104 Phase 4 — no longer migrated
     });
 
@@ -89,7 +95,7 @@ describe('Migration', () => {
       const jsonPath = resolve(testDir, 'state.json');
       writeFileSync(jsonPath, JSON.stringify(jsonState));
 
-      migrateLocalFromJson(db, jsonPath);
+      migrateLocalFromJson(db, jsonPath, '/workspace/legacy');
 
       const builders = db.prepare('SELECT * FROM builders').all() as any[];
       expect(builders).toHaveLength(1);
@@ -117,7 +123,7 @@ describe('Migration', () => {
       const jsonPath = resolve(testDir, 'state.json');
       writeFileSync(jsonPath, JSON.stringify(jsonState));
 
-      migrateLocalFromJson(db, jsonPath);
+      migrateLocalFromJson(db, jsonPath, '/workspace/legacy');
 
       const utils = db.prepare('SELECT * FROM utils').all() as any[];
       expect(utils).toHaveLength(1);
@@ -146,7 +152,7 @@ describe('Migration', () => {
       const jsonPath = resolve(testDir, 'state.json');
       writeFileSync(jsonPath, JSON.stringify(jsonState));
 
-      migrateLocalFromJson(db, jsonPath);
+      migrateLocalFromJson(db, jsonPath, '/workspace/legacy');
 
       const annotations = db.prepare('SELECT * FROM annotations').all() as any[];
       expect(annotations).toHaveLength(1);
@@ -167,7 +173,7 @@ describe('Migration', () => {
       writeFileSync(jsonPath, JSON.stringify(jsonState));
 
       // Should not throw
-      migrateLocalFromJson(db, jsonPath);
+      migrateLocalFromJson(db, jsonPath, '/workspace/legacy');
 
       const architect = db.prepare('SELECT * FROM architect').all();
       expect(architect).toHaveLength(0);

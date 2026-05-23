@@ -33,7 +33,7 @@ import {
   validateArchitectName,
   DEFAULT_ARCHITECT_NAME,
 } from '../utils/architect-name.js';
-import { setArchitect, setArchitectByName, getArchitectsForWorkspace } from '../state.js';
+import { setArchitect, setArchitectByName, getArchitects } from '../state.js';
 
 // ============================================================================
 // Dependency interface
@@ -507,8 +507,9 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
 
             // Spec 755: persist to local state.db (architect table) so afx
             // status / stop see the architect via loadState's scalar shim.
+            // Bugfix #826: scoped by workspace_path.
             try {
-              setArchitect({
+              setArchitect(resolvedPath, {
                 name: DEFAULT_ARCHITECT_NAME,
                 cmd: architectCmd,
                 startedAt: new Date().toISOString(),
@@ -532,18 +533,14 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
                     break;
                   }
                 }
-                // Bugfix #826: skip both the terminal_sessions row delete and
-                // the state.db.architect row delete when intentionally stopping,
-                // so the architect survives a graceful stop+start in BOTH
-                // tables — keeping the workspace_path signal that
-                // getArchitectsForWorkspace joins on alive across the cycle.
-                if (!isIntentionallyStopping(resolvedPath)) {
-                  _deps!.deleteTerminalSession(session.id);
-                  if (exitedName) {
-                    try {
-                      setArchitectByName(exitedName, null);
-                    } catch { /* best-effort cleanup */ }
-                  }
+                _deps!.deleteTerminalSession(session.id);
+                // Spec 786 Phase 3 / OQ-B: delete the persisted architect row
+                // on permanent exit so state.db mirrors reality. Skip on
+                // intentional stop so the row survives a graceful stop+start.
+                if (exitedName && !isIntentionallyStopping(resolvedPath)) {
+                  try {
+                    setArchitectByName(resolvedPath, exitedName, null);
+                  } catch { /* best-effort cleanup */ }
                 }
                 _deps!.log('INFO', `Architect shellper session exited for ${workspacePath} (code=${exitCode ?? null}, signal=${signal ?? null})`);
               });
@@ -572,8 +569,9 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
           _deps.saveTerminalSession(session.id, resolvedPath, 'architect', 'main', session.pid, null, null, null, null, workspacePath);
 
           // Spec 755: persist to local state.db so afx status / stop see it.
+          // Bugfix #826: scoped by workspace_path.
           try {
-            setArchitect({
+            setArchitect(resolvedPath, {
               name: DEFAULT_ARCHITECT_NAME,
               cmd: architectCmd,
               startedAt: new Date().toISOString(),
@@ -595,15 +593,13 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
                   break;
                 }
               }
-              // Bugfix #826: preserve both terminal_sessions and state.db.architect
-              // rows on intentional stop (see matching shellper handler above).
-              if (!isIntentionallyStopping(resolvedPath)) {
-                _deps!.deleteTerminalSession(session.id);
-                if (exitedName) {
-                  try {
-                    setArchitectByName(exitedName, null);
-                  } catch { /* best-effort cleanup */ }
-                }
+              _deps!.deleteTerminalSession(session.id);
+              // Spec 786 Phase 3 / OQ-B: delete the persisted architect row
+              // on permanent exit; preserve on intentional stop.
+              if (exitedName && !isIntentionallyStopping(resolvedPath)) {
+                try {
+                  setArchitectByName(resolvedPath, exitedName, null);
+                } catch { /* best-effort cleanup */ }
               }
               _deps!.log('INFO', `Architect pty exited for ${workspacePath}`);
             });
@@ -623,23 +619,22 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
     // Spec 786 Phase 3: re-spawn persisted sibling architects.
     //
     // After `main` is guaranteed present (above), iterate any non-main rows in
-    // `state.db.architect` and call `addArchitect()` for each. This restores
-    // siblings that survived `afx workspace stop` (the intentional-stop flag
-    // preserved their rows). The ordering is critical: `addArchitect()` rejects
-    // when `entry.architects.size === 0`, so it MUST run after main creation.
+    // `state.db.architect` FOR THIS WORKSPACE and call `addArchitect()` for
+    // each. This restores siblings that survived `afx workspace stop` (the
+    // intentional-stop flag preserved their rows). The ordering is critical:
+    // `addArchitect()` rejects when `entry.architects.size === 0`, so it MUST
+    // run after main creation.
     //
-    // Bugfix #826: scope reconciliation to architects whose terminal_sessions
-    // row matches THIS workspace. `state.db.architect` is global-per-Tower (no
-    // workspace_path column), so a naive `getArchitects()` would leak architects
-    // registered in workspace A into workspace B when B is launched while A is
-    // still active. The terminal_sessions table in global.db has workspace_path
-    // and acts as the workspace-scoping signal until a proper schema migration
-    // (tracked separately) adds workspace_path to state.db.architect.
+    // Bugfix #826: `getArchitects(resolvedPath)` reads ONLY rows whose
+    // `workspace_path` matches — migration v11 added that column to the
+    // architect table as part of the composite primary key. Workspaces are
+    // isolated by construction; the cross-workspace leak is eliminated at the
+    // schema level rather than via per-call-site guards.
     //
     // Idempotency: skip names already in `entry.architects` so a re-entrant
     // launch (or a race with `reconcileTerminalSessions`) doesn't double-spawn.
     try {
-      const persisted = getArchitectsForWorkspace(resolvedPath);
+      const persisted = getArchitects(resolvedPath);
       for (const a of persisted) {
         if (a.name === 'main') continue;
         if (entry.architects.has(a.name)) continue;
@@ -932,8 +927,9 @@ export async function addArchitect(
 
       // Spec 755: persist to local state.db so the architect appears in
       // getArchitects() and is included in legacy stop.ts cleanup.
+      // Bugfix #826: scoped by workspace_path.
       try {
-        setArchitectByName(name, {
+        setArchitectByName(resolvedPath, name, {
           name,
           cmd: architectCmd,
           startedAt: new Date().toISOString(),
@@ -952,14 +948,13 @@ export async function addArchitect(
               break;
             }
           }
-          // Bugfix #826: preserve BOTH terminal_sessions and state.db.architect
-          // rows on intentional stop so the sibling survives `afx workspace
-          // stop` AND the workspace_path signal that getArchitectsForWorkspace
-          // joins on is alive after restart.
+          _deps!.deleteTerminalSession(session.id);
+          // Spec 755: remove the architect row from local state.db too.
+          // Spec 786 Phase 3: skip the row deletion when the workspace is
+          // mid-intentional-stop so the sibling survives `afx workspace stop`.
           if (!isIntentionallyStopping(resolvedPath)) {
-            _deps!.deleteTerminalSession(session.id);
             try {
-              setArchitectByName(name, null);
+              setArchitectByName(resolvedPath, name, null);
             } catch { /* best-effort cleanup */ }
           }
           _deps!.log('INFO', `Architect shellper session '${name}' exited (code=${exitCode ?? null}, signal=${signal ?? null})`);
@@ -987,7 +982,8 @@ export async function addArchitect(
       _deps.saveTerminalSession(session.id, resolvedPath, 'architect', name, session.pid, null, null, null, null, workspacePath);
 
       try {
-        setArchitectByName(name, {
+        // Bugfix #826: scoped by workspace_path.
+        setArchitectByName(resolvedPath, name, {
           name,
           cmd: architectCmd,
           startedAt: new Date().toISOString(),
@@ -1007,12 +1003,12 @@ export async function addArchitect(
               break;
             }
           }
-          // Bugfix #826: preserve BOTH terminal_sessions and state.db.architect
-          // rows on intentional stop (see matching shellper handler above).
+          _deps!.deleteTerminalSession(session.id);
+          // Spec 786 Phase 3: skip the row deletion when the workspace is
+          // mid-intentional-stop so the sibling survives `afx workspace stop`.
           if (!isIntentionallyStopping(resolvedPath)) {
-            _deps!.deleteTerminalSession(session.id);
             try {
-              setArchitectByName(name, null);
+              setArchitectByName(resolvedPath, name, null);
             } catch { /* best-effort cleanup */ }
           }
           _deps!.log('INFO', `Architect pty '${name}' exited`);
@@ -1105,8 +1101,9 @@ export async function removeArchitect(
 
     // Explicitly delete persisted rows (the intentional-stop flag suppressed
     // the exit-handler delete; we want the row gone for this remove path).
+    // Bugfix #826: scoped by workspace_path.
     try {
-      setArchitectByName(name, null);
+      setArchitectByName(resolvedPath, name, null);
     } catch { /* best-effort cleanup */ }
     try {
       _deps.deleteTerminalSession(terminalId);

@@ -32,7 +32,10 @@ export interface AttachOptions {
  * Display a list of running builders for interactive selection
  */
 async function displayBuilderList(): Promise<void> {
-  const state = loadState();
+  // Bugfix #826: loadState is workspace-scoped (for the architect read).
+  // Builders are global per state.db file, so the scope here is the workspace
+  // this CLI was invoked from (its workspaceRoot).
+  const state = loadState(getConfig().workspaceRoot);
   const builders = state.builders;
 
   if (builders.length === 0) {

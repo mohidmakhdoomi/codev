@@ -26,20 +26,31 @@ interface LegacyJsonState {
 }
 
 /**
- * Migrate local state from JSON to SQLite
+ * Migrate local state from JSON to SQLite.
+ *
+ * Bugfix #826: the architect row needs a workspace_path. The legacy JSON
+ * state has no such field — the architect was implicitly scoped to whatever
+ * workspace this state.db belongs to. Callers pass `workspacePath` (the
+ * workspace this state.db lives under) to fill that gap.
  */
-export function migrateLocalFromJson(db: Database.Database, jsonPath: string): void {
+export function migrateLocalFromJson(
+  db: Database.Database,
+  jsonPath: string,
+  workspacePath: string,
+): void {
   const jsonContent = readFileSync(jsonPath, 'utf-8');
   const state: LegacyJsonState = JSON.parse(jsonContent);
 
   // Wrap in transaction for atomicity
   const migrate = db.transaction(() => {
     // Migrate architect (Spec 755: legacy singleton becomes architect named 'main')
+    // Bugfix #826: tag with workspace_path so the row is scoped.
     if (state.architect) {
       db.prepare(`
-        INSERT INTO architect (id, pid, port, cmd, started_at)
-        VALUES ('main', @pid, @port, @cmd, @startedAt)
+        INSERT INTO architect (workspace_path, id, pid, port, cmd, started_at)
+        VALUES (@workspacePath, 'main', @pid, @port, @cmd, @startedAt)
       `).run({
+        workspacePath,
         pid: state.architect.pid,
         port: state.architect.port,
         cmd: state.architect.cmd,

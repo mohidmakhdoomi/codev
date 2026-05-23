@@ -47,6 +47,48 @@ iter-3 changes:
 
 All 215 affected unit tests pass. Type check clean.
 
+## iter-4: Option A (Workspace-scoped schema)
+
+Architect's call: abandon the per-site patching approach. After iter-3's third independent CMAP REQUEST_CHANGES (Codex found another hole), the architect determined the root cause is the schema, not the call sites. Switching to Option A.
+
+iter-4 scope (this is now a much bigger refactor):
+
+1. **Reverted iter-2 and iter-3 patches**:
+   - `deleteWorkspaceTerminalSessions` back to single-arg, deletes ALL rows
+   - 4 exit handlers in tower-instances.ts back to: delete terminal_session unconditionally, gate only setArchitectByName
+   - 2 exit handlers in tower-terminals.ts: same revert
+   - `saveTerminalSession` uniqueness invariant removed
+   - `handleWorkspaceStopAll` opt-in arg removed
+   - iter-2/iter-3 doc edits replaced with Option A docs
+   - The `intentionallyStopping` mechanism stays (still needed for state.db.architect preservation on graceful stop)
+
+2. **Schema migration v11**: `state.db.architect` gets `workspace_path TEXT NOT NULL` as part of composite primary key `(workspace_path, id)`. Backfill via `ATTACH global.db` and join on `terminal_sessions.role_id`. Orphans (architects with no matching terminal_session) are dropped. `CREATE INDEX idx_architect_workspace` for efficient per-workspace lookups. Migration is idempotent (skips if `workspace_path` column already present in fresh installs).
+
+3. **state.ts accessors all take workspacePath**:
+   - `getArchitects(workspacePath)` (replaces unscoped `getArchitects()` + the iter-1 `getArchitectsForWorkspace`)
+   - `setArchitect(workspacePath, architect)`
+   - `setArchitectByName(workspacePath, name, architect)`
+   - `removeArchitect(workspacePath, name)`
+   - `loadState(workspacePath)` (architect read is scoped; builders/utils/annotations remain global per state.db)
+   - `getArchitect(workspacePath)`, `getArchitectByName(workspacePath, name)`
+
+4. **All callers updated**: tower-instances.ts (4 exit handlers, addArchitect, removeArchitect, launchInstance reconcile + 2 main setArchitect calls), tower-terminals.ts (2 exit handlers), tower-routes.ts (handleWorkspaceStopAll), and CLI commands (status, attach, stop, send, cleanup) all pass workspacePath through.
+
+5. **migrateLocalFromJson** also takes workspacePath (one-time legacy JSON-to-SQLite migration); db/index.ts passes config.workspaceRoot through.
+
+6. **Tests rewritten**:
+   - `bugfix-826-migration.test.ts` (new): exercises v11 migration — backfill, orphan drop, partitioning of same-name across workspaces, index creation, empty-table case, _migrations record.
+   - `state.test.ts`: replaced iter-1/iter-2/iter-3 specific tests with a `workspace-scoped architect schema` describe block covering isolation, leak regression, stop+start preservation via clearRuntime + scoped re-read, scoped getArchitectByName, scoped loadState, and per-workspace upsert isolation.
+   - `tower-instances.test.ts`: replaced iter-1/iter-3 source sentinels with one Option A sentinel (`getArchitects(resolvedPath)` call site).
+   - `tower-terminals.test.ts`: reverted iter-2 SQL assertion to the original.
+   - `db.test.ts`: updated multi-architect test to cover composite-PK (workspace_path, id).
+   - `migrate.test.ts`: updated to pass workspacePath.
+   - `send.test.ts`: send.ts now uses `detectWorkspaceRoot()` (already mocked) rather than `getConfig()` (would have required new mocking).
+
+7. **Docs**: arch.md and agent-farm.md updated to describe the Option A schema directly. Migration history section added to arch.md. The iter-2/iter-3 per-site preservation mechanisms are gone — replaced by "schema-level isolation."
+
+All 1841 agent-farm unit tests pass. Type check clean.
+
 ## Test run notes
 
 - `state.test.ts` — 27/27 pass (including 5 new tests for `getArchitectsForWorkspace`).

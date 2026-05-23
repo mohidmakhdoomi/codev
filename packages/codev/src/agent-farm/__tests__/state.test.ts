@@ -47,6 +47,10 @@ vi.mock('../db/index.js', () => {
 // Import after mocking
 const state = await import('../state.js');
 
+// Bugfix #826: architect rows are scoped by workspace_path. Tests use this
+// single workspace unless explicitly testing cross-workspace isolation.
+const WS = '/workspace/test';
+
 describe('State Management', () => {
   beforeEach(() => {
     // Clean up before each test
@@ -80,7 +84,7 @@ describe('State Management', () => {
 
   describe('loadState', () => {
     it('should return default state when database is empty', () => {
-      const result = state.loadState();
+      const result = state.loadState(WS);
 
       // Spec 786 Phase 5: loadState now returns `architects: []` alongside the
       // scalar `architect` shim (empty array when no rows in state.db.architect).
@@ -97,25 +101,25 @@ describe('State Management', () => {
     it('returns architects collection with main first then siblings by started_at', () => {
       // Insert in a deliberately scrambled order: a sibling first, then main,
       // then another sibling. loadState must sort main to position 0.
-      state.setArchitectByName('ob-refine', {
+      state.setArchitectByName(WS, 'ob-refine', {
         name: 'ob-refine',
         cmd: 'claude',
         startedAt: '2026-05-22T10:00:00Z',
         terminalId: 'term-ob',
       });
-      state.setArchitect({
+      state.setArchitect(WS, {
         cmd: 'claude',
         startedAt: '2026-05-22T11:00:00Z',
         terminalId: 'term-main',
       });
-      state.setArchitectByName('architect-3', {
+      state.setArchitectByName(WS, 'architect-3', {
         name: 'architect-3',
         cmd: 'claude',
         startedAt: '2026-05-22T12:00:00Z',
         terminalId: 'term-a3',
       });
 
-      const result = state.loadState();
+      const result = state.loadState(WS);
       expect(result.architects).toHaveLength(3);
       expect(result.architects[0].name).toBe('main');
       // Siblings in started_at order (ob-refine before architect-3).
@@ -126,13 +130,13 @@ describe('State Management', () => {
     it('scalar `architect` shim points at architects[0] for backward-compat', () => {
       // With only a sibling registered (no main row), the scalar shim points
       // at the sibling (architects[0]) — preserving the Spec 755 fallback.
-      state.setArchitectByName('ob-refine', {
+      state.setArchitectByName(WS, 'ob-refine', {
         name: 'ob-refine',
         cmd: 'claude',
         startedAt: '2026-05-22T10:00:00Z',
       });
 
-      const result = state.loadState();
+      const result = state.loadState(WS);
       expect(result.architects).toHaveLength(1);
       expect(result.architects[0].name).toBe('ob-refine');
       expect(result.architect?.name).toBe('ob-refine');
@@ -146,38 +150,38 @@ describe('State Management', () => {
         startedAt: new Date().toISOString(),
       };
 
-      state.setArchitect(architect);
+      state.setArchitect(WS, architect);
 
-      const result = state.loadState();
+      const result = state.loadState(WS);
       expect(result.architect?.cmd).toBe('claude');
     });
 
     it('should clear architect when set to null', () => {
       // Set architect first
-      state.setArchitect({
+      state.setArchitect(WS, {
         cmd: 'claude',
         startedAt: new Date().toISOString(),
       });
 
       // Then clear it
-      state.setArchitect(null);
+      state.setArchitect(WS, null);
 
-      const result = state.loadState();
+      const result = state.loadState(WS);
       expect(result.architect).toBeNull();
     });
 
     it('should replace existing architect (singleton)', () => {
-      state.setArchitect({
+      state.setArchitect(WS, {
         cmd: 'claude',
         startedAt: new Date().toISOString(),
       });
 
-      state.setArchitect({
+      state.setArchitect(WS, {
         cmd: 'claude --dangerously-skip-permissions',
         startedAt: new Date().toISOString(),
       });
 
-      const result = state.loadState();
+      const result = state.loadState(WS);
       expect(result.architect?.cmd).toBe('claude --dangerously-skip-permissions');
     });
   });
@@ -196,7 +200,7 @@ describe('State Management', () => {
 
       state.upsertBuilder(builder);
 
-      const result = state.loadState();
+      const result = state.loadState(WS);
       expect(result.builders).toHaveLength(1);
       expect(result.builders[0].id).toBe('B001');
       expect(result.builders[0].status).toBe('implementing');
@@ -218,7 +222,7 @@ describe('State Management', () => {
       // Update status
       state.upsertBuilder({ ...builder, status: 'blocked' });
 
-      const result = state.loadState();
+      const result = state.loadState(WS);
       expect(result.builders).toHaveLength(1);
       expect(result.builders[0].status).toBe('blocked');
     });
@@ -301,7 +305,7 @@ describe('State Management', () => {
 
       state.removeBuilder('B001');
 
-      const result = state.loadState();
+      const result = state.loadState(WS);
       expect(result.builders).toHaveLength(0);
     });
   });
@@ -337,13 +341,13 @@ describe('State Management', () => {
 
       state.addUtil(util);
 
-      let result = state.loadState();
+      let result = state.loadState(WS);
       expect(result.utils).toHaveLength(1);
       expect(result.utils[0].id).toBe('U001');
 
       state.removeUtil('U001');
 
-      result = state.loadState();
+      result = state.loadState(WS);
       expect(result.utils).toHaveLength(0);
     });
   });
@@ -360,13 +364,13 @@ describe('State Management', () => {
 
       state.addAnnotation(annotation);
 
-      let result = state.loadState();
+      let result = state.loadState(WS);
       expect(result.annotations).toHaveLength(1);
       expect(result.annotations[0].file).toBe('/path/to/file.ts');
 
       state.removeAnnotation('A001');
 
-      result = state.loadState();
+      result = state.loadState(WS);
       expect(result.annotations).toHaveLength(0);
     });
   });
@@ -374,7 +378,7 @@ describe('State Management', () => {
   describe('clearState', () => {
     it('should reset all state', () => {
       // Add some state
-      state.setArchitect({
+      state.setArchitect(WS, {
         cmd: 'claude',
         startedAt: new Date().toISOString(),
       });
@@ -392,7 +396,7 @@ describe('State Management', () => {
       // Clear it
       state.clearState();
 
-      const result = state.loadState();
+      const result = state.loadState(WS);
       // Spec 786 Phase 5: loadState now returns `architects: []` alongside the
       // scalar `architect` shim (empty array when no rows in state.db.architect).
       expect(result).toEqual({
@@ -406,58 +410,81 @@ describe('State Management', () => {
   });
 
   // Spec 786 Phase 1: removeArchitect helper and clearRuntime variant.
-  describe('removeArchitect (Spec 786)', () => {
+  // Bugfix #826: scoped by workspace_path.
+  describe('removeArchitect (Spec 786 + Bugfix #826)', () => {
     it('removes a named architect row from state.db', () => {
-      state.setArchitectByName('ob-refine', {
+      state.setArchitectByName(WS, 'ob-refine', {
         name: 'ob-refine',
         cmd: 'claude',
         startedAt: new Date().toISOString(),
         terminalId: 'term-1',
       });
       // Confirm it was inserted
-      let architects = state.getArchitects();
+      let architects = state.getArchitects(WS);
       expect(architects.some(a => a.name === 'ob-refine')).toBe(true);
 
-      state.removeArchitect('ob-refine');
+      state.removeArchitect(WS, 'ob-refine');
 
-      architects = state.getArchitects();
+      architects = state.getArchitects(WS);
       expect(architects.some(a => a.name === 'ob-refine')).toBe(false);
     });
 
     it('is idempotent — removing a non-existent name is a no-op', () => {
-      expect(() => state.removeArchitect('nonexistent')).not.toThrow();
+      expect(() => state.removeArchitect(WS, 'nonexistent')).not.toThrow();
     });
 
-    it('does not affect other architects', () => {
-      state.setArchitect({
+    it('does not affect other architects in the same workspace', () => {
+      state.setArchitect(WS, {
         cmd: 'claude',
         startedAt: new Date().toISOString(),
         terminalId: 'main-term',
       });
-      state.setArchitectByName('ob-refine', {
+      state.setArchitectByName(WS, 'ob-refine', {
         name: 'ob-refine',
         cmd: 'claude',
         startedAt: new Date().toISOString(),
         terminalId: 'sibling-term',
       });
 
-      state.removeArchitect('ob-refine');
+      state.removeArchitect(WS, 'ob-refine');
 
-      const architects = state.getArchitects();
+      const architects = state.getArchitects(WS);
       expect(architects.some(a => a.name === 'main')).toBe(true);
       expect(architects.some(a => a.name === 'ob-refine')).toBe(false);
+    });
+
+    it('does not affect architects in OTHER workspaces (Bugfix #826)', () => {
+      const WS2 = '/workspace/other';
+      // Same architect name in two workspaces — composite PK allows this.
+      state.setArchitectByName(WS, 'ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude',
+        startedAt: new Date().toISOString(),
+      });
+      state.setArchitectByName(WS2, 'ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude --dangerously-skip-permissions',
+        startedAt: new Date().toISOString(),
+      });
+
+      // Remove in WS only.
+      state.removeArchitect(WS, 'ob-refine');
+
+      // WS no longer has it; WS2 still does.
+      expect(state.getArchitects(WS).map(a => a.name)).toEqual([]);
+      expect(state.getArchitects(WS2).map(a => a.name)).toEqual(['ob-refine']);
     });
   });
 
   describe('clearRuntime (Spec 786)', () => {
     it('preserves all architect rows while wiping runtime tables', () => {
       // Set up: main + a sibling + a builder + a util + an annotation
-      state.setArchitect({
+      state.setArchitect(WS, {
         cmd: 'claude',
         startedAt: new Date().toISOString(),
         terminalId: 'main-term',
       });
-      state.setArchitectByName('ob-refine', {
+      state.setArchitectByName(WS, 'ob-refine', {
         name: 'ob-refine',
         cmd: 'claude',
         startedAt: new Date().toISOString(),
@@ -476,13 +503,13 @@ describe('State Management', () => {
       state.clearRuntime();
 
       // Architects survive
-      const architects = state.getArchitects();
+      const architects = state.getArchitects(WS);
       expect(architects).toHaveLength(2);
       expect(architects.some(a => a.name === 'main')).toBe(true);
       expect(architects.some(a => a.name === 'ob-refine')).toBe(true);
 
       // Builders are gone
-      const result = state.loadState();
+      const result = state.loadState(WS);
       expect(result.builders).toEqual([]);
       expect(result.utils).toEqual([]);
       expect(result.annotations).toEqual([]);
@@ -491,11 +518,11 @@ describe('State Management', () => {
     it('differs from clearState which wipes architects too', () => {
       // Confirm the differential behaviour: clearState removes architects;
       // clearRuntime preserves them.
-      state.setArchitect({
+      state.setArchitect(WS, {
         cmd: 'claude',
         startedAt: new Date().toISOString(),
       });
-      state.setArchitectByName('ob-refine', {
+      state.setArchitectByName(WS, 'ob-refine', {
         name: 'ob-refine',
         cmd: 'claude',
         startedAt: new Date().toISOString(),
@@ -503,307 +530,189 @@ describe('State Management', () => {
 
       state.clearState();
 
-      const architectsAfterClear = state.getArchitects();
+      const architectsAfterClear = state.getArchitects(WS);
       expect(architectsAfterClear).toHaveLength(0);
     });
   });
 
   // ===========================================================================
-  // Bugfix #826 — getArchitectsForWorkspace
+  // Bugfix #826 — Workspace-scoped architect schema (Option A)
   // ===========================================================================
   //
-  // Returns architects from state.db.architect whose role_id appears in a
-  // terminal_sessions row matching `workspace_path = <given path>` with
-  // `type = 'architect'`. Used by launchInstance's sibling reconcile loop to
-  // avoid leaking architects registered in one workspace into another.
+  // Migration v11 added `workspace_path` to the architect table as part of a
+  // composite primary key. Architects are isolated by construction: a query
+  // scoped to workspace A cannot see architects registered in workspace B,
+  // regardless of which workspaces this Tower process is serving from a
+  // single state.db file. The cross-workspace leak that #826 reported is
+  // eliminated at the schema level rather than via per-call-site guards.
 
-  describe('getArchitectsForWorkspace (Bugfix #826)', () => {
-    function insertTerminalSession(
-      id: string,
-      workspacePath: string,
-      type: 'architect' | 'builder' | 'shell',
-      roleId: string | null,
-    ): void {
-      // Prime testGlobalDb lazily through the mock if it hasn't been touched.
-      if (!testGlobalDb) {
-        state.getArchitectsForWorkspace('/tmp/__init__');
-      }
-      testGlobalDb!
-        .prepare(
-          `INSERT INTO terminal_sessions (id, workspace_path, type, role_id, pid)
-           VALUES (?, ?, ?, ?, ?)`
-        )
-        .run(id, workspacePath, type, roleId, 1234);
-    }
+  describe('workspace-scoped architect schema (Bugfix #826)', () => {
+    const WS_A = '/workspace/shannon';
+    const WS_B = '/workspace/manazil';
 
-    it('returns empty when no terminal_sessions match the workspace', () => {
-      state.setArchitectByName('ob-refine', {
+    it('isolates architects between workspaces', () => {
+      // Same architect names registered in two workspaces. Composite PK
+      // (workspace_path, id) allows this; each workspace gets its own rows.
+      state.setArchitect(WS_A, { cmd: 'claude-A', startedAt: '2026-05-23T10:00:00Z' });
+      state.setArchitectByName(WS_A, 'ob-refine', {
         name: 'ob-refine',
-        cmd: 'claude',
-        startedAt: '2026-05-23T10:00:00Z',
-      });
-
-      const result = state.getArchitectsForWorkspace('/some/workspace');
-      expect(result).toEqual([]);
-    });
-
-    it('returns only architects whose terminal_sessions row matches workspace_path', () => {
-      // Two architects in state.db: main (belongs to workspace A) and
-      // ob-refine (belongs to workspace A). Plus bug-backlog in state.db but
-      // its terminal_sessions row is for workspace B.
-      state.setArchitect({
-        cmd: 'claude',
-        startedAt: '2026-05-23T10:00:00Z',
-      });
-      state.setArchitectByName('ob-refine', {
-        name: 'ob-refine',
-        cmd: 'claude',
+        cmd: 'claude-A',
         startedAt: '2026-05-23T10:05:00Z',
       });
-      state.setArchitectByName('bug-backlog', {
+      state.setArchitect(WS_B, { cmd: 'claude-B', startedAt: '2026-05-23T11:00:00Z' });
+
+      // Each workspace sees only its own architects.
+      expect(state.getArchitects(WS_A).map(a => a.name).sort()).toEqual(['main', 'ob-refine']);
+      expect(state.getArchitects(WS_B).map(a => a.name).sort()).toEqual(['main']);
+      // The cmd field discriminates which workspace's main row was returned.
+      expect(state.getArchitect(WS_A)?.cmd).toBe('claude-A');
+      expect(state.getArchitect(WS_B)?.cmd).toBe('claude-B');
+    });
+
+    it('regression: #826 leak — siblings in workspace A do NOT appear in workspace B', () => {
+      // The bug scenario: shannon registered ob-refine. Then user opens manazil.
+      // launchInstance(MANAZIL)'s reconcile loop calls getArchitects(MANAZIL).
+      // Pre-fix (no workspace_path column), that query returned ob-refine and
+      // re-spawned it into manazil. Post-fix, the workspace filter excludes it.
+      state.setArchitectByName(WS_A, 'ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude',
+        startedAt: '2026-05-23T10:00:00Z',
+      });
+      state.setArchitectByName(WS_A, 'bug-backlog', {
         name: 'bug-backlog',
         cmd: 'claude',
-        startedAt: '2026-05-23T10:10:00Z',
-      });
-
-      insertTerminalSession('t1', '/workspace/A', 'architect', 'main');
-      insertTerminalSession('t2', '/workspace/A', 'architect', 'ob-refine');
-      insertTerminalSession('t3', '/workspace/B', 'architect', 'bug-backlog');
-
-      const archA = state.getArchitectsForWorkspace('/workspace/A');
-      const archB = state.getArchitectsForWorkspace('/workspace/B');
-      const namesA = archA.map(a => a.name).sort();
-      const namesB = archB.map(a => a.name).sort();
-
-      expect(namesA).toEqual(['main', 'ob-refine']);
-      expect(namesB).toEqual(['bug-backlog']);
-    });
-
-    it('regression: leaked architect in state.db is NOT returned for an unrelated workspace', () => {
-      // The bug scenario from issue #826: shannon registered ob-refine, leaking
-      // a row into state.db.architect. The user then opens manazil (which has
-      // no terminal_sessions rows for these architects). Pre-fix, the launch
-      // reconcile would re-spawn ob-refine into manazil. With this filter,
-      // ob-refine is correctly excluded for manazil.
-      state.setArchitectByName('ob-refine', {
-        name: 'ob-refine',
-        cmd: 'claude',
-        startedAt: '2026-05-23T10:00:00Z',
-      });
-      insertTerminalSession('t-shannon', '/shannon', 'architect', 'ob-refine');
-
-      const manazil = state.getArchitectsForWorkspace('/manazil');
-      expect(manazil).toEqual([]);
-    });
-
-    it('ignores non-architect terminal_sessions rows', () => {
-      state.setArchitectByName('ob-refine', {
-        name: 'ob-refine',
-        cmd: 'claude',
-        startedAt: '2026-05-23T10:00:00Z',
-      });
-      // A builder terminal that happens to share a workspace_path shouldn't
-      // pull a same-named state.db.architect row into the result.
-      insertTerminalSession('t-builder', '/workspace/A', 'builder', 'ob-refine');
-
-      const result = state.getArchitectsForWorkspace('/workspace/A');
-      expect(result).toEqual([]);
-    });
-
-    it('returns only architects that also exist in state.db.architect', () => {
-      // terminal_sessions has a row for an architect name with no matching
-      // state.db.architect row (e.g., the architect row was deleted but the
-      // terminal_sessions row lingers). Should not be returned.
-      insertTerminalSession('t-orphan', '/workspace/A', 'architect', 'orphan-arch');
-
-      const result = state.getArchitectsForWorkspace('/workspace/A');
-      expect(result).toEqual([]);
-    });
-  });
-
-  // ===========================================================================
-  // Bugfix #826 — stop+start lifecycle integration contract
-  // ===========================================================================
-  //
-  // Codex's independent CMAP flagged that a literal Option B (filter-only) fix
-  // regresses Spec 786's stop+start sibling persistence: terminal_sessions is
-  // wiped on workspace stop, so on next launch the workspace_path signal that
-  // getArchitectsForWorkspace joins on is gone and siblings aren't restored.
-  //
-  // The full fix (Option B+) preserves architect rows in BOTH tables on
-  // intentional stop. This test exercises that lifecycle end-to-end using real
-  // SQLite to lock in the integration contract that purely-unit tests
-  // (vi.fn-based mocks) miss.
-
-  describe('Bugfix #826: stop+start lifecycle integration contract', () => {
-    function deleteWorkspaceNonArchitectRows(workspacePath: string): void {
-      // Mirrors the new deleteWorkspaceTerminalSessions(workspacePath) default
-      // (no opt-in to wipe architects). See tower-terminals.ts.
-      if (!testGlobalDb) state.getArchitectsForWorkspace('/tmp/__init__');
-      testGlobalDb!
-        .prepare(
-          "DELETE FROM terminal_sessions WHERE workspace_path = ? AND type != 'architect'"
-        )
-        .run(workspacePath);
-    }
-
-    function saveArchitectTerminalSession(
-      terminalId: string,
-      workspacePath: string,
-      roleId: string,
-    ): void {
-      // Mirrors saveTerminalSession's architect-uniqueness invariant: a
-      // pre-delete by (workspace_path, role_id) before insert, so stale rows
-      // from prior stop+start cycles don't accumulate.
-      if (!testGlobalDb) state.getArchitectsForWorkspace('/tmp/__init__');
-      testGlobalDb!
-        .prepare(
-          "DELETE FROM terminal_sessions WHERE workspace_path = ? AND type = 'architect' AND role_id = ?"
-        )
-        .run(workspacePath, roleId);
-      testGlobalDb!
-        .prepare(
-          `INSERT INTO terminal_sessions (id, workspace_path, type, role_id, pid)
-           VALUES (?, ?, ?, ?, ?)`
-        )
-        .run(terminalId, workspacePath, 'architect', roleId, 1234);
-    }
-
-    function saveBuilderTerminalSession(
-      terminalId: string,
-      workspacePath: string,
-      roleId: string,
-    ): void {
-      if (!testGlobalDb) state.getArchitectsForWorkspace('/tmp/__init__');
-      testGlobalDb!
-        .prepare(
-          `INSERT INTO terminal_sessions (id, workspace_path, type, role_id, pid)
-           VALUES (?, ?, ?, ?, ?)`
-        )
-        .run(terminalId, workspacePath, 'builder', roleId, 5678);
-    }
-
-    function countArchitectRows(workspacePath: string, roleId: string): number {
-      if (!testGlobalDb) state.getArchitectsForWorkspace('/tmp/__init__');
-      const result = testGlobalDb!
-        .prepare(
-          "SELECT COUNT(*) AS n FROM terminal_sessions WHERE workspace_path = ? AND type = 'architect' AND role_id = ?"
-        )
-        .get(workspacePath, roleId) as { n: number };
-      return result.n;
-    }
-
-    function countAllRows(workspacePath: string): { architect: number; builder: number; shell: number } {
-      if (!testGlobalDb) state.getArchitectsForWorkspace('/tmp/__init__');
-      const a = testGlobalDb!
-        .prepare("SELECT COUNT(*) AS n FROM terminal_sessions WHERE workspace_path = ? AND type = 'architect'")
-        .get(workspacePath) as { n: number };
-      const b = testGlobalDb!
-        .prepare("SELECT COUNT(*) AS n FROM terminal_sessions WHERE workspace_path = ? AND type = 'builder'")
-        .get(workspacePath) as { n: number };
-      const s = testGlobalDb!
-        .prepare("SELECT COUNT(*) AS n FROM terminal_sessions WHERE workspace_path = ? AND type = 'shell'")
-        .get(workspacePath) as { n: number };
-      return { architect: a.n, builder: b.n, shell: s.n };
-    }
-
-    it('preserves architect rows in BOTH state.db and terminal_sessions across stop+start', () => {
-      const WS = '/workspace/shannon';
-
-      // ===== Initial launch =====
-      // main + ob-refine architects, plus a builder PTY.
-      state.setArchitect({ cmd: 'claude', startedAt: '2026-05-23T10:00:00Z' });
-      state.setArchitectByName('ob-refine', {
-        name: 'ob-refine',
-        cmd: 'claude',
-        startedAt: '2026-05-23T10:05:00Z',
-      });
-      saveArchitectTerminalSession('arch-main-v1', WS, 'main');
-      saveArchitectTerminalSession('arch-sibling-v1', WS, 'ob-refine');
-      saveBuilderTerminalSession('builder-1', WS, 'b001');
-
-      // Sanity: both architects + builder present.
-      expect(countAllRows(WS)).toEqual({ architect: 2, builder: 1, shell: 0 });
-      expect(state.getArchitectsForWorkspace(WS).map(a => a.name).sort()).toEqual(['main', 'ob-refine']);
-
-      // ===== Intentional stop =====
-      // The architect exit handlers skip both deleteTerminalSession AND
-      // setArchitectByName(null) when intentionally stopping (Bugfix #826).
-      // The bulk wipe also skips architect rows. Builder rows go.
-      deleteWorkspaceNonArchitectRows(WS);
-
-      // Architect rows in BOTH tables MUST survive.
-      expect(state.getArchitects().map(a => a.name).sort()).toEqual(['main', 'ob-refine']);
-      expect(countAllRows(WS)).toEqual({ architect: 2, builder: 0, shell: 0 });
-
-      // The workspace_path signal for getArchitectsForWorkspace is alive.
-      expect(state.getArchitectsForWorkspace(WS).map(a => a.name).sort()).toEqual(['main', 'ob-refine']);
-
-      // ===== Restart: fresh main spawn, reconcile re-spawns sibling =====
-      // launchInstance creates a NEW 'main' PTY (new terminal id). The new
-      // saveTerminalSession pre-deletes the stale 'main' row before inserting
-      // — so no stale row accumulates.
-      saveArchitectTerminalSession('arch-main-v2', WS, 'main');
-      expect(countArchitectRows(WS, 'main')).toBe(1);
-
-      // The reconcile loop reads getArchitectsForWorkspace(WS) and re-spawns
-      // ob-refine. Simulate that addArchitect call's saveTerminalSession.
-      saveArchitectTerminalSession('arch-sibling-v2', WS, 'ob-refine');
-      expect(countArchitectRows(WS, 'ob-refine')).toBe(1);
-
-      // Final state: clean — one row per architect per workspace.
-      expect(countAllRows(WS)).toEqual({ architect: 2, builder: 0, shell: 0 });
-    });
-
-    it('does NOT leak architects across workspaces during the same lifecycle (the #826 root cause)', () => {
-      const SHANNON = '/workspace/shannon';
-      const MANAZIL = '/workspace/manazil';
-
-      // Shannon registers a sibling.
-      state.setArchitectByName('ob-refine', {
-        name: 'ob-refine',
-        cmd: 'claude',
-        startedAt: '2026-05-23T10:00:00Z',
-      });
-      saveArchitectTerminalSession('arch-shannon-sibling', SHANNON, 'ob-refine');
-
-      // User opens manazil — launchInstance(MANAZIL) runs the reconcile loop.
-      // The bug was: getArchitects() returned ob-refine from the global table
-      // and addArchitect(MANAZIL, 'ob-refine') re-spawned it into manazil.
-      const manazilArchitects = state.getArchitectsForWorkspace(MANAZIL);
-      expect(manazilArchitects).toEqual([]);
-
-      // Shannon still sees its own sibling.
-      const shannonArchitects = state.getArchitectsForWorkspace(SHANNON);
-      expect(shannonArchitects.map(a => a.name)).toEqual(['ob-refine']);
-    });
-
-    it('handles multiple stop+start cycles without accumulating stale rows', () => {
-      const WS = '/workspace/W';
-      state.setArchitect({ cmd: 'claude', startedAt: '2026-05-23T10:00:00Z' });
-      state.setArchitectByName('ob-refine', {
-        name: 'ob-refine',
-        cmd: 'claude',
         startedAt: '2026-05-23T10:05:00Z',
       });
 
-      for (let cycle = 1; cycle <= 3; cycle++) {
-        // Launch: fresh PTYs.
-        saveArchitectTerminalSession(`arch-main-c${cycle}`, WS, 'main');
-        saveArchitectTerminalSession(`arch-sibling-c${cycle}`, WS, 'ob-refine');
-        saveBuilderTerminalSession(`builder-c${cycle}`, WS, `b${cycle}`);
+      // Manazil sees nothing — schema-level isolation.
+      expect(state.getArchitects(WS_B)).toEqual([]);
+      expect(state.getArchitect(WS_B)).toBeNull();
+      expect(state.getArchitectByName(WS_B, 'ob-refine')).toBeNull();
 
-        // Stop (preserve architect rows).
-        deleteWorkspaceNonArchitectRows(WS);
+      // Shannon still sees both of its siblings.
+      expect(state.getArchitects(WS_A).map(a => a.name).sort()).toEqual(['bug-backlog', 'ob-refine']);
+    });
 
-        // After every cycle: exactly one row per architect.
-        expect(countArchitectRows(WS, 'main')).toBe(1);
-        expect(countArchitectRows(WS, 'ob-refine')).toBe(1);
-        expect(countAllRows(WS).builder).toBe(0);
+    it('Spec 786 stop+start: clearRuntime + scoped re-read preserves siblings', () => {
+      // Set up shannon's main + sibling. clearRuntime is called by
+      // `afx workspace stop`'s legacy path — wipes runtime tables but
+      // preserves architects. Verify the workspace_path scope ensures shannon
+      // still sees its sibling on the next launchInstance.
+      state.setArchitect(WS_A, {
+        cmd: 'claude',
+        startedAt: '2026-05-23T10:00:00Z',
+        terminalId: 'arch-main-v1',
+      });
+      state.setArchitectByName(WS_A, 'ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude',
+        startedAt: '2026-05-23T10:05:00Z',
+        terminalId: 'arch-sibling-v1',
+      });
+      state.upsertBuilder({
+        id: 'B001',
+        name: 'test-builder',
+        status: 'implementing' as const,
+        phase: 'init',
+        worktree: '/tmp/worktree',
+        branch: 'feature-branch',
+        type: 'spec' as const,
+      });
 
-        // And the workspace_path signal is intact.
-        expect(state.getArchitectsForWorkspace(WS).map(a => a.name).sort()).toEqual(['main', 'ob-refine']);
-      }
+      // Simulate `afx workspace stop` (legacy path):
+      state.clearRuntime();
+
+      // Architects survive in the workspace's scope.
+      expect(state.getArchitects(WS_A).map(a => a.name).sort()).toEqual(['main', 'ob-refine']);
+
+      // Simulate next launchInstance(WS_A): re-upserts main with a new
+      // terminal_id. The composite-PK INSERT OR REPLACE keys on
+      // (workspace_path, id), so the same row gets updated — no stale row
+      // accumulation, no leak into other workspaces.
+      state.setArchitect(WS_A, {
+        cmd: 'claude',
+        startedAt: '2026-05-23T11:00:00Z',
+        terminalId: 'arch-main-v2',
+      });
+
+      // Still exactly two architects in shannon's scope (main updated, sibling preserved).
+      const after = state.getArchitects(WS_A);
+      expect(after).toHaveLength(2);
+      expect(after.find(a => a.name === 'main')?.terminalId).toBe('arch-main-v2');
+      expect(after.find(a => a.name === 'ob-refine')?.terminalId).toBe('arch-sibling-v1');
+    });
+
+    it('getArchitectByName is scoped — same name in two workspaces is two different rows', () => {
+      state.setArchitectByName(WS_A, 'ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude-from-shannon',
+        startedAt: '2026-05-23T10:00:00Z',
+        terminalId: 'shannon-term',
+      });
+      state.setArchitectByName(WS_B, 'ob-refine', {
+        name: 'ob-refine',
+        cmd: 'claude-from-manazil',
+        startedAt: '2026-05-23T11:00:00Z',
+        terminalId: 'manazil-term',
+      });
+
+      const shannonRow = state.getArchitectByName(WS_A, 'ob-refine');
+      const manazilRow = state.getArchitectByName(WS_B, 'ob-refine');
+
+      expect(shannonRow?.cmd).toBe('claude-from-shannon');
+      expect(shannonRow?.terminalId).toBe('shannon-term');
+      expect(manazilRow?.cmd).toBe('claude-from-manazil');
+      expect(manazilRow?.terminalId).toBe('manazil-term');
+    });
+
+    it('loadState scoped — architect collection reflects only the requested workspace', () => {
+      state.setArchitect(WS_A, { cmd: 'A-cmd', startedAt: '2026-05-23T10:00:00Z' });
+      state.setArchitectByName(WS_A, 'sibling-A', {
+        name: 'sibling-A',
+        cmd: 'A-cmd',
+        startedAt: '2026-05-23T10:05:00Z',
+      });
+      state.setArchitect(WS_B, { cmd: 'B-cmd', startedAt: '2026-05-23T11:00:00Z' });
+
+      const stateA = state.loadState(WS_A);
+      const stateB = state.loadState(WS_B);
+
+      // WS_A: main + sibling, sorted main-first.
+      expect(stateA.architects).toHaveLength(2);
+      expect(stateA.architects[0].name).toBe('main');
+      expect(stateA.architects[1].name).toBe('sibling-A');
+      expect(stateA.architect?.cmd).toBe('A-cmd');
+
+      // WS_B: only main.
+      expect(stateB.architects).toHaveLength(1);
+      expect(stateB.architects[0].name).toBe('main');
+      expect(stateB.architect?.cmd).toBe('B-cmd');
+    });
+
+    it('setArchitect upsert is scoped — updating WS_A does not affect WS_B', () => {
+      state.setArchitect(WS_A, {
+        cmd: 'claude',
+        startedAt: '2026-05-23T10:00:00Z',
+        terminalId: 'main-A',
+      });
+      state.setArchitect(WS_B, {
+        cmd: 'claude',
+        startedAt: '2026-05-23T11:00:00Z',
+        terminalId: 'main-B',
+      });
+
+      // Update WS_A's main only.
+      state.setArchitect(WS_A, {
+        cmd: 'claude --dangerously-skip-permissions',
+        startedAt: '2026-05-23T12:00:00Z',
+        terminalId: 'main-A-v2',
+      });
+
+      expect(state.getArchitect(WS_A)?.cmd).toBe('claude --dangerously-skip-permissions');
+      expect(state.getArchitect(WS_A)?.terminalId).toBe('main-A-v2');
+      expect(state.getArchitect(WS_B)?.cmd).toBe('claude'); // unchanged
+      expect(state.getArchitect(WS_B)?.terminalId).toBe('main-B'); // unchanged
     });
   });
 });
