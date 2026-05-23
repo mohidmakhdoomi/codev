@@ -213,6 +213,7 @@ interface RecoverRow {
   builderInfo: BuilderInfo | null;
   worktreePath: string | null;
   eligibility: EligibilityResult;
+  ageDays: number;
 }
 
 function printPreview(rows: RecoverRow[]): void {
@@ -293,7 +294,7 @@ export async function workspaceRecover(options: WorkspaceRecoverOptions = {}): P
     else sessionsByRoleId.set(s.role_id, [s]);
   }
 
-  const rows: RecoverRow[] = projects.map(({ state }) => {
+  const allRows: RecoverRow[] = projects.map(({ state }) => {
     const builderInfo = deriveBuilderInfo(state);
     const matchingSessions = builderInfo ? sessionsByRoleId.get(builderInfo.builderId) ?? [] : [];
     const worktreePath = resolveWorktreePath(config.buildersDir, state);
@@ -306,17 +307,29 @@ export async function workspaceRecover(options: WorkspaceRecoverOptions = {}): P
       isProcessAlive: processExists,
       socketExists: existsSync,
     });
-    return { state, builderInfo, worktreePath, eligibility };
+    return { state, builderInfo, worktreePath, eligibility, ageDays };
   });
 
-  printPreview(rows);
+  // By default the preview hides projects beyond the recency window — for a
+  // large workspace the stale tail dominates the table and obscures the few
+  // rows the operator actually cares about. --include-stale shows everything.
+  const visibleRows = includeStale
+    ? allRows
+    : allRows.filter(r => r.ageDays <= maxAgeDays);
+  const hiddenStaleCount = allRows.length - visibleRows.length;
 
-  const eligible = rows.filter(
+  printPreview(visibleRows);
+  if (hiddenStaleCount > 0) {
+    logger.blank();
+    logger.info(`${hiddenStaleCount} project(s) older than ${maxAgeDays} day(s) hidden. Pass --include-stale to show them.`);
+  }
+
+  const eligible = allRows.filter(
     (r): r is RecoverRow & { builderInfo: BuilderInfo; eligibility: { eligible: true } } =>
       r.eligibility.eligible && r.builderInfo !== null,
   );
   logger.blank();
-  logger.kv('Eligible', `${eligible.length} / ${rows.length}`);
+  logger.kv('Eligible', `${eligible.length} / ${allRows.length}`);
 
   if (eligible.length === 0) {
     logger.info(apply ? 'Nothing to revive.' : 'Nothing would be revived.');
