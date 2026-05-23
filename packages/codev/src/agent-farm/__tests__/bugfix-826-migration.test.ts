@@ -151,9 +151,12 @@ describe('Bugfix #826 — Migration v11 (workspace-scoped architect schema)', ()
       localDb.exec(`
         DROP TABLE architect;
         ALTER TABLE architect_v11 RENAME TO architect;
-        CREATE INDEX IF NOT EXISTS idx_architect_workspace ON architect(workspace_path);
       `);
     }
+
+    // iter-7: create the index outside the alreadyMigrated guard so both
+    // upgrade and fresh paths converge. Mirrors production.
+    localDb.exec('CREATE INDEX IF NOT EXISTS idx_architect_workspace ON architect(workspace_path);');
 
     localDb.prepare('INSERT INTO _migrations (version) VALUES (11)').run();
   }
@@ -354,5 +357,118 @@ describe('Bugfix #826 — Migration v11 (workspace-scoped architect schema)', ()
 
     const v11Row = localDb.prepare('SELECT version FROM _migrations WHERE version = 11').get() as { version: number } | undefined;
     expect(v11Row?.version).toBe(11);
+  });
+
+  // ===========================================================================
+  // Bugfix #826 iter-7 — Upgrade-path schema-exec ordering
+  // ===========================================================================
+  //
+  // ensureLocalDatabase runs `db.exec(LOCAL_SCHEMA)` BEFORE migrations on every
+  // open. In iter-4 through iter-6, LOCAL_SCHEMA contained
+  // `CREATE INDEX idx_architect_workspace ON architect(workspace_path)`.
+  // On any existing pre-v11 install (every v3.1.1 user upgrading to v3.1.2),
+  // the architect table lacks the workspace_path column, so the CREATE INDEX
+  // threw 'no such column: workspace_path' and aborted ensureLocalDatabase
+  // before migration v11 could run — the schema stayed at v10 and every
+  // subsequent setArchitectByName call failed with the same error. Release
+  // blocker.
+  //
+  // Fix (iter-7): drop the CREATE INDEX from LOCAL_SCHEMA; create it inside
+  // migration v11's outer block, AFTER the alreadyMigrated inner-if. That
+  // way the index is created on both upgrade installs (after the migration
+  // body) and fresh installs (where LOCAL_SCHEMA already created the v11
+  // table shape and the inner block was a no-op).
+  //
+  // Sentinel: this test runs the production LOCAL_SCHEMA via db.exec against
+  // the v10 architect-table shape. Pre-iter-7 it would throw; post-iter-7 it
+  // must succeed.
+
+  describe('iter-7 release-blocker: LOCAL_SCHEMA must not reference workspace_path before migration', () => {
+    it('db.exec(LOCAL_SCHEMA) succeeds against a pre-v11 architect table', async () => {
+      // Build the v10 architect table shape (no workspace_path column).
+      buildPreV11Schema();
+      localDb.prepare(
+        "INSERT INTO architect (id, pid, port, cmd, started_at, terminal_id) VALUES ('main', 0, 0, 'claude', '2026-05-23T10:00:00Z', 't-main')"
+      ).run();
+
+      // Import the actual production LOCAL_SCHEMA and run it. Pre-iter-7
+      // this throws 'no such column: workspace_path' because the CREATE INDEX
+      // line in LOCAL_SCHEMA references a column that doesn't exist on the
+      // pre-v11 table.
+      const { LOCAL_SCHEMA } = await import('../db/schema.js');
+      expect(() => localDb.exec(LOCAL_SCHEMA)).not.toThrow();
+    });
+
+    it('runs the full pre-migration → LOCAL_SCHEMA → migrate sequence end-to-end (upgrade path)', async () => {
+      // Recreate the production upgrade sequence:
+      //   1. Existing v10 database (architect with no workspace_path).
+      //   2. db.exec(LOCAL_SCHEMA) on open — must not throw.
+      //   3. Migration v11 runs.
+      //   4. Architect table is migrated to v11 shape; index exists.
+      buildPreV11Schema();
+      localDb.prepare(
+        "INSERT INTO architect (id, pid, port, cmd, started_at, terminal_id) VALUES ('main', 0, 0, 'claude', '2026-05-23T10:00:00Z', 't-main')"
+      ).run();
+      globalDb.prepare(
+        "INSERT INTO terminal_sessions (id, workspace_path, type, role_id, pid) VALUES ('t-main', '/workspace/upgrade-user', 'architect', 'main', 1234)"
+      ).run();
+
+      const { LOCAL_SCHEMA } = await import('../db/schema.js');
+      localDb.exec(LOCAL_SCHEMA);
+      runV11Migration();
+
+      // Post-migration: workspace_path column present, row migrated, index exists.
+      const cols = localDb.prepare('PRAGMA table_info(architect)').all() as Array<{ name: string }>;
+      expect(cols.some(c => c.name === 'workspace_path')).toBe(true);
+
+      const rows = localDb.prepare('SELECT workspace_path, id FROM architect').all() as Array<{ workspace_path: string; id: string }>;
+      expect(rows).toEqual([{ workspace_path: '/workspace/upgrade-user', id: 'main' }]);
+
+      const indexes = localDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'architect'")
+        .all() as Array<{ name: string }>;
+      expect(indexes.map(i => i.name)).toContain('idx_architect_workspace');
+    });
+
+    it('fresh-install path: LOCAL_SCHEMA creates the v11 table, migration v11 creates the index', async () => {
+      // Fresh install: no pre-existing architect table at all. LOCAL_SCHEMA
+      // creates it with the v11 shape; the migration v11 inner block is a
+      // no-op (workspace_path column already present); the index gets
+      // created by the outer-block CREATE INDEX.
+      localDb.exec(`
+        CREATE TABLE IF NOT EXISTS _migrations (
+          version INTEGER PRIMARY KEY,
+          applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+      // Pre-mark prior migrations as done — only v11 should run.
+      for (let v = 1; v <= 10; v++) {
+        localDb.prepare('INSERT INTO _migrations (version) VALUES (?)').run(v);
+      }
+      // Build the global terminal_sessions table so runV11Migration's ATTACH
+      // path doesn't throw — even with no rows, the table must exist.
+      globalDb.exec(`
+        CREATE TABLE IF NOT EXISTS terminal_sessions (
+          id TEXT PRIMARY KEY,
+          workspace_path TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('architect', 'builder', 'shell')),
+          role_id TEXT,
+          pid INTEGER
+        );
+      `);
+
+      const { LOCAL_SCHEMA } = await import('../db/schema.js');
+      localDb.exec(LOCAL_SCHEMA);
+
+      // At this point architect already has workspace_path (from LOCAL_SCHEMA).
+      // The migration's inner alreadyMigrated branch fires → skipped — but
+      // the outer-block CREATE INDEX must still run.
+      runV11Migration();
+
+      const indexes = localDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'architect'")
+        .all() as Array<{ name: string }>;
+      expect(indexes.map(i => i.name)).toContain('idx_architect_workspace');
+    });
   });
 });
