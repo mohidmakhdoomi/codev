@@ -19,6 +19,14 @@ CREATE TABLE IF NOT EXISTS _migrations (
 -- Bugfix #826: workspace_path scopes architect rows per workspace, eliminating
 -- the cross-workspace leak. Composite PK lets the same architect name (e.g.
 -- 'main') exist in multiple workspaces without collision.
+--
+-- Bugfix #826 iter-7: idx_architect_workspace is intentionally NOT created
+-- here. LOCAL_SCHEMA runs via db.exec() BEFORE migrations on every open. On
+-- pre-v11 installs the architect table doesn't yet have workspace_path, so a
+-- CREATE INDEX statement referencing that column would throw 'no such column'
+-- and abort ensureLocalDatabase before migration v11 can run — breaking every
+-- upgrade install. The index is created INSIDE migration v11 instead, where
+-- both fresh installs and upgrade installs converge on the same v11 shape.
 CREATE TABLE IF NOT EXISTS architect (
   workspace_path TEXT NOT NULL,
   id TEXT NOT NULL,
@@ -29,7 +37,6 @@ CREATE TABLE IF NOT EXISTS architect (
   terminal_id TEXT,
   PRIMARY KEY (workspace_path, id)
 );
-CREATE INDEX IF NOT EXISTS idx_architect_workspace ON architect(workspace_path);
 
 -- Builder sessions
 CREATE TABLE IF NOT EXISTS builders (

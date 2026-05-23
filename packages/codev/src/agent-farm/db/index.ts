@@ -577,11 +577,21 @@ function ensureLocalDatabase(): Database.Database {
       db.exec(`
         DROP TABLE architect;
         ALTER TABLE architect_v11 RENAME TO architect;
-        CREATE INDEX IF NOT EXISTS idx_architect_workspace ON architect(workspace_path);
       `);
 
       console.log('[info] Migrated architect table: workspace-scoped rows (Bugfix #826)');
     }
+
+    // Bugfix #826 iter-7: create the workspace_path index here, OUTSIDE the
+    // alreadyMigrated guard. The index is NOT in LOCAL_SCHEMA because
+    // db.exec(LOCAL_SCHEMA) runs before migrations on every open — and on a
+    // pre-v11 install the architect table lacks workspace_path, so CREATE
+    // INDEX would throw 'no such column' and abort ensureLocalDatabase before
+    // v11 can run. Placing it here ensures the index is created on both
+    // upgrade installs (after the migration body) and fresh installs (where
+    // LOCAL_SCHEMA already created the v11 table shape and the inner block
+    // was skipped). `IF NOT EXISTS` makes the second-open case a no-op.
+    db.exec('CREATE INDEX IF NOT EXISTS idx_architect_workspace ON architect(workspace_path);');
 
     db.prepare('INSERT INTO _migrations (version) VALUES (11)').run();
   }
