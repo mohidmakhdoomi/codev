@@ -78,3 +78,44 @@ describe('Spec 786 Phase 6 — WorkspaceProvider expandable Architects tree', ()
     expect(WS_SRC).toMatch(/this\.changeEmitter\.fire\(\)/);
   });
 });
+
+describe('Spec 823 — WorkspaceProvider subscribes to architects-updated SSE', () => {
+  it('SSE subscriber matches the architects-updated envelope type', () => {
+    // The subscriber callback uses the SAME `connectionManager.onSSEEvent`
+    // subscription that already handles `worktree-config-updated`. Phase 4
+    // extends the type check to also accept `architects-updated`.
+    expect(WS_SRC).toMatch(/envelope\.type === ['"]worktree-config-updated['"]/);
+    expect(WS_SRC).toMatch(/envelope\.type === ['"]architects-updated['"]/);
+  });
+
+  it('both subscriber branches fire changeEmitter (single shared subscriber, no duplicate)', () => {
+    // Phase 4 implementation rule: extend the existing subscriber callback
+    // with an additional `||` branch — do NOT register a second
+    // `connectionManager.onSSEEvent(...)` (which would parse the envelope
+    // twice). Confirm the file has exactly ONE `onSSEEvent` call.
+    const sseSubscribeCalls = WS_SRC.match(/connectionManager\.onSSEEvent\(/g) ?? [];
+    expect(sseSubscribeCalls.length).toBe(1);
+  });
+
+  it('subscriber callback parses the envelope JSON safely (catch malformed payloads)', () => {
+    // Regression guard for the existing try/catch — must still be present so
+    // a malformed envelope from a future event source doesn't crash the
+    // tree-data provider.
+    expect(WS_SRC).toMatch(/JSON\.parse\(data\)/);
+    expect(WS_SRC).toMatch(/} catch[\s\S]*?\/\/ benign/);
+  });
+
+  it('subscriber fires changeEmitter on match, does not filter by workspace', () => {
+    // Per spec OQ-F + plan iter-2 Codex internal-consistency fix: the
+    // SSE-subscriber layer fires unconditionally on a matching envelope
+    // type (the WorkspaceProvider instance is workspace-scoped at
+    // construction, so per-event workspace filtering would add complexity
+    // without benefit). The workspace field stays in the event body for
+    // dashboards or other listeners that DO want to filter.
+    //
+    // Verify the subscriber doesn't contain a workspace comparison around
+    // the changeEmitter.fire() call.
+    expect(WS_SRC).not.toMatch(/envelope\.workspace\s*===/);
+    expect(WS_SRC).not.toMatch(/workspace\.path\s*===\s*envelope/);
+  });
+});

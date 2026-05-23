@@ -26,18 +26,24 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
     terminalManager.onDidChangeDevTerminals(() => this.changeEmitter.fire());
     // Tower fans out a `worktree-config-updated` SSE event whenever
     // .codev/config(.local).json changes (server-side file watcher in
-    // worktree-config-watcher.ts). We re-render on that signal so the
-    // config-driven rows (Open Dev URL …) reflect edits live, without
-    // the extension ever needing to read or watch the file itself.
+    // worktree-config-watcher.ts), and a `architects-updated` event
+    // whenever an architect is added or removed (Spec 823 — closes the
+    // gap where the Architects tree went stale when add/remove happened
+    // via CLI outside VSCode). We re-render on either signal.
     //
     // Tower emits events as a JSON envelope on the SSE `data:` field
     // with no `event:` name (see builder-spawn-handler.ts for the same
     // gotcha), so the SSE-client-level `type` is always '' and the
     // real type sits inside the envelope.
+    //
+    // No workspace filter at the SSE-subscriber layer: VSCode is opened
+    // against one workspace at a time, and `WorkspaceProvider` is
+    // workspace-scoped at construction. Mirrors the existing
+    // `worktree-config-updated` subscriber's unconditional-fire behaviour.
     connectionManager.onSSEEvent(({ data }) => {
       try {
         const envelope = JSON.parse(data) as { type?: unknown };
-        if (envelope.type === 'worktree-config-updated') {
+        if (envelope.type === 'worktree-config-updated' || envelope.type === 'architects-updated') {
           this.changeEmitter.fire();
         }
       } catch {

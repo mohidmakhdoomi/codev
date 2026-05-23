@@ -156,7 +156,7 @@ Per the architect's plan-time direction. Requires the VSCode extension installed
 - [ ] Sidebar shows "Architects" expandable tree section (not the pre-786 singleton "Open Architect" row)
 - [ ] **N=1**: expanding shows `main` only. Right-click `main` → no "Remove Architect" option
 - [ ] Add a sibling via CLI: `afx workspace add-architect --name sib`
-- [ ] In VSCode: the tree may not refresh automatically until you click "Refresh" on the sidebar OR until an SSE event fires (graceful — `codev.removeArchitect` does refresh; add does not yet)
+- [ ] In VSCode: the tree **refreshes automatically within ~1s** of the add (Spec 823 Phase 4 closes the prior limitation — Tower now emits an `architects-updated` SSE event from both add and remove route handlers, and the VSCode `WorkspaceProvider` subscribes alongside its existing `worktree-config-updated` subscriber). No manual Refresh click needed.
 - [ ] Expanding "Architects" shows both `main` and `sib`
 - [ ] Click `sib` → opens `sib`'s terminal in a NEW VSCode terminal slot (not reusing `main`'s)
 - [ ] Right-click `sib` → "Remove Architect" → modal confirmation → confirm → sib removed, tree refreshes, `sib`'s VSCode terminal closes gracefully (or remains showing "session ended")

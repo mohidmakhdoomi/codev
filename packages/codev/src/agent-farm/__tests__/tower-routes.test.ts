@@ -63,6 +63,7 @@ vi.mock('../servers/tower-instances.js', () => ({
   killTerminalWithShellper: vi.fn(async () => true),
   stopInstance: vi.fn(async () => ({ ok: true })),
   addArchitect: vi.fn(async () => ({ success: true, name: 'sibling', terminalId: 'term-arch-sibling' })),
+  removeArchitect: vi.fn(async () => ({ success: true })),
 }));
 
 vi.mock('../servers/tower-terminals.js', () => ({
@@ -633,6 +634,100 @@ describe('tower-routes', () => {
       expect(json.success).toBe(false);
       expect(json.error).toMatch(/Failed to create architect terminal/);
       expect(json.error).toMatch(/spawn claude ENOENT/);
+    });
+  });
+
+  // =========================================================================
+  // Spec 823: architects-updated SSE emission on add/remove
+  // =========================================================================
+
+  describe('Spec 823: architects-updated SSE emission', () => {
+    const workspacePath = '/test/workspace';
+    const encoded = Buffer.from(workspacePath).toString('base64url');
+
+    it('handleAddArchitect emits architects-updated on success', async () => {
+      mockParseJsonBody.mockResolvedValueOnce({ name: 'ob-refine' });
+      const ctx = makeCtx();
+      const req = makeReq('POST', `/api/workspaces/${encoded}/architects`);
+      const { res, statusCode } = makeRes();
+
+      await handleRequest(req, res, ctx);
+
+      expect(statusCode()).toBe(200);
+      expect(ctx.broadcastNotification).toHaveBeenCalledTimes(1);
+      expect(ctx.broadcastNotification).toHaveBeenCalledWith({
+        type: 'architects-updated',
+        title: 'Architects updated',
+        body: JSON.stringify({ workspace: workspacePath }),
+        workspace: workspacePath,
+      });
+    });
+
+    it('handleAddArchitect does NOT emit on failure', async () => {
+      mockParseJsonBody.mockResolvedValueOnce({ name: 'bogus' });
+      const { addArchitect } = await import('../servers/tower-instances.js');
+      (addArchitect as any).mockResolvedValueOnce({
+        success: false,
+        error: 'Workspace not running',
+      });
+
+      const ctx = makeCtx();
+      const req = makeReq('POST', `/api/workspaces/${encoded}/architects`);
+      const { res, statusCode } = makeRes();
+
+      await handleRequest(req, res, ctx);
+
+      // Failure status comes through, broadcast does NOT fire.
+      expect(statusCode()).toBe(404);
+      expect(ctx.broadcastNotification).not.toHaveBeenCalled();
+    });
+
+    it('handleRemoveArchitect emits architects-updated on success', async () => {
+      const ctx = makeCtx();
+      const req = makeReq('DELETE', `/api/workspaces/${encoded}/architects/ob-refine`);
+      const { res, statusCode } = makeRes();
+
+      await handleRequest(req, res, ctx);
+
+      expect(statusCode()).toBe(200);
+      expect(ctx.broadcastNotification).toHaveBeenCalledTimes(1);
+      expect(ctx.broadcastNotification).toHaveBeenCalledWith({
+        type: 'architects-updated',
+        title: 'Architects updated',
+        body: JSON.stringify({ workspace: workspacePath }),
+        workspace: workspacePath,
+      });
+    });
+
+    it('handleRemoveArchitect does NOT emit on failure', async () => {
+      const { removeArchitect } = await import('../servers/tower-instances.js');
+      (removeArchitect as any).mockResolvedValueOnce({
+        success: false,
+        error: 'Cannot remove main architect',
+      });
+
+      const ctx = makeCtx();
+      const req = makeReq('DELETE', `/api/workspaces/${encoded}/architects/main`);
+      const { res, statusCode } = makeRes();
+
+      await handleRequest(req, res, ctx);
+
+      expect(statusCode()).toBe(400);
+      expect(ctx.broadcastNotification).not.toHaveBeenCalled();
+    });
+
+    it('emit body carries the workspace path so subscribers can disambiguate', async () => {
+      mockParseJsonBody.mockResolvedValueOnce({ name: 'team-a' });
+      const ctx = makeCtx();
+      const req = makeReq('POST', `/api/workspaces/${encoded}/architects`);
+      const { res } = makeRes();
+
+      await handleRequest(req, res, ctx);
+
+      const callArg = (ctx.broadcastNotification as any).mock.calls[0][0];
+      const parsedBody = JSON.parse(callArg.body);
+      expect(parsedBody.workspace).toBe(workspacePath);
+      expect(callArg.workspace).toBe(workspacePath);
     });
   });
 
