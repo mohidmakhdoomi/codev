@@ -512,6 +512,23 @@ describe('formatRelativeAge', () => {
     expect(formatRelativeAge(iso)).toMatch(/^\d+d ago$/);
   });
 
+  it('rounds days UP so the label aligns with --max-age (25h shows 2d, not 1d)', () => {
+    const iso = new Date(Date.now() - 25 * 3600_000).toISOString();
+    expect(formatRelativeAge(iso)).toBe('2d ago');
+  });
+
+  it('rounds 47h up to 2d (still within the ceil(2) bucket)', () => {
+    const iso = new Date(Date.now() - 47 * 3600_000).toISOString();
+    expect(formatRelativeAge(iso)).toBe('2d ago');
+  });
+
+  it('shows "2d ago" rather than "1d ago" for anything strictly older than 24h', () => {
+    // Just past the boundary — ensures the predicate boundary
+    // (`ageDays > maxAge`) matches what the label promises.
+    const iso = new Date(Date.now() - (24 * 3600_000 + 1_000)).toISOString();
+    expect(formatRelativeAge(iso)).toBe('2d ago');
+  });
+
   it('returns placeholder for malformed ISO', () => {
     expect(formatRelativeAge('not a date')).toBe('—');
   });

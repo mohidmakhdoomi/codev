@@ -194,7 +194,12 @@ export function formatRelativeAge(iso: string): string {
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
+  // Round UP rather than down so the label aligns with --max-age semantics:
+  // anything strictly older than 24h prints as "2d ago" (not "1d ago"), so
+  // a row labelled "1d ago" is actually within --max-age 1 (≤ 24h exact).
+  // Use ms rather than the floored `hours` to preserve sub-hour precision —
+  // 24h + 1s must ceil to 2 days, not 1.
+  const days = Math.ceil(ms / 86_400_000);
   return `${days}d ago`;
 }
 
