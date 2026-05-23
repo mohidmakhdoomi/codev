@@ -103,15 +103,28 @@ function issueItem(number: number, title: string, labels: Array<{ name: string }
   return { number, title, url: `https://github.com/org/repo/issues/${number}`, labels, createdAt: '2026-01-01T00:00:00Z' };
 }
 
-/** Create a state.db in the workspace's .agent-farm/ with builder issue_number rows. */
-function createStateDb(root: string, rows: Array<{ worktree: string; issue_number: number | string }>): void {
+/**
+ * Create a state.db in the workspace's .agent-farm/ with builder rows.
+ * Spec 823 extended the schema with `spawned_by_architect` (nullable) so tests
+ * can exercise the enrichment path for both issue_number and spawnedByArchitect.
+ */
+function createStateDb(
+  root: string,
+  rows: Array<{ worktree: string; issue_number?: number | string | null; spawned_by_architect?: string | null }>,
+): void {
   const agentFarmDir = path.join(root, '.agent-farm');
   fs.mkdirSync(agentFarmDir, { recursive: true });
   const db = new Database(path.join(agentFarmDir, 'state.db'));
-  db.exec('CREATE TABLE IF NOT EXISTS builders (worktree TEXT, issue_number TEXT)');
-  const insert = db.prepare('INSERT INTO builders (worktree, issue_number) VALUES (?, ?)');
+  db.exec('CREATE TABLE IF NOT EXISTS builders (worktree TEXT, issue_number TEXT, spawned_by_architect TEXT)');
+  const insert = db.prepare(
+    'INSERT INTO builders (worktree, issue_number, spawned_by_architect) VALUES (?, ?, ?)',
+  );
   for (const row of rows) {
-    insert.run(row.worktree, String(row.issue_number));
+    insert.run(
+      row.worktree,
+      row.issue_number == null ? null : String(row.issue_number),
+      row.spawned_by_architect ?? null,
+    );
   }
   db.close();
 }
@@ -1842,6 +1855,90 @@ describe('overview', () => {
 
       expect(data.builders).toHaveLength(1);
       expect(data.builders[0].issueId).toBe('42');
+    });
+
+    // Spec 823: spawnedByArchitect enrichment from state.db.builders.
+    describe('Spec 823 — spawnedByArchitect enrichment', () => {
+      it('populates spawnedByArchitect from state.db for strict-mode builders', async () => {
+        const worktreePath = createBuilderWorktree(tmpDir, 'spir-823-attribution', [
+          "id: '0823'",
+          'title: attribution',
+          'protocol: spir',
+          'phase: implement',
+          'gates:',
+        ].join('\n'), '0823-attribution');
+
+        createStateDb(tmpDir, [
+          { worktree: worktreePath, issue_number: 823, spawned_by_architect: 'ob-refine' },
+        ]);
+
+        const cache = new OverviewCache();
+        const data = await cache.getOverview(tmpDir);
+
+        expect(data.builders).toHaveLength(1);
+        expect(data.builders[0].spawnedByArchitect).toBe('ob-refine');
+        expect(data.builders[0].issueId).toBe('823');
+      });
+
+      it('populates spawnedByArchitect for soft-mode builders with issue_number=NULL (iter-1 Gemini)', async () => {
+        // Soft-mode / task-mode builders have issue_number=null in state.db.
+        // Before Spec 823, the SQL enrichment had `WHERE issue_number IS NOT NULL`
+        // which excluded these rows entirely. After Spec 823, the WHERE is
+        // dropped and conditional assignment ensures spawnedByArchitect populates
+        // even when issue_number is null.
+        const worktreePath = createBuilderWorktree(tmpDir, 'task-experiment-foo');
+
+        createStateDb(tmpDir, [
+          { worktree: worktreePath, issue_number: null, spawned_by_architect: 'ob-refine' },
+        ]);
+
+        const cache = new OverviewCache();
+        const data = await cache.getOverview(tmpDir);
+
+        expect(data.builders).toHaveLength(1);
+        expect(data.builders[0].spawnedByArchitect).toBe('ob-refine');
+        // issueId stays null since neither the regex nor the DB supplied one.
+        expect(data.builders[0].issueId).toBeNull();
+      });
+
+      it('leaves spawnedByArchitect null when state.db has NULL for the column (legacy pre-#755)', async () => {
+        const worktreePath = createBuilderWorktree(tmpDir, 'spir-50-legacy', [
+          "id: '0050'",
+          'title: legacy',
+          'protocol: spir',
+          'phase: implement',
+          'gates:',
+        ].join('\n'), '0050-legacy');
+
+        createStateDb(tmpDir, [
+          { worktree: worktreePath, issue_number: 50, spawned_by_architect: null },
+        ]);
+
+        const cache = new OverviewCache();
+        const data = await cache.getOverview(tmpDir);
+
+        expect(data.builders).toHaveLength(1);
+        expect(data.builders[0].spawnedByArchitect).toBeNull();
+        // Existing issueId enrichment still works (regression check).
+        expect(data.builders[0].issueId).toBe('50');
+      });
+
+      it('leaves spawnedByArchitect null when state.db does not exist', async () => {
+        createBuilderWorktree(tmpDir, 'spir-99-no-db', [
+          "id: '0099'",
+          'title: nodb',
+          'protocol: spir',
+          'phase: implement',
+          'gates:',
+        ].join('\n'), '0099-no-db');
+
+        // No createStateDb call → no state.db file at all.
+        const cache = new OverviewCache();
+        const data = await cache.getOverview(tmpDir);
+
+        expect(data.builders).toHaveLength(1);
+        expect(data.builders[0].spawnedByArchitect).toBeNull();
+      });
     });
   });
 });

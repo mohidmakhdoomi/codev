@@ -4,6 +4,13 @@ import type { OverviewBuilder } from '../lib/api.js';
 interface BuilderCardProps {
   builder: OverviewBuilder;
   onOpen?: (builder: OverviewBuilder) => void;
+  /**
+   * Number of architects in the workspace. Used to gate the inline attribution
+   * tag — rendered only when `architectCount > 1` per Spec 823 (baked decision
+   * 2b: separator + name, no "spawned by" prefix label). N=1 renders identical
+   * to pre-823 DOM.
+   */
+  architectCount?: number;
 }
 
 function stateLabel(builder: OverviewBuilder): string {
@@ -38,12 +45,16 @@ function elapsed(startedAt: string | null, idleMs: number): string {
   return `${formatMs(wallMs)} wc / ${formatMs(agentMs)} ag`;
 }
 
-export function BuilderCard({ builder, onOpen }: BuilderCardProps) {
+export function BuilderCard({ builder, onOpen, architectCount = 0 }: BuilderCardProps) {
   const displayId = builder.issueId ? `#${builder.issueId}` : builder.id;
   const displayTitle = builder.issueTitle || builder.id;
   const isBlocked = builder.blocked !== null && builder.blocked !== '';
   const isWaiting = !isBlocked && isIdleWaiting(builder);
   const pct = Math.min(100, Math.max(0, Math.round(builder.progress ?? 0)));
+  // Spec 823: render attribution only when the workspace has >1 architect AND
+  // the builder carries a spawning-architect name. N=1 renders identically to
+  // pre-823 (no extra DOM, per baked decision 2b).
+  const showAttribution = architectCount > 1 && !!builder.spawnedByArchitect;
 
   // Reuse the blocked visual treatment for waiting rows in v1 — both are
   // "needs me" states. Splitting CSS into a distinct `--waiting` modifier
@@ -53,7 +64,14 @@ export function BuilderCard({ builder, onOpen }: BuilderCardProps) {
 
   return (
     <tr className={`builder-row${rowMod}`}>
-      <td className="builder-col-id">{displayId}</td>
+      <td className="builder-col-id">
+        {displayId}
+        {showAttribution && (
+          <span className="builder-attribution" title={`spawned by ${builder.spawnedByArchitect}`}>
+            {' · '}{builder.spawnedByArchitect}
+          </span>
+        )}
+      </td>
       <td className="builder-col-title">{displayTitle}</td>
       <td className="builder-col-state">
         <span className={isBlocked || isWaiting ? 'builder-state-blocked' : 'builder-state-active'}>

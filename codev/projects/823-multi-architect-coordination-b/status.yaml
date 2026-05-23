@@ -1,0 +1,90 @@
+id: '823'
+title: multi-architect-coordination-b
+protocol: spir
+phase: review
+plan_phases:
+  - id: phase_1_attribution
+    title: Dashboard builder attribution (type + SQL + BuilderCard + WorkView prop threading + tests + Playwright)
+    status: complete
+  - id: phase_2_thread_file
+    title: >-
+      Per-builder thread file (codev-skeleton/roles/builder.md + codev/roles/builder.md updates; lazy create on first
+      write)
+    status: complete
+  - id: phase_3_messaging_docs
+    title: >-
+      Inter-agent messaging documentation (five markdown files: CLAUDE.md, AGENTS.md, agent-farm.md, two skeleton
+      templates)
+    status: complete
+  - id: phase_4_vscode_refresh
+    title: VSCode Architects tree auto-refresh on add (#786-dependent — Tower SSE emit + VSCode subscribe)
+    status: complete
+current_plan_phase: null
+gates:
+  spec-approval:
+    status: approved
+    requested_at: '2026-05-22T23:51:15.648Z'
+    approved_at: '2026-05-23T04:50:12.931Z'
+  plan-approval:
+    status: approved
+    requested_at: '2026-05-23T05:03:06.943Z'
+    approved_at: '2026-05-23T05:57:06.037Z'
+  pr:
+    status: approved
+    requested_at: '2026-05-23T06:57:56.556Z'
+    approved_at: '2026-05-23T10:18:40.489Z'
+  verify-approval:
+    status: pending
+iteration: 1
+build_complete: true
+history:
+  - iteration: 1
+    plan_phase: phase_1_attribution
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-823/codev/projects/823-multi-architect-coordination-b/823-phase_1_attribution-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-823/codev/projects/823-multi-architect-coordination-b/823-phase_1_attribution-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-823/codev/projects/823-multi-architect-coordination-b/823-phase_1_attribution-iter1-claude.txt
+  - iteration: 1
+    plan_phase: phase_3_messaging_docs
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-823/codev/projects/823-multi-architect-coordination-b/823-phase_3_messaging_docs-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-823/codev/projects/823-multi-architect-coordination-b/823-phase_3_messaging_docs-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-823/codev/projects/823-multi-architect-coordination-b/823-phase_3_messaging_docs-iter1-claude.txt
+  - iteration: 1
+    plan_phase: phase_4_vscode_refresh
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: REQUEST_CHANGES
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-823/codev/projects/823-multi-architect-coordination-b/823-phase_4_vscode_refresh-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-823/codev/projects/823-multi-architect-coordination-b/823-phase_4_vscode_refresh-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-823/codev/projects/823-multi-architect-coordination-b/823-phase_4_vscode_refresh-iter1-claude.txt
+started_at: '2026-05-22T23:32:46.651Z'
+updated_at: '2026-05-23T10:18:40.490Z'

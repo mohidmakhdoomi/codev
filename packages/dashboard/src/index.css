@@ -1155,7 +1155,19 @@ body {
   font-weight: 500;
   color: var(--accent);
   white-space: nowrap;
-  width: 60px;
+  /* Spec 823: `min-width` instead of `width` so the cell grows naturally when
+     the attribution span renders (` · <architect-name>`) at N>1 architects.
+     At N=1, the cell renders identically to the prior 60px-wide layout. */
+  min-width: 60px;
+}
+
+/* Spec 823: inline attribution tag for builder spawning architect. Rendered
+   only at architectCount > 1 (locked to baked decision 2b — separator + name,
+   no "spawned by" prefix). The full prefix lives in the `title` hover-tooltip. */
+.builder-attribution {
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  font-weight: normal;
 }
 
 .builder-col-title {

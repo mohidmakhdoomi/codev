@@ -85,6 +85,26 @@ For complete reference, see `codev/resources/commands/`:
 - `codev/resources/commands/agent-farm.md` - Agent Farm commands
 - `codev/resources/commands/consult.md` - Consultation commands
 
+## Inter-agent messaging
+
+Agents within a workspace communicate through `afx send`. Four addressing forms are supported:
+
+| Form | Meaning | Allowed from |
+|---|---|---|
+| `afx send <builder-id> "msg"` | Send to a specific builder (e.g. `afx send 0042 "..."`). | Any sender. |
+| `afx send architect "msg"` | From a builder: routes to the spawning architect via affinity. From an architect (or any non-builder sender): routes to the architect named `main` if present, else the first registered architect. | Any sender. |
+| `afx send architect:<name> "msg"` | Explicit per-architect addressing. **Architects (including `main`)**: open address grammar — any architect can address any other architect (sibling-architect messaging). **Builders**: allowed ONLY when `<name>` matches the builder's own spawning architect; mismatches are rejected by Tower's spoofing check. From a builder, this is an explicit form of the affinity routing, NOT an override. | Any sender (with the spoofing constraint above for builders). |
+| `afx send <workspace>:architect "msg"` | Cross-workspace addressing (e.g. `afx send marketmaker:architect "..."`). | Any sender. |
+
+**Sibling-architect messaging**: when a workspace hosts more than one architect (added via `afx workspace add-architect --name <name>`), sibling architects message each other via the `architect:<name>` form. Example: `main` running `afx send architect:ob-refine "PR-iter-2 feedback ready"` lands on the `ob-refine` architect's terminal. This works because sender = architect bypasses the spoofing check.
+
+**Builder spoofing-check**: a builder may only address its own spawning architect via `architect:<name>`. The spoofing check is enforced by Tower's message router; attempts to address a different architect from a builder are rejected.
+
+**Discovering active agents**:
+
+- `afx status` lists all architects alongside builders, with names, terminal IDs, and PIDs where available.
+- Each active builder maintains a free-text narrative log at `codev/state/<builder-id>_thread.md` (relative to its worktree). **In-flight discovery**: `ls .builders/*/codev/state/*.md` and `cat .builders/<id>/codev/state/<id>_thread.md`. **Post-merge discovery**: after a builder's PR merges, its thread lands in `codev/state/` on `main` — list with `ls codev/state/` and read with `cat codev/state/<builder-id>_thread.md` from the main checkout.
+
 ## Configuration
 
 Agent Farm is configured via `.codev/config.json` at the project root. Created during `codev init` or `codev adopt`. Override via CLI flags: `--architect-cmd`, `--builder-cmd`, `--shell-cmd`.

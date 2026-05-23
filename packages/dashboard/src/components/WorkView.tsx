@@ -51,6 +51,12 @@ export function WorkView({ state, onRefresh, onSelectTab }: WorkViewProps) {
     );
   }
 
+  // Spec 823: count once outside the render loop so each BuilderCard receives
+  // a stable prop. Null-safe `?? 0` handles the loading edge — when no state
+  // is available yet, architectCount=0 makes `architectCount > 1` false so the
+  // attribution span is never rendered.
+  const architectCount = state.architects?.length ?? 0;
+
   return (
     <div className={`work-view ${filePanelOpen ? 'file-panel-open' : ''}`}>
       <div className="work-content">
@@ -89,6 +95,7 @@ export function WorkView({ state, onRefresh, onSelectTab }: WorkViewProps) {
                     key={builder.id}
                     builder={builder}
                     onOpen={handleOpenBuilder}
+                    architectCount={architectCount}
                   />
                 ))}
               </tbody>

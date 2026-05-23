@@ -229,13 +229,13 @@ export async function handleRequest(
     // Workspace API: /api/workspaces/:encodedPath/architects (Spec 755 — multi-architect)
     const architectsMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/architects$/);
     if (architectsMatch) {
-      return await handleAddArchitect(req, res, architectsMatch);
+      return await handleAddArchitect(req, res, architectsMatch, ctx);
     }
 
     // Workspace API: DELETE /api/workspaces/:encodedPath/architects/:name (Spec 786)
     const architectRemoveMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/architects\/([^/]+)$/);
     if (architectRemoveMatch) {
-      return await handleRemoveArchitect(req, res, architectRemoveMatch);
+      return await handleRemoveArchitect(req, res, architectRemoveMatch, ctx);
     }
 
     // Terminal-specific routes: /api/terminals/:id/* (Spec 0090 Phase 2)
@@ -309,6 +309,7 @@ async function handleAddArchitect(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   match: RegExpMatchArray,
+  ctx: RouteContext,
 ): Promise<void> {
   if (req.method !== 'POST') {
     res.writeHead(405, { 'Content-Type': 'application/json' });
@@ -341,6 +342,16 @@ async function handleAddArchitect(
 
   const result = await addArchitect(workspacePath, body.name);
   if (result.success) {
+    // Spec 823: emit an `architects-updated` SSE event so VSCode's
+    // WorkspaceProvider tree refreshes when the add happens via the CLI
+    // (today the tree only refreshes when add is triggered from within
+    // VSCode itself). Mirrors `worktree-config-updated`'s broadcast shape.
+    ctx.broadcastNotification({
+      type: 'architects-updated',
+      title: 'Architects updated',
+      body: JSON.stringify({ workspace: workspacePath }),
+      workspace: workspacePath,
+    });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true, name: result.name, terminalId: result.terminalId }));
   } else {
@@ -365,6 +376,7 @@ async function handleRemoveArchitect(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   match: RegExpMatchArray,
+  ctx: RouteContext,
 ): Promise<void> {
   if (req.method !== 'DELETE') {
     res.writeHead(405, { 'Content-Type': 'application/json' });
@@ -389,6 +401,15 @@ async function handleRemoveArchitect(
   const name = decodeURIComponent(encodedName);
   const result = await removeArchitect(workspacePath, name);
   if (result.success) {
+    // Spec 823: emit `architects-updated` so VSCode's WorkspaceProvider
+    // refreshes when remove happens via CLI (the dashboard polls and
+    // doesn't need an explicit event; VSCode subscribes to this notification).
+    ctx.broadcastNotification({
+      type: 'architects-updated',
+      title: 'Architects updated',
+      body: JSON.stringify({ workspace: workspacePath }),
+      workspace: workspacePath,
+    });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true }));
   } else {
@@ -1467,6 +1488,16 @@ async function handleWorkspaceRoutes(
       const name = decodeURIComponent(archDeleteMatch[1]);
       const result = await removeArchitect(workspacePath, name);
       if (result.success) {
+        // Spec 823 Phase 4 (iter-1 Codex): emit architects-updated from
+        // every successful remove path, not just the /api/workspaces/
+        // route, so the VSCode tree refreshes when the dashboard's
+        // close-button → confirmation modal triggers the remove.
+        ctx.broadcastNotification({
+          type: 'architects-updated',
+          title: 'Architects updated',
+          body: JSON.stringify({ workspace: workspacePath }),
+          workspace: workspacePath,
+        });
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true }));
       } else {
@@ -2126,6 +2157,16 @@ async function handleWorkspaceTabDelete(
     const name = tabId.slice('architect:'.length);
     const result = await removeArchitect(workspacePath, name);
     if (result.success) {
+      // Spec 823 Phase 4 (iter-1 Codex): emit architects-updated so the
+      // VSCode tree refreshes when the remove originates from the mobile
+      // TabBar close (which doesn't trigger the dashboard's add/remove
+      // SSE event from within VSCode).
+      ctx.broadcastNotification({
+        type: 'architects-updated',
+        title: 'Architects updated',
+        body: JSON.stringify({ workspace: workspacePath }),
+        workspace: workspacePath,
+      });
       res.writeHead(204);
       res.end();
     } else {

@@ -140,6 +140,27 @@ porch status      # (strict mode) Your project status
 afx status         # All builders
 ```
 
+## Thread file
+
+You maintain a free-text markdown log at `codev/state/<builder-id>_thread.md` (relative to your worktree). This is the cohort's collective situational-awareness surface — architects and sibling builders can read it via plain file I/O.
+
+**Path resolution**: `<builder-id>` is the basename of your worktree path. Resolve it once with `basename "$(pwd)"`. Example: if your worktree is `.builders/spir-823/`, the path is `codev/state/spir-823_thread.md`.
+
+**Directory creation**: `codev/state/` likely doesn't exist when you start (it's greenfield). Your first write creates it — the Write tool's `mkdir -p` semantics handle this transparently. No need to pre-create the directory.
+
+**What to write**: phase transitions, decisions, blockers, anything worth recording for the cohort. Trust your own judgement about what's useful. There is no required schema, no required sections, no timestamp format. The thread is yours.
+
+**When to write**: at phase boundaries and at any other moment you think a future reader would want to know what happened. Don't over-engineer cadence — append when there's something to say.
+
+**Discovery**:
+- **In-flight** (while you're active): your thread lives in your worktree at `.builders/<builder-id>/codev/state/<builder-id>_thread.md` (from the main workspace root). Architects read it with `cat .builders/<id>/codev/state/<id>_thread.md`; they discover threads with `ls .builders/*/codev/state/*.md`.
+- **Sibling builders**: read each other's threads via `cat ../<sibling-id>/codev/state/<sibling-id>_thread.md` from your own worktree (the parent `.builders/` directory is shared between all builders in the workspace).
+- **Post-merge**: after your PR merges, your thread lands in `codev/state/` on `main` (parallel to `codev/reviews/`) and becomes part of the historical review record.
+
+**Commit/retention rule**: **the default disposition is COMMIT.** Stage and commit your thread file as part of your PR. The rare exception — when your thread turned out to be noise rather than useful narrative — is an explicit decision to strip it before PR (via gitignore for the PR or by not staging the file). Silently leaving the thread uncommitted by accident is a bug, not an exercise of the exception. The cohort's situational-awareness goal depends on threads surviving to `main`.
+
+**Scope reminder**: this is for the cohort's situational awareness, not porch's tracking. Porch does not read this file. There are no hooks, no validation, no enforcement.
+
 ## Notifications
 
 **ALWAYS notify the architect** via `afx send` at these key moments:

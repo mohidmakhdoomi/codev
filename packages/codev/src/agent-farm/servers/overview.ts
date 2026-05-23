@@ -71,6 +71,15 @@ export interface BuilderOverview {
    * is constructed (the parser leaves it `null`).
    */
   lastDataAt: string | null;
+  /**
+   * Name of the architect that spawned this builder (Spec 755 / 823). `null` for
+   * legacy rows from before #755, for builders whose worktree doesn't have a
+   * matching row in `state.db.builders`, or when state.db is unavailable.
+   * Populated by the enrichment block in `getOverview` from
+   * `state.db.builders.spawned_by_architect`. Used by the dashboard to render
+   * an inline attribution tag when the workspace hosts more than one architect.
+   */
+  spawnedByArchitect: string | null;
 }
 
 export interface PROverview {
@@ -585,6 +594,7 @@ export function discoverBuilders(workspaceRoot: string): BuilderOverview[] {
         startedAt: null,
         idleMs: 0,
         lastDataAt: null,
+        spawnedByArchitect: null,
       });
       continue;
     }
@@ -639,6 +649,7 @@ export function discoverBuilders(workspaceRoot: string): BuilderOverview[] {
             startedAt: parsed.startedAt || null,
             idleMs: computeIdleMs(parsed),
             lastDataAt: null,
+            spawnedByArchitect: null,
           });
           found = true;
           break;
@@ -670,6 +681,7 @@ export function discoverBuilders(workspaceRoot: string): BuilderOverview[] {
         startedAt: null,
         idleMs: 0,
         lastDataAt: null,
+        spawnedByArchitect: null,
       });
     }
   }
@@ -774,29 +786,34 @@ export class OverviewCache {
       builders = builders.filter(b => b.roleId !== null && activeBuilderRoleIds.has(b.roleId));
     }
 
-    // Enrich issueId from DB issue_number — protocol-agnostic (fixes #664)
-    // Open DB directly using workspaceRoot to avoid singleton path issues
-    // when Tower serves multiple workspaces.
+    // Enrich issueId and spawnedByArchitect from state.db.builders — protocol-
+    // agnostic (fixes #664 for issueId; adds spawnedByArchitect per Spec 823).
+    // Open DB directly using workspaceRoot to avoid singleton path issues when
+    // Tower serves multiple workspaces.
+    //
+    // Spec 823: dropped the `WHERE issue_number IS NOT NULL` filter so soft-mode
+    // builders (issue_number=null) also enrich their spawnedByArchitect. Each
+    // field is applied conditionally on per-row non-nullness.
     try {
       const dbPath = path.join(workspaceRoot, '.agent-farm', 'state.db');
       if (fs.existsSync(dbPath)) {
         const db = new Database(dbPath, { readonly: true });
         try {
           const rows = db.prepare(
-            'SELECT worktree, issue_number FROM builders WHERE issue_number IS NOT NULL',
-          ).all() as Array<{ worktree: string; issue_number: string }>;
+            'SELECT worktree, issue_number, spawned_by_architect FROM builders',
+          ).all() as Array<{ worktree: string; issue_number: string | null; spawned_by_architect: string | null }>;
           for (const row of rows) {
             const builder = builders.find(b => b.worktreePath === row.worktree);
-            if (builder) {
-              builder.issueId = String(row.issue_number);
-            }
+            if (!builder) continue;
+            if (row.issue_number != null) builder.issueId = String(row.issue_number);
+            if (row.spawned_by_architect != null) builder.spawnedByArchitect = row.spawned_by_architect;
           }
         } finally {
           db.close();
         }
       }
     } catch {
-      // DB not available — keep regex-parsed issueId
+      // DB not available — keep regex-parsed issueId and null spawnedByArchitect
     }
 
     const activeBuilderIssues = new Set(
