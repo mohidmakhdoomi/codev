@@ -1,7 +1,7 @@
 id: '823'
 title: multi-architect-coordination-b
 protocol: spir
-phase: specify
+phase: plan
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -16,7 +16,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-05-22T23:32:46.651Z'
-updated_at: '2026-05-23T04:50:12.932Z'
+updated_at: '2026-05-23T04:50:35.255Z'
