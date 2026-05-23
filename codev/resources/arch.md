@@ -270,7 +270,7 @@ A workspace can host more than one architect terminal. Each architect has a stab
 
 **Migration history**:
 - v9 (Spec 755): rebuild architect table as TEXT primary key, rekey to 'main'.
-- v11 (Bugfix #826): add `workspace_path` to architect, backfilling from `global.db.terminal_sessions.role_id` via ATTACH. Orphans (architects without a current terminal_session) are dropped during the migration.
+- v11 (Bugfix #826): add `workspace_path` to architect, backfilling from `global.db.terminal_sessions` via ATTACH. Disambiguation uses `architect.terminal_id` as the primary key (matches one unique terminal_session row) with `role_id` as the fallback — for users already hit by the v3.1.1 leak whose `state.db.architect` has names appearing in MULTIPLE workspaces' terminal_session rows, this ensures each architect row is migrated to its LEGITIMATE workspace (the one whose terminal_session has the matching session UUID). Orphans (architects with neither match) are dropped.
 - In-memory `WorkspaceTerminals.architects: Map<string,string>` — name → terminal id. Rebuilt on every `launchInstance`/reconciliation.
 
 **Surface enumeration (Spec 786 Phase 5)**:

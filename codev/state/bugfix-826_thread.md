@@ -89,6 +89,22 @@ iter-4 scope (this is now a much bigger refactor):
 
 All 1841 agent-farm unit tests pass. Type check clean.
 
+## iter-5: Migration disambiguation via terminal_id
+
+Architect's iter-4 independent CMAP flagged a real migration correctness bug from Codex (HIGH): the v11 backfill used `ts.role_id = a.id LIMIT 1`. For users already hit by the #826 leak, the same architect name appears in MULTIPLE workspaces' `terminal_sessions` rows. `LIMIT 1` picks non-deterministically — ob-refine could be migrated to the wrong workspace silently.
+
+Fix: use `architect.terminal_id` as the primary disambiguator (matches exactly one terminal_session row by UUID); fall back to `role_id` only when terminal_id is NULL or has no matching row.
+
+Changes:
+- `db/index.ts` v11 block: `COALESCE(terminal_id-match, role_id-fallback)` for the workspace_path subquery, and `(ts.id = a.terminal_id OR ts.role_id = a.id)` for the WHERE EXISTS guard
+- `bugfix-826-migration.test.ts` helper: mirrors production
+- 2 new tests:
+  - Disambiguation: architect 'ob-refine' with terminal_id 't-shannon-ob-refine'; terminal_sessions has both shannon's legitimate row AND manazil's leaked row. After migration, the architect row gets workspace_path='/shannon' (the legitimate match).
+  - Fallback: architect with NULL terminal_id falls back to role_id when there's no ambiguity.
+- `arch.md`: migration history note explains the disambiguation.
+
+All 1843 agent-farm tests pass.
+
 ## Test run notes
 
 - `state.test.ts` — 27/27 pass (including 5 new tests for `getArchitectsForWorkspace`).

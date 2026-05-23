@@ -518,17 +518,32 @@ function ensureLocalDatabase(): Database.Database {
         // ATTACH global.db so we can read terminal_sessions for the backfill.
         db.prepare("ATTACH DATABASE ? AS globaldb").run(globalDbPath);
         try {
-          // Backfill: for each architect row, look up its workspace_path via
-          // matching role_id in global.db.terminal_sessions. Architects without
-          // a matching row get workspace_path = NULL and are dropped below.
+          // Backfill: for each architect row, look up its workspace_path in
+          // global.db.terminal_sessions.
+          //
+          // Disambiguation (Bugfix #826 iter-5): for users already hit by the
+          // leak, the same architect NAME can appear in MULTIPLE workspaces'
+          // terminal_sessions rows. Matching by `role_id` alone with `LIMIT 1`
+          // would pick non-deterministically and could migrate ob-refine to
+          // the wrong workspace. Use `terminal_id` as the primary disambiguator
+          // — it's the stable session UUID and uniquely identifies one
+          // terminal_session row. Fall back to `role_id` only when
+          // `terminal_id` doesn't match (legacy rows where terminal_id is NULL
+          // or its target row has been cleaned up).
           db.exec(`
             INSERT INTO architect_v11 (workspace_path, id, pid, port, cmd, started_at, terminal_id)
             SELECT
-              (SELECT ts.workspace_path
-                 FROM globaldb.terminal_sessions ts
-                WHERE ts.role_id = a.id
-                  AND ts.type = 'architect'
-                LIMIT 1) AS workspace_path,
+              COALESCE(
+                (SELECT ts.workspace_path
+                   FROM globaldb.terminal_sessions ts
+                  WHERE ts.id = a.terminal_id
+                    AND ts.type = 'architect'),
+                (SELECT ts.workspace_path
+                   FROM globaldb.terminal_sessions ts
+                  WHERE ts.role_id = a.id
+                    AND ts.type = 'architect'
+                  LIMIT 1)
+              ) AS workspace_path,
               a.id,
               a.pid,
               a.port,
@@ -538,7 +553,8 @@ function ensureLocalDatabase(): Database.Database {
             FROM architect a
             WHERE EXISTS (
               SELECT 1 FROM globaldb.terminal_sessions ts
-              WHERE ts.role_id = a.id AND ts.type = 'architect'
+              WHERE (ts.id = a.terminal_id OR ts.role_id = a.id)
+                AND ts.type = 'architect'
             );
           `);
         } finally {

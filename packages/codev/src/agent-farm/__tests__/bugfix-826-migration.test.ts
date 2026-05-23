@@ -112,11 +112,17 @@ describe('Bugfix #826 — Migration v11 (workspace-scoped architect schema)', ()
           localDb.exec(`
             INSERT INTO architect_v11 (workspace_path, id, pid, port, cmd, started_at, terminal_id)
             SELECT
-              (SELECT ts.workspace_path
-                 FROM globaldb.terminal_sessions ts
-                WHERE ts.role_id = a.id
-                  AND ts.type = 'architect'
-                LIMIT 1) AS workspace_path,
+              COALESCE(
+                (SELECT ts.workspace_path
+                   FROM globaldb.terminal_sessions ts
+                  WHERE ts.id = a.terminal_id
+                    AND ts.type = 'architect'),
+                (SELECT ts.workspace_path
+                   FROM globaldb.terminal_sessions ts
+                  WHERE ts.role_id = a.id
+                    AND ts.type = 'architect'
+                  LIMIT 1)
+              ) AS workspace_path,
               a.id,
               a.pid,
               a.port,
@@ -126,7 +132,8 @@ describe('Bugfix #826 — Migration v11 (workspace-scoped architect schema)', ()
             FROM architect a
             WHERE EXISTS (
               SELECT 1 FROM globaldb.terminal_sessions ts
-              WHERE ts.role_id = a.id AND ts.type = 'architect'
+              WHERE (ts.id = a.terminal_id OR ts.role_id = a.id)
+                AND ts.type = 'architect'
             );
           `);
         } finally {
@@ -272,6 +279,73 @@ describe('Bugfix #826 — Migration v11 (workspace-scoped architect schema)', ()
     expect(cols.some(c => c.name === 'workspace_path')).toBe(true);
     const rows = localDb.prepare('SELECT COUNT(*) AS n FROM architect').get() as { n: number };
     expect(rows.n).toBe(0);
+  });
+
+  it('disambiguates via terminal_id when the architect name appears in MULTIPLE workspaces (iter-5)', () => {
+    // The leak scenario as it exists pre-migration for users already hit by
+    // #826: state.db.architect has ONE row for 'ob-refine' (it's a unique
+    // singleton PRIMARY KEY in the pre-v11 schema), but terminal_sessions has
+    // TWO rows for role_id='ob-refine' because v3.1.1's launchInstance reconcile
+    // re-spawned the sibling into a second workspace. Matching the architect
+    // row by role_id alone with LIMIT 1 picks non-deterministically and could
+    // migrate ob-refine to the wrong workspace silently.
+    //
+    // Fix (iter-5): match by `architect.terminal_id` first — it's the stable
+    // session UUID and uniquely identifies which terminal_session row this
+    // architect row was originally registered with. The legitimate workspace
+    // is the one whose terminal_session row has that exact id.
+    buildPreV11Schema();
+
+    // state.db.architect: one row for ob-refine, with the LEGITIMATE
+    // workspace's terminal_id (shannon registered it first).
+    localDb.prepare(
+      "INSERT INTO architect (id, pid, port, cmd, started_at, terminal_id) VALUES ('ob-refine', 0, 0, 'claude', '2026-05-23T10:00:00Z', 't-shannon-ob-refine')"
+    ).run();
+
+    // global.db.terminal_sessions: TWO rows with role_id='ob-refine'.
+    //   - shannon's legitimate row (architect.terminal_id matches its id)
+    //   - manazil's LEAKED row (created by v3.1.1's broken reconcile)
+    globalDb.prepare(
+      "INSERT INTO terminal_sessions (id, workspace_path, type, role_id, pid) VALUES ('t-shannon-ob-refine', '/shannon', 'architect', 'ob-refine', 1234)"
+    ).run();
+    globalDb.prepare(
+      "INSERT INTO terminal_sessions (id, workspace_path, type, role_id, pid) VALUES ('t-manazil-leaked-ob-refine', '/manazil', 'architect', 'ob-refine', 1235)"
+    ).run();
+
+    runV11Migration();
+
+    // The architect row must be migrated to '/shannon' (the workspace whose
+    // terminal_session row matches `architect.terminal_id`), NOT '/manazil'.
+    // Pre-iter-5, the role_id+LIMIT 1 lookup would have picked
+    // non-deterministically — SQLite's order is implementation-defined when
+    // no ORDER BY is given. This test pins the deterministic mapping.
+    const rows = localDb
+      .prepare("SELECT workspace_path, id, terminal_id FROM architect WHERE id = 'ob-refine'")
+      .all() as Array<{ workspace_path: string; id: string; terminal_id: string }>;
+    expect(rows).toEqual([
+      { workspace_path: '/shannon', id: 'ob-refine', terminal_id: 't-shannon-ob-refine' },
+    ]);
+  });
+
+  it('falls back to role_id when terminal_id is NULL or has no matching session row (iter-5)', () => {
+    // Legacy / partial-cleanup case: architect row has a NULL terminal_id
+    // (or a terminal_id whose row was deleted). Migration should still
+    // backfill via role_id when there's no role_id ambiguity.
+    buildPreV11Schema();
+
+    localDb.prepare(
+      "INSERT INTO architect (id, pid, port, cmd, started_at, terminal_id) VALUES ('legacy', 0, 0, 'claude', '2026-05-23T10:00:00Z', NULL)"
+    ).run();
+    globalDb.prepare(
+      "INSERT INTO terminal_sessions (id, workspace_path, type, role_id, pid) VALUES ('t-legacy', '/workspace/W', 'architect', 'legacy', 1234)"
+    ).run();
+
+    runV11Migration();
+
+    const row = localDb
+      .prepare("SELECT workspace_path FROM architect WHERE id = 'legacy'")
+      .get() as { workspace_path: string };
+    expect(row.workspace_path).toBe('/workspace/W');
   });
 
   it('records v11 in _migrations table for idempotency on re-run', () => {
