@@ -525,6 +525,39 @@ afx open file.ts            # Open file in annotation viewer (NOT system open)
 
 Agent Farm is configured via `.codev/config.json` at the project root. Created during `codev init` or `codev adopt`. Override via CLI: `--architect-cmd`, `--builder-cmd`, `--shell-cmd`.
 
+## Inter-agent messaging
+
+Agents within a workspace communicate through `afx send`. Four addressing forms are supported:
+
+### Addressing forms
+
+| Form | Meaning | Allowed from |
+|---|---|---|
+| `afx send <builder-id> "msg"` | Send to a specific builder (e.g. `afx send 0823 "..."`). | Any sender. |
+| `afx send architect "msg"` | From a builder: routes to the spawning architect via affinity (per #774). From an architect (or any non-builder sender): routes to the architect named `main` if present, else the first registered architect. | Any sender. |
+| `afx send architect:<name> "msg"` | Explicit per-architect addressing. **Architects (including `main`)**: open address grammar — any architect can address any other architect. This is the sibling-architect messaging form. **Builders**: allowed ONLY when `<name>` matches the builder's own `spawnedByArchitect`. Mismatches are rejected by the spoofing check at `tower-messages.ts:213-218`. From a builder, this is an explicit form of the affinity routing, NOT an override. | Any sender (with the spoofing constraint above for builders). |
+| `afx send <workspace>:architect "msg"` | Cross-workspace addressing (e.g. `afx send marketmaker:architect "..."`). | Any sender. |
+
+### Sibling-architect messaging
+
+When a workspace hosts more than one architect (added via `afx workspace add-architect --name <name>`), sibling architects message each other via the `architect:<name>` form. Example:
+
+```bash
+# From main's terminal to a sibling architect named ob-refine
+afx send architect:ob-refine "PR-iter-2 feedback ready"
+```
+
+This works because sender = architect bypasses the spoofing check.
+
+### Builder spoofing-check (verified at `tower-messages.ts:213-218`)
+
+Builder `spir-823` running `afx send architect:ob-refine "..."` is rejected unless its `spawnedByArchitect == 'ob-refine'`. A builder cannot use `architect:<name>` to address an architect other than its spawning architect — that's an attempted spoof.
+
+### Discovering active agents
+
+- `afx status` lists all architects (post-#786) alongside builders, with names, terminal IDs, and PIDs where available.
+- Each active builder maintains a free-text narrative log at `codev/state/<builder-id>_thread.md` (relative to its worktree, so `.builders/<id>/codev/state/<id>_thread.md` from the main workspace root). Discover with `ls .builders/*/codev/state/*.md`; read with `cat .builders/<id>/codev/state/<id>_thread.md`. After a builder's PR merges, its thread lands in `codev/state/` on `main`.
+
 ## Porch - Protocol Orchestrator
 
 Porch drives SPIR, ASPIR, AIR, and BUGFIX protocols via a state machine with phase transitions, gates, and multi-agent consultations.

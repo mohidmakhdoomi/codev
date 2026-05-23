@@ -435,7 +435,8 @@ afx send [builder] [message] [options]
 **Arguments:**
 - `builder` - Target terminal. Can be:
   - Builder ID: `0042`
-  - Named target: `architect`
+  - Named target: `architect` (from a builder, routes to the spawning architect via affinity per Spec 755; from any other sender, routes to `main`)
+  - `architect:<name>` — a specific architect by name (e.g., `architect:ob-refine`). From a builder, only allowed when `<name>` matches the builder's spawning architect (spoofing check at `tower-messages.ts:213-218`).
   - **Cross-workspace**: `workspace:target` (e.g., `marketmaker:architect`, `codev-public:0042`)
 - `message` - Message to send
 
@@ -463,6 +464,13 @@ afx send 0042 "Focus on the auth module first"
 # Send to architect in current workspace
 afx send architect "PR #42 has been merged"
 
+# Inter-architect messaging (Spec 755 / 823): from main to a sibling architect.
+# Sibling architects are added via `afx workspace add-architect --name <name>`
+# (e.g., `afx workspace add-architect --name ob-refine`). The `architect:<name>`
+# address grammar lets architects message each other directly. Builders are
+# constrained to their spawning architect by the spoofing check.
+afx send architect:ob-refine "PR-iter-2 feedback ready"
+
 # Send to another workspace's architect (cross-workspace)
 afx send marketmaker:architect "R4 report updated with cost analysis"
 
@@ -475,6 +483,11 @@ afx send --all "Time to wrap up, create PRs"
 # Include file content
 afx send 0042 --file src/api.ts "Review this implementation"
 ```
+
+**Discovering active agents** (Spec 823):
+
+- `afx status` lists all architects alongside builders, with names, terminal IDs, and PIDs where available.
+- Each active builder maintains a free-text narrative log at `codev/state/<builder-id>_thread.md` (relative to its worktree, so `.builders/<id>/codev/state/<id>_thread.md` from the main workspace root). Discover with `ls .builders/*/codev/state/*.md`; read with `cat .builders/<id>/codev/state/<id>_thread.md`. After a builder's PR merges, its thread lands in `codev/state/` on `main`.
 
 ---
 
