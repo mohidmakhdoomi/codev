@@ -233,6 +233,11 @@ Projects currently in development (conceived through committed), sorted by prior
 
 ```yaml
 releases:
+  - version: "v3.1.2"
+    name: "Jacobean"
+    status: released
+    target_date: "2026-05-23"
+    notes: "Critical hotfix on Jacobean. Closes #826: cross-workspace sibling-architect leak introduced by v3.1.1's #786 lifecycle work. Schema-level fix (Option A) — adds workspace_path column to state.db.architect with composite PK, makes all state accessors workspace-scoped, canonicalizes paths via realpath at the boundary. Caught and fixed entirely pre-publish via the dual-CMAP discipline (7 iterations across PRs #827 + #834, each catching a real bug the builder's own CMAP missed)."
   - version: "v3.1.1"
     name: "Jacobean"
     status: released
