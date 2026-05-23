@@ -722,14 +722,25 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
             }
           }
         }
-        deleteTerminalSession(session.id);
-        // Spec 786 Phase 3 / OQ-B: delete the persisted architect row on
-        // permanent exit; preserve on intentional stop. Symmetric with the
-        // four exit handlers in tower-instances.ts.
-        if (exitedArchitectName && !isIntentionallyStopping(workspacePath)) {
-          try {
-            setArchitectByName(exitedArchitectName, null);
-          } catch { /* best-effort cleanup */ }
+        // Bugfix #826 (iter-3): when a workspace is intentionally stopping,
+        // architect exits must preserve BOTH the terminal_sessions row AND
+        // the state.db.architect row — symmetric with the four exit handlers
+        // in tower-instances.ts and the deleteWorkspaceTerminalSessions
+        // architect-preservation default. Without this gate, this handler's
+        // unconditional deleteTerminalSession(session.id) wipes the row
+        // before deleteWorkspaceTerminalSessions in stopInstance has a chance
+        // to preserve it — defeating the workspace_path filter that
+        // getArchitectsForWorkspace joins on. Non-architect exits keep the
+        // existing "always clean up" behavior.
+        const isArchitectIntentionalStop =
+          dbSession.type === 'architect' && isIntentionallyStopping(workspacePath);
+        if (!isArchitectIntentionalStop) {
+          deleteTerminalSession(session.id);
+          if (exitedArchitectName && !isIntentionallyStopping(workspacePath)) {
+            try {
+              setArchitectByName(exitedArchitectName, null);
+            } catch { /* best-effort cleanup */ }
+          }
         }
       });
     }
@@ -888,15 +899,19 @@ export async function getTerminalsForWorkspace(
                   }
                 }
               }
-              deleteTerminalSession(newSession.id);
-              // Spec 786 Phase 3 / OQ-B: delete the persisted architect row on
-              // permanent exit; preserve on intentional stop. Symmetric with
-              // the five other exit handlers (4 in tower-instances.ts, 1 in
-              // the reconciliation path above).
-              if (exitedArchitectName && !isIntentionallyStopping(dbSession.workspace_path)) {
-                try {
-                  setArchitectByName(exitedArchitectName, null);
-                } catch { /* best-effort cleanup */ }
+              // Bugfix #826 (iter-3): preserve both terminal_sessions and
+              // state.db.architect rows on intentional stop for architect
+              // exits. See the matching gate in the upstream reconcile path
+              // and the four handlers in tower-instances.ts.
+              const isArchitectIntentionalStop =
+                dbSession.type === 'architect' && isIntentionallyStopping(dbSession.workspace_path);
+              if (!isArchitectIntentionalStop) {
+                deleteTerminalSession(newSession.id);
+                if (exitedArchitectName && !isIntentionallyStopping(dbSession.workspace_path)) {
+                  try {
+                    setArchitectByName(exitedArchitectName, null);
+                  } catch { /* best-effort cleanup */ }
+                }
               }
             });
           }

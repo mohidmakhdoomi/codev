@@ -764,6 +764,109 @@ describe('tower-instances', () => {
       // re-introduce the leak if someone re-uses it in the same file).
       expect(src).not.toMatch(/from\s+['"][^'"]*state\.js['"][^;]*\bgetArchitects\b(?!ForWorkspace)/);
     });
+
+    it('Bugfix #826 (iter-3): every architect exit handler gates BOTH deleteTerminalSession AND setArchitectByName on intentional-stop', async () => {
+      // Codex's iter-2 CMAP caught that gating only `setArchitectByName` left
+      // the per-session `deleteTerminalSession(session.id)` call in the exit
+      // handlers unguarded — so a single architect PTY exit during an
+      // intentional stop wiped its terminal_sessions row before the bulk
+      // wipe in `stopInstance` had a chance to preserve it. That defeats
+      // the workspace_path filter that `getArchitectsForWorkspace` joins on.
+      //
+      // The invariant: in EVERY architect exit handler, BOTH calls must be
+      // skipped under intentional stop. The simplest source-level encoding
+      // is "deleteTerminalSession appears inside an `if
+      // (!isIntentionallyStopping(...))` or equivalent guard."
+      //
+      // This sentinel scans the four handlers in tower-instances.ts and the
+      // two in tower-terminals.ts. If a future refactor adds a new handler
+      // or moves `deleteTerminalSession(session.id)` outside the guard, the
+      // test fails — pinning the property at the source level. Unit tests
+      // can't drive the production exit handler closures directly without
+      // running the full launchInstance pipeline, hence the source check.
+      const instancesSrc = fs.readFileSync(
+        path.resolve(__dirname, '../servers/tower-instances.ts'),
+        'utf8',
+      );
+      const terminalsSrc = fs.readFileSync(
+        path.resolve(__dirname, '../servers/tower-terminals.ts'),
+        'utf8',
+      );
+
+      // Helper: each `ptySession.on('exit', ...)` body must contain BOTH
+      // (a) a reference to `isIntentionallyStopping(` and
+      // (b) a `deleteTerminalSession(` call that is dominated by an
+      //     `isIntentionallyStopping(...)` check (encoded as the
+      //     deleteTerminalSession call appearing AFTER the
+      //     `isIntentionallyStopping(` token).
+      function extractExitHandlerBodies(src: string): string[] {
+        const bodies: string[] = [];
+        const marker = "ptySession.on('exit'";
+        let from = 0;
+        while (true) {
+          const start = src.indexOf(marker, from);
+          if (start === -1) break;
+          // Find the opening `{` of the handler arrow body, then balanced close.
+          const braceStart = src.indexOf('{', start);
+          if (braceStart === -1) break;
+          let depth = 0;
+          let i = braceStart;
+          let braceEnd = -1;
+          for (; i < src.length; i++) {
+            if (src[i] === '{') depth++;
+            else if (src[i] === '}') {
+              depth--;
+              if (depth === 0) { braceEnd = i; break; }
+            }
+          }
+          if (braceEnd === -1) break;
+          bodies.push(src.slice(braceStart, braceEnd + 1));
+          from = braceEnd + 1;
+        }
+        return bodies;
+      }
+
+      // Strip line/block comments so a mention of `deleteTerminalSession`
+      // inside an explanatory comment isn't mistaken for the actual call.
+      function stripComments(s: string): string {
+        return s
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .split('\n')
+          .map(line => {
+            const idx = line.indexOf('//');
+            return idx === -1 ? line : line.slice(0, idx);
+          })
+          .join('\n');
+      }
+
+      const instancesBodies = extractExitHandlerBodies(instancesSrc).map(stripComments);
+      const terminalsBodies = extractExitHandlerBodies(terminalsSrc).map(stripComments);
+
+      // Expectation: 4 architect exit handlers in tower-instances.ts, 2 in
+      // tower-terminals.ts. (Non-architect handlers don't appear here because
+      // they don't match the `ptySession.on('exit'` marker pattern used in
+      // these files — those live in PtyManager.)
+      expect(instancesBodies.length).toBe(4);
+      expect(terminalsBodies.length).toBe(2);
+
+      const allArchitectBodies = [...instancesBodies, ...terminalsBodies];
+      for (const body of allArchitectBodies) {
+        // Property 1: the handler must reference the intentional-stop flag.
+        expect(body).toMatch(/isIntentionallyStopping\(/);
+        // Property 2: deleteTerminalSession must appear somewhere; that's the
+        // call the gating needs to protect.
+        expect(body).toMatch(/deleteTerminalSession\(/);
+        // Property 3 (the iter-3 fix): the FIRST occurrence of
+        // `deleteTerminalSession(` must appear AFTER the first occurrence of
+        // `isIntentionallyStopping(`. Encodes "the delete call is inside an
+        // if/skip guarded by the flag."
+        const flagIdx = body.indexOf('isIntentionallyStopping(');
+        const delIdx = body.indexOf('deleteTerminalSession(');
+        expect(flagIdx).toBeGreaterThan(-1);
+        expect(delIdx).toBeGreaterThan(-1);
+        expect(delIdx).toBeGreaterThan(flagIdx);
+      }
+    });
   });
 
   describe('Spec 786 Phase 3 — intentional-stop flag', () => {

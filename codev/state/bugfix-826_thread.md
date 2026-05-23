@@ -36,6 +36,17 @@ Additional changes (iter-2):
 - `saveTerminalSession` enforces a `(workspace_path, role_id)` uniqueness invariant for `type='architect'` rows: pre-deletes any existing architect row before inserting. Prevents stale-row accumulation across multiple stop+start cycles (since the new PTY gets a fresh terminal id each time).
 - 3 new behavioral integration-contract tests in `state.test.ts` exercise the full lifecycle: stop preserves architect rows in both tables, cross-workspace isolation holds, and repeated stop+start cycles don't accumulate stale rows.
 
+## iter-3: gate the per-session exit handlers in tower-terminals.ts
+
+Architect's second independent CMAP run had Codex flag one remaining hole: two PtySession exit handlers in `tower-terminals.ts` (lines 712, 889 — both in `reconcileTerminalSessions`) called `deleteTerminalSession(session.id)` UNCONDITIONALLY. The iter-2 gating only protected `setArchitectByName`. So a single architect PTY exit during intentional stop would wipe its `terminal_sessions` row before the bulk wipe (now architect-preserving) had a chance to preserve it.
+
+iter-3 changes:
+- Both `tower-terminals.ts` exit handlers now gate `deleteTerminalSession(session.id)` on `!isIntentionallyStopping(workspacePath) || type !== 'architect'`. Non-architect terminal types (shells, builders) keep deleting on exit as before.
+- Source-level sentinel test in `tower-instances.test.ts` scans all 6 architect exit handlers (4 in tower-instances.ts + 2 in tower-terminals.ts) and verifies each gates `deleteTerminalSession` on the intentional-stop flag. Pins the property at source so a future refactor that re-introduces the bug fails the test.
+- Doc updates in `codev/resources/arch.md` and `codev/resources/commands/agent-farm.md` reflect the iter-2 + iter-3 lifecycle.
+
+All 215 affected unit tests pass. Type check clean.
+
 ## Test run notes
 
 - `state.test.ts` — 27/27 pass (including 5 new tests for `getArchitectsForWorkspace`).

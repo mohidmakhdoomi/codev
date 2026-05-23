@@ -252,12 +252,12 @@ afx send architect "Status update"
 
 #### Persistence and recovery
 
-Spec 786 Phase 3 added graceful-restart persistence for sibling architects:
+Spec 786 Phase 3 added graceful-restart persistence for sibling architects; Bugfix #826 extended it with workspace scoping so architects registered in workspace A don't leak into workspace B at launch.
 
-- **`afx workspace stop` → `afx workspace start`**: sibling architects survive. Tower's `stopInstance` marks the workspace as "intentionally stopping" so the cascaded exit handlers skip deleting `state.db.architect` rows. On next start, `launchInstance` creates `main` and then re-spawns persisted siblings via `addArchitect`.
+- **`afx workspace stop` → `afx workspace start`**: sibling architects survive. Tower's `stopInstance` marks the workspace as "intentionally stopping" so the cascaded architect exit handlers skip BOTH the per-session `deleteTerminalSession` call AND the `setArchitectByName(name, null)` call. The bulk `deleteWorkspaceTerminalSessions` also preserves `type='architect'` rows by default. On next start, `launchInstance` creates `main` and then re-spawns persisted siblings via `addArchitect` — but ONLY those whose `terminal_sessions.workspace_path` matches THIS workspace (Bugfix #826: workspace-scoped reconcile via `getArchitectsForWorkspace`).
 - **Tower crash**: `terminal_sessions` rows + shellper processes survive. Tower's `reconcileTerminalSessions()` reconnects on startup.
-- **Permanent exit (max-restart exhaustion, `remove-architect`)**: rows are auto-deleted from `state.db.architect` (Spec 786 OQ-B — keeps state.db an accurate mirror of reality).
-- **Dashboard "Stop All"** (or `POST /workspace/<base64>/api/stop` directly): full wipe, including sibling rows. Use this when you want to start over from scratch. There is no `afx workspace stop-all` CLI today — the full-wipe path is currently API-only via the dashboard.
+- **Permanent exit (max-restart exhaustion, `remove-architect`)**: rows are auto-deleted from `state.db.architect` AND `terminal_sessions` (Spec 786 OQ-B — keeps state.db an accurate mirror of reality).
+- **Dashboard "Stop All"** (or `POST /workspace/<base64>/api/stop` directly): full wipe, including sibling rows in both tables (`deleteWorkspaceTerminalSessions(..., { includeArchitects: true })`). Use this when you want to start over from scratch. There is no `afx workspace stop-all` CLI today — the full-wipe path is currently API-only via the dashboard.
 
 ---
 
