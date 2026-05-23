@@ -1488,6 +1488,16 @@ async function handleWorkspaceRoutes(
       const name = decodeURIComponent(archDeleteMatch[1]);
       const result = await removeArchitect(workspacePath, name);
       if (result.success) {
+        // Spec 823 Phase 4 (iter-1 Codex): emit architects-updated from
+        // every successful remove path, not just the /api/workspaces/
+        // route, so the VSCode tree refreshes when the dashboard's
+        // close-button → confirmation modal triggers the remove.
+        ctx.broadcastNotification({
+          type: 'architects-updated',
+          title: 'Architects updated',
+          body: JSON.stringify({ workspace: workspacePath }),
+          workspace: workspacePath,
+        });
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true }));
       } else {
@@ -2147,6 +2157,16 @@ async function handleWorkspaceTabDelete(
     const name = tabId.slice('architect:'.length);
     const result = await removeArchitect(workspacePath, name);
     if (result.success) {
+      // Spec 823 Phase 4 (iter-1 Codex): emit architects-updated so the
+      // VSCode tree refreshes when the remove originates from the mobile
+      // TabBar close (which doesn't trigger the dashboard's add/remove
+      // SSE event from within VSCode).
+      ctx.broadcastNotification({
+        type: 'architects-updated',
+        title: 'Architects updated',
+        body: JSON.stringify({ workspace: workspacePath }),
+        workspace: workspacePath,
+      });
       res.writeHead(204);
       res.end();
     } else {
