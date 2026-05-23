@@ -164,6 +164,14 @@ export interface OverviewBuilder {
    * which sums time spent at formal porch gates.
    */
   lastDataAt: string | null;
+  /**
+   * Name of the architect that spawned this builder (Spec 755 / 823). `null` for
+   * legacy rows from before #755, for builders whose worktree doesn't have a
+   * matching row in `state.db.builders`, or when state.db is unavailable. Used
+   * by the dashboard to render an inline attribution tag when the workspace
+   * hosts more than one architect.
+   */
+  spawnedByArchitect: string | null;
 }
 
 export interface OverviewPR {
