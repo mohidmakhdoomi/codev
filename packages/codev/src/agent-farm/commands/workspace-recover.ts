@@ -37,9 +37,8 @@ export interface WorkspaceRecoverOptions {
 export type IneligibleReason =
   | 'terminal'
   | 'unsupported_protocol'
-  | 'no_session_row'
-  | 'shellper_alive'
   | 'worktree_missing'
+  | 'shellper_alive'
   | 'stale';
 
 export type EligibilityResult =
@@ -84,8 +83,22 @@ function isSessionAlive(
  * caller and are passed in via `isProcessAlive` and `socketExists`. This keeps
  * the predicate trivially unit-testable.
  *
- * Order matters: cheap structural checks come first; filesystem-touching
- * checks (worktree) later.
+ * On terminal_sessions and the "no row" case:
+ *   Tower's reconciliation deletes terminal_sessions rows whose shellper can't
+ *   be reconnected (tower-terminals.ts:485-711). That runs on Tower startup,
+ *   which is exactly what happens between a machine reboot and the user
+ *   invoking `workspace recover`. By the time recovery runs, the rows for
+ *   dead builders have already been pruned. So "no matching session row"
+ *   is the COMMON case for any builder that needs revival — not a reason to
+ *   skip. The row is only useful here as a positive "still alive" signal.
+ *
+ * Predicate order (cheap structural checks first):
+ *   1. terminal phase
+ *   2. unsupported protocol family
+ *   3. worktree missing on disk
+ *   4. any matching session row is alive  → known still running, leave alone
+ *   5. stale (older than maxAge, unless includeStale)
+ *   6. otherwise → revive
  */
 export function evaluateEligibility(inputs: EligibilityInputs): EligibilityResult {
   const {
@@ -99,17 +112,14 @@ export function evaluateEligibility(inputs: EligibilityInputs): EligibilityResul
   if (builderInfo === null) {
     return { eligible: false, reason: 'unsupported_protocol' };
   }
-  if (sessions.length === 0) {
-    return { eligible: false, reason: 'no_session_row' };
+  if (!worktreeExists) {
+    return { eligible: false, reason: 'worktree_missing' };
   }
   // If ANY matching session looks alive, treat the builder as alive. Duplicates
   // can occur when a prior recovery left a dead row behind (terminal_sessions
   // has no UNIQUE constraint on role_id) — the cautious read is "alive."
   if (sessions.some(s => isSessionAlive(s, isProcessAlive, socketExists))) {
     return { eligible: false, reason: 'shellper_alive' };
-  }
-  if (!worktreeExists) {
-    return { eligible: false, reason: 'worktree_missing' };
   }
   if (!includeStale && ageDays > maxAgeDays) {
     return { eligible: false, reason: 'stale' };
@@ -192,9 +202,8 @@ function reasonLabel(reason: IneligibleReason): string {
   switch (reason) {
     case 'terminal': return 'terminal';
     case 'unsupported_protocol': return 'unsupported protocol';
-    case 'no_session_row': return 'no session row';
-    case 'shellper_alive': return 'shellper alive';
     case 'worktree_missing': return 'worktree missing';
+    case 'shellper_alive': return 'shellper alive';
     case 'stale': return 'stale';
   }
 }

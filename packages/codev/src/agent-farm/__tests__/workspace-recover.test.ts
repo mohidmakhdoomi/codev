@@ -107,7 +107,10 @@ describe('evaluateEligibility', () => {
     expect(result).toEqual({ eligible: false, reason: 'unsupported_protocol' });
   });
 
-  it('skips when no terminal_sessions row exists', () => {
+  it('revives when no session row exists (Tower already reconciled the dead row)', () => {
+    // The common post-reboot case: Tower startup runs reconciliation, fails
+    // to reconnect to the dead shellper, and deletes the row. By the time
+    // `workspace recover` runs, the row is gone. Absence means "needs revival."
     const result = evaluateEligibility({
       state: makeState(),
       builderInfo: makeBuilderInfo(),
@@ -116,7 +119,7 @@ describe('evaluateEligibility', () => {
       ageDays: 0,
       ...defaults(),
     });
-    expect(result).toEqual({ eligible: false, reason: 'no_session_row' });
+    expect(result).toEqual({ eligible: true });
   });
 
   describe('liveness probe (PID-first per Gemini #829 review)', () => {
@@ -273,6 +276,36 @@ describe('evaluateEligibility', () => {
       ...defaults(),
     });
     expect(result).toEqual({ eligible: false, reason: 'terminal' });
+  });
+
+  it('skips a stale project even with no session row (post-reconciliation + old)', () => {
+    // Without the predicate fix, this would have shown `no_session_row`;
+    // with the new ordering, an old project past the recency window is
+    // surfaced as `stale` — the more useful diagnostic for the operator.
+    const result = evaluateEligibility({
+      state: makeState(),
+      builderInfo: makeBuilderInfo(),
+      sessions: [],
+      worktreeExists: true,
+      ageDays: 30,
+      ...defaults(),
+    });
+    expect(result).toEqual({ eligible: false, reason: 'stale' });
+  });
+
+  it('revives a recent active project even with no session row (the PIR-at-gate case)', () => {
+    // The motivating bug: a PIR builder sitting at plan-approval, killed by
+    // a reboot, with its session row cleaned up by Tower's reconciliation.
+    // Before the predicate fix, this incorrectly skipped with `no_session_row`.
+    const result = evaluateEligibility({
+      state: makeState({ protocol: 'pir', phase: 'plan' }),
+      builderInfo: makeBuilderInfo({ builderId: 'builder-pir-1661', issueArg: '1661', cliProtocol: 'pir' }),
+      sessions: [],
+      worktreeExists: true,
+      ageDays: 1,
+      ...defaults(),
+    });
+    expect(result).toEqual({ eligible: true });
   });
 });
 
