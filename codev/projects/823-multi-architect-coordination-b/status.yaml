@@ -35,6 +35,22 @@ gates:
     status: pending
 iteration: 1
 build_complete: true
-history: []
+history:
+  - iteration: 1
+    plan_phase: phase_1_attribution
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-823/codev/projects/823-multi-architect-coordination-b/823-phase_1_attribution-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-823/codev/projects/823-multi-architect-coordination-b/823-phase_1_attribution-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-823/codev/projects/823-multi-architect-coordination-b/823-phase_1_attribution-iter1-claude.txt
 started_at: '2026-05-22T23:32:46.651Z'
-updated_at: '2026-05-23T06:08:52.795Z'
+updated_at: '2026-05-23T06:15:46.416Z'
