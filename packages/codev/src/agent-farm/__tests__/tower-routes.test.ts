@@ -729,6 +729,86 @@ describe('tower-routes', () => {
       expect(parsedBody.workspace).toBe(workspacePath);
       expect(callArg.workspace).toBe(workspacePath);
     });
+
+    // iter-1 review Codex finding: cover the two workspace-scoped remove
+    // paths that emit architects-updated. These are the dashboard close-button
+    // path (`DELETE /workspace/<encoded>/api/architects/:name`) and the mobile
+    // TabBar close path (`DELETE /workspace/<encoded>/api/tabs/architect:<name>`).
+    // The /api/workspaces/<encoded>/architects/... routes go through
+    // handleRemoveArchitect (tested above); these alternate routes share the
+    // same emit contract.
+
+    it('handleWorkspaceRoutes DELETE /api/architects/:name emits architects-updated', async () => {
+      const ctx = makeCtx();
+      const req = makeReq('DELETE', `/workspace/${encoded}/api/architects/ob-refine`);
+      const { res, statusCode } = makeRes();
+
+      await handleRequest(req, res, ctx);
+
+      expect(statusCode()).toBe(200);
+      expect(ctx.broadcastNotification).toHaveBeenCalledTimes(1);
+      expect(ctx.broadcastNotification).toHaveBeenCalledWith({
+        type: 'architects-updated',
+        title: 'Architects updated',
+        body: JSON.stringify({ workspace: workspacePath }),
+        workspace: workspacePath,
+      });
+    });
+
+    it('handleWorkspaceRoutes DELETE /api/architects/:name does NOT emit on failure', async () => {
+      const { removeArchitect } = await import('../servers/tower-instances.js');
+      (removeArchitect as any).mockResolvedValueOnce({
+        success: false,
+        error: 'Cannot remove main architect',
+      });
+
+      const ctx = makeCtx();
+      const req = makeReq('DELETE', `/workspace/${encoded}/api/architects/main`);
+      const { res, statusCode } = makeRes();
+
+      await handleRequest(req, res, ctx);
+
+      expect(statusCode()).toBe(400);
+      expect(ctx.broadcastNotification).not.toHaveBeenCalled();
+    });
+
+    it('handleWorkspaceTabDelete /api/tabs/architect:<name> emits architects-updated', async () => {
+      // The tabId 'architect:<name>' branch in handleWorkspaceTabDelete (Spec
+      // 786 PR iter-1) routes through removeArchitect() and must emit the
+      // architects-updated event on success so VSCode refreshes.
+      const ctx = makeCtx();
+      const req = makeReq('DELETE', `/workspace/${encoded}/api/tabs/architect:ob-refine`);
+      const { res, statusCode } = makeRes();
+
+      await handleRequest(req, res, ctx);
+
+      // handleWorkspaceTabDelete writes 204 (No Content) on success.
+      expect(statusCode()).toBe(204);
+      expect(ctx.broadcastNotification).toHaveBeenCalledTimes(1);
+      expect(ctx.broadcastNotification).toHaveBeenCalledWith({
+        type: 'architects-updated',
+        title: 'Architects updated',
+        body: JSON.stringify({ workspace: workspacePath }),
+        workspace: workspacePath,
+      });
+    });
+
+    it('handleWorkspaceTabDelete /api/tabs/architect:<name> does NOT emit on failure', async () => {
+      const { removeArchitect } = await import('../servers/tower-instances.js');
+      (removeArchitect as any).mockResolvedValueOnce({
+        success: false,
+        error: 'Architect not found',
+      });
+
+      const ctx = makeCtx();
+      const req = makeReq('DELETE', `/workspace/${encoded}/api/tabs/architect:bogus`);
+      const { res, statusCode } = makeRes();
+
+      await handleRequest(req, res, ctx);
+
+      expect(statusCode()).toBe(404);
+      expect(ctx.broadcastNotification).not.toHaveBeenCalled();
+    });
   });
 
   // =========================================================================
