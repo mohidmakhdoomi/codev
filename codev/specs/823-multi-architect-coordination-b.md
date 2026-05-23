@@ -135,6 +135,7 @@ These items in the issue body are fixed by the architect and not subject to spec
 
 1. **Item 1 — N>1 conditional render only.** Builder attribution renders ONLY when `architects.length > 1`. The N=1 dashboard stays visually identical to today. No N=1 attribution rendered "for consistency" or "for future N>1 cases."
 2. **Item 1 — dashboard surface only.** VSCode parity for builder attribution is deliberately deferred to a follow-up.
+2b. **Item 1 — visual style locked to OQ-B (a)** (architect direction 2026-05-23, pre-spec-approval). The attribution tag is `<builder-id> · <architect-name>` — separator + name, NO "spawned by" prefix label. Hover-tooltip with full "spawned by `<name>`" text is the COULD nice-to-have. Plan phase MUST honor this; other visual options (prefix label, subscript, new column) are out of scope.
 3. **Item 3 — free-text only, no schema.** The thread file is markdown with no required sections, no timestamp format, no enforced structure. The spec pins **location** and the **instruction in the builder protocol prompt** — nothing else.
 4. **Item 3 — no porch hooks.** Porch does not write to the thread, does not validate it, does not require it to exist. Builders write it themselves because the protocol prompt instructs them to.
 5. **Item 3 — no per-builder thread schema.** Each builder maintains its own `codev/state/<builder-id>_thread.md`. There is no shared cohort file (e.g. `codev/state/cohort.md`). The shared view falls out of `ls codev/state/`.
@@ -220,6 +221,7 @@ None as of draft time. The issue body is unusually well-scoped — most of what 
   - (c) A subscript under the builder ID.
   - (d) A new column at the right of the table, hidden when `architects.length === 1`.
   - **Recommendation**: (a) — minimum DOM change, no column-shift on N=1↔N>1 transition. The `·` separator is sufficiently unambiguous in context (a multi-architect workspace's user knows what they're looking at). Hover-tooltip with full "spawned by `<name>`" text is a cheap nice-to-have (see COULD criterion below). Per iter-1 Claude, the spec's visual intent is now spelled out: **just the separator + the architect name, no prefix label**. Plan phase pins the CSS class and HTML structure; verify phase exercises with Playwright at N=1, N=2, N=3.
+  - **DECISION (architect, 2026-05-23, pre-spec-approval)**: **Locked to (a) — `#0042 · ob-refine` separator format plus the hover-tooltip COULD criterion.** Plan phase MUST honor this; further visual options are out of scope.
 - **OQ-C — Item 3: which protocol prompts get the thread-instruction?** Two scopes:
   - (a) Only the SPIR protocol prompts (`codev/protocols/spir/protocol.md` or its phase prompts).
   - (b) All protocols (SPIR, ASPIR, AIR, BUGFIX, PIR, TICK, EXPERIMENT, MAINTAIN, RESEARCH).
