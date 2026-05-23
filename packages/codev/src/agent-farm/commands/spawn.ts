@@ -37,6 +37,7 @@ const SPAWNING_ARCHITECT_NAME =
   (process.env.CODEV_ARCHITECT_NAME && process.env.CODEV_ARCHITECT_NAME.trim()) || DEFAULT_ARCHITECT_NAME;
 import { loadRolePrompt } from '../utils/roles.js';
 import { buildAgentName, stripLeadingZeros } from '../utils/agent-names.js';
+import { findLatestSessionId } from '../utils/claude-session-discovery.js';
 import { fetchIssue as fetchIssueNonFatal } from '../../lib/github.js';
 import {
   type TemplateContext,
@@ -440,6 +441,21 @@ async function spawnSpec(options: SpawnOptions, config: Config): Promise<void> {
     templateContext.existing_branch = options.branch;
   }
 
+  // On --resume, look for a prior Claude conversation in
+  // ~/.claude/projects/<encoded-worktree>/. If found, the revived builder
+  // continues that conversation via `claude --resume <uuid>` instead of
+  // starting fresh with a resume-notice prompt. (Issue #829.)
+  let resumeSessionId: string | undefined;
+  if (options.resume) {
+    const found = findLatestSessionId(worktreePath);
+    if (found) {
+      logger.kv('Claude session', `${found.slice(0, 8)}… (resuming conversation)`);
+      resumeSessionId = found;
+    } else {
+      logger.info('No prior Claude conversation found for this worktree; starting a fresh session.');
+    }
+  }
+
   const initialPrompt = buildPromptFromTemplate(config, protocol, templateContext);
   const resumeNotice = options.resume ? `\n${buildResumeNotice(projectId)}\n` : '';
   const branchNotice = options.branch
@@ -452,6 +468,7 @@ async function spawnSpec(options: SpawnOptions, config: Config): Promise<void> {
   const { terminalId } = await startBuilderSession(
     config, builderId, worktreePath, commands.builder,
     builderPrompt, role?.content ?? null, role?.source ?? null,
+    resumeSessionId,
   );
 
   upsertBuilder({
