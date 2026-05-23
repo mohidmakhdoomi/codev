@@ -77,6 +77,16 @@ No spec/plan-protocol changes; the per-spec lessons are documented in this revie
 
 No other deviations from the plan.
 
+## Lessons Learned Updates
+
+Two entries added to `codev/resources/lessons-learned.md` under the "3-Way Reviews" section:
+
+1. **Reviewers can hallucinate code patterns when summarizing unfamiliar files** (derived from spec iter-1 Claude's `workspace.ts:37-46` SSE-subscriber misread that propagated through the spec into the plan before plan-iter-1 caught it). Lesson: spot-check reviewer code summaries against the actual file before incorporating; reviewer summaries are evidence, not ground truth.
+
+2. **Plan-claimed test harnesses can be wrong** (derived from plan iter-1 Codex's "vscode-test, NOT vitest" guidance that turned out to be over-specific against the actual repo state — `packages/vscode/src/__tests__/` IS vitest per `vitest.config.ts`). Lesson: verify framework/harness claims against the actual config (`cat packages/<pkg>/package.json | grep test`) before following.
+
+Full per-project lessons (not yet generalized to the shared lessons-learned file) are in the **Lessons Learned** section below.
+
 ## Lessons Learned
 
 ### What Went Well
