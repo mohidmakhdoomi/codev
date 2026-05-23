@@ -556,7 +556,7 @@ Builder `spir-823` running `afx send architect:ob-refine "..."` is rejected unle
 ### Discovering active agents
 
 - `afx status` lists all architects (post-#786) alongside builders, with names, terminal IDs, and PIDs where available.
-- Each active builder maintains a free-text narrative log at `codev/state/<builder-id>_thread.md` (relative to its worktree, so `.builders/<id>/codev/state/<id>_thread.md` from the main workspace root). Discover with `ls .builders/*/codev/state/*.md`; read with `cat .builders/<id>/codev/state/<id>_thread.md`. After a builder's PR merges, its thread lands in `codev/state/` on `main`.
+- Each active builder maintains a free-text narrative log at `codev/state/<builder-id>_thread.md` (relative to its worktree, so `.builders/<id>/codev/state/<id>_thread.md` from the main workspace root). **In-flight discovery**: `ls .builders/*/codev/state/*.md` and `cat .builders/<id>/codev/state/<id>_thread.md`. **Post-merge discovery**: after a builder's PR merges, its thread lands in `codev/state/` on `main`, alongside `codev/reviews/` — list with `ls codev/state/` and read with `cat codev/state/<builder-id>_thread.md` from the main checkout.
 
 ## Porch - Protocol Orchestrator
 
