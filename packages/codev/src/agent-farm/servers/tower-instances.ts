@@ -13,6 +13,7 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { encodeWorkspacePath } from '../lib/tower-client.js';
+import { findLatestSessionId } from '../utils/claude-session-discovery.js';
 import { loadConfig } from '../../lib/config.js';
 
 const execAsync = promisify(exec);
@@ -456,7 +457,33 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         // Parse command string to separate command and args, inject role prompt
         const cmdParts = architectCmd.split(/\s+/);
         const cmd = cmdParts[0];
-        const { args: cmdArgs, env: harnessEnv } = buildArchitectArgs(cmdParts.slice(1), workspacePath);
+
+        // Issue #830 (main architect only): if a prior Claude session exists
+        // for this workspace cwd, resume it instead of starting fresh. Role
+        // injection is skipped on the resume path — the saved conversation
+        // already contains the role/system prompt.
+        // Named sibling architects (Spec 755) sharing the same cwd would
+        // collide on the newest-jsonl heuristic; addArchitect deliberately
+        // does NOT use this resume path.
+        //
+        // Lookup is unconditional here (unlike builders, where spawn.ts gates
+        // discovery behind `options.resume`). The asymmetry is intentional:
+        // launchInstance only runs when main isn't already alive, so the
+        // implicit intent is always "spawn the missing main; resume its
+        // prior conversation if one exists." There is no equivalent user
+        // intent surface (no flag) on the workspace-start path.
+        const resumeSessionId = findLatestSessionId(workspacePath);
+        let cmdArgs: string[];
+        let harnessEnv: Record<string, string>;
+        if (resumeSessionId) {
+          cmdArgs = [...cmdParts.slice(1), '--resume', resumeSessionId];
+          harnessEnv = {};
+          _deps.log('INFO', `Resuming main architect Claude session ${resumeSessionId.slice(0, 8)}… for ${workspacePath}`);
+        } else {
+          const built = buildArchitectArgs(cmdParts.slice(1), workspacePath);
+          cmdArgs = built.args;
+          harnessEnv = built.env;
+        }
 
         // Build env with CLAUDECODE removed so spawned Claude processes
         // don't detect a nested session, and merge harness env vars.
