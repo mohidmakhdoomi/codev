@@ -2217,7 +2217,8 @@ async function handleWorkspaceStopAll(
   // first, `setArchitectByName(name, null)` is idempotent.
   for (const name of entry.architects.keys()) {
     try {
-      setArchitectByName(name, null);
+      // Bugfix #826: scoped by workspace_path.
+      setArchitectByName(workspacePath, name, null);
     } catch { /* best-effort cleanup */ }
   }
 

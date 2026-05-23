@@ -6,7 +6,7 @@
  */
 
 import path from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import type { DashboardState, ArchitectState, Builder, UtilTerminal, Annotation } from './types.js';
 import { getDb, closeDb } from './db/index.js';
@@ -20,6 +20,29 @@ import {
 import { isPortConflictError } from './db/errors.js';
 
 /**
+ * Normalize a workspace path to its canonical form (Bugfix #826 iter-6).
+ *
+ * The architect table's primary key includes `workspace_path`. Tower writes
+ * canonical realpaths (via `normalizeWorkspacePath` in tower-utils.ts); CLI
+ * callers and legacy migration paths often pass raw paths (e.g. a symlinked
+ * workspace root). Without normalization, accessing a workspace via two
+ * different paths (symlink + realpath) creates two distinct rows and lookups
+ * silently fail.
+ *
+ * Mirrors the contract of `servers/tower-utils.ts:normalizeWorkspacePath`.
+ * Kept inline to avoid pulling the server-layer import chain into the data
+ * layer. Uses `realpathSync` when the path exists; falls back to
+ * `path.resolve` for not-yet-existing paths (e.g. fresh installs).
+ */
+function canonicalize(workspacePath: string): string {
+  try {
+    return realpathSync(workspacePath);
+  } catch {
+    return path.resolve(workspacePath);
+  }
+}
+
+/**
  * Load complete state from database
  *
  * Spec 755: `DashboardState.architect` retains its scalar shape for
@@ -28,20 +51,27 @@ import { isPortConflictError } from './db/errors.js';
  * main-first sorted collection so callers like `afx status` (Tower-down mode)
  * can enumerate ALL architects without re-querying. Main is always
  * `architects[0]` when present.
+ *
+ * Bugfix #826: now takes a `workspacePath` argument and scopes the architect
+ * read by `workspace_path`. Other tables (builders, utils, annotations) are
+ * not workspace-scoped in this schema — they remain global per state.db file.
  */
-export function loadState(): DashboardState {
+export function loadState(workspacePath: string): DashboardState {
   const db = getDb();
+  const ws = canonicalize(workspacePath);
 
   // Spec 786 Phase 5: load ALL architects, ordered `main` first then by
-  // started_at (so siblings appear in spawn order). The previous code loaded
-  // only the scalar — that left `afx status` blind to siblings in Tower-down
-  // fallback mode.
+  // started_at (so siblings appear in spawn order).
   //
   // The ORDER BY uses `id != 'main'` so that 'main' sorts first
   // (0 < 1 with this expression), then started_at ASC for siblings.
+  //
+  // Bugfix #826: scoped by workspace_path so a state.db that contains rows
+  // for multiple workspaces (Tower's CWD shared by many) returns only the
+  // architects belonging to the requested workspace.
   const architectRows = db.prepare(
-    "SELECT * FROM architect ORDER BY (id != 'main'), started_at"
-  ).all() as DbArchitect[];
+    "SELECT * FROM architect WHERE workspace_path = ? ORDER BY (id != 'main'), started_at"
+  ).all(ws) as DbArchitect[];
   const architects = architectRows.map(dbArchitectToArchitectState);
   // The scalar shim points at architects[0] (which is `main` when present,
   // else the first-registered architect by started_at). Preserves the legacy
@@ -75,19 +105,23 @@ export function loadState(): DashboardState {
  * setters/getters below.
  *
  * If `architect` is provided with a non-default `name`, callers should use
- * `setArchitectByName(name, architect)` instead — this function always
- * writes the row with id = 'main'.
+ * `setArchitectByName(workspacePath, name, architect)` instead — this function
+ * always writes the row with id = 'main'.
+ *
+ * Bugfix #826: scoped by workspace_path.
  */
-export function setArchitect(architect: ArchitectState | null): void {
+export function setArchitect(workspacePath: string, architect: ArchitectState | null): void {
   const db = getDb();
+  const ws = canonicalize(workspacePath);
 
   if (architect === null) {
-    db.prepare("DELETE FROM architect WHERE id = 'main'").run();
+    db.prepare("DELETE FROM architect WHERE workspace_path = ? AND id = 'main'").run(ws);
   } else {
     db.prepare(`
-      INSERT OR REPLACE INTO architect (id, pid, port, cmd, started_at, terminal_id)
-      VALUES ('main', 0, 0, @cmd, @startedAt, @terminalId)
+      INSERT OR REPLACE INTO architect (workspace_path, id, pid, port, cmd, started_at, terminal_id)
+      VALUES (@workspacePath, 'main', 0, 0, @cmd, @startedAt, @terminalId)
     `).run({
+      workspacePath: ws,
       cmd: architect.cmd,
       startedAt: architect.startedAt,
       terminalId: architect.terminalId ?? null,
@@ -99,19 +133,24 @@ export function setArchitect(architect: ArchitectState | null): void {
  * Update architect state by name (Spec 755). Used by the Phase 2 CLI for
  * registering additional named architects. When `architect` is null, removes
  * just that named architect; non-null upserts it.
+ *
+ * Bugfix #826: scoped by workspace_path so siblings in workspace A are
+ * isolated from workspace B.
  */
-export function setArchitectByName(name: string, architect: ArchitectState | null): void {
+export function setArchitectByName(workspacePath: string, name: string, architect: ArchitectState | null): void {
   const db = getDb();
+  const ws = canonicalize(workspacePath);
 
   if (architect === null) {
-    db.prepare('DELETE FROM architect WHERE id = ?').run(name);
+    db.prepare('DELETE FROM architect WHERE workspace_path = ? AND id = ?').run(ws, name);
     return;
   }
 
   db.prepare(`
-    INSERT OR REPLACE INTO architect (id, pid, port, cmd, started_at, terminal_id)
-    VALUES (@name, 0, 0, @cmd, @startedAt, @terminalId)
+    INSERT OR REPLACE INTO architect (workspace_path, id, pid, port, cmd, started_at, terminal_id)
+    VALUES (@workspacePath, @name, 0, 0, @cmd, @startedAt, @terminalId)
   `).run({
+    workspacePath: ws,
     name,
     cmd: architect.cmd,
     startedAt: architect.startedAt,
@@ -363,47 +402,69 @@ export function clearRuntime(): void {
  * (Phase 4) and the permanent-exit handler (Phase 3 / OQ-B).
  *
  * For callsite clarity this is spelled as its own function rather than
- * relying on `setArchitectByName(name, null)`. The two are functionally
- * equivalent today; this function exists so that "remove" reads as "remove"
- * at the call site.
+ * relying on `setArchitectByName(workspacePath, name, null)`. The two are
+ * functionally equivalent today; this function exists so that "remove" reads
+ * as "remove" at the call site.
+ *
+ * Bugfix #826: scoped by workspace_path.
  */
-export function removeArchitect(name: string): void {
+export function removeArchitect(workspacePath: string, name: string): void {
   const db = getDb();
-  db.prepare('DELETE FROM architect WHERE id = ?').run(name);
+  const ws = canonicalize(workspacePath);
+  db.prepare('DELETE FROM architect WHERE workspace_path = ? AND id = ?').run(ws, name);
 }
 
 /**
  * Get architect state (main-only — Spec 755 scalar shim).
  * Returns the architect named 'main' if present, otherwise the first
  * registered architect by name. For multi-architect access, use
- * `getArchitects()` or `getArchitectByName(name)` below.
+ * `getArchitects(workspacePath)` or `getArchitectByName(workspacePath, name)`
+ * below.
+ *
+ * Bugfix #826: scoped by workspace_path.
  */
-export function getArchitect(): ArchitectState | null {
+export function getArchitect(workspacePath: string): ArchitectState | null {
   const db = getDb();
-  let row = db.prepare("SELECT * FROM architect WHERE id = 'main'").get() as DbArchitect | undefined;
+  const ws = canonicalize(workspacePath);
+  let row = db
+    .prepare("SELECT * FROM architect WHERE workspace_path = ? AND id = 'main'")
+    .get(ws) as DbArchitect | undefined;
   if (!row) {
     // Spec 755: when 'main' is absent, fall back to the first-registered
     // architect (started_at ordering), not the lexicographically-first name.
-    row = db.prepare('SELECT * FROM architect ORDER BY started_at LIMIT 1').get() as DbArchitect | undefined;
+    row = db
+      .prepare('SELECT * FROM architect WHERE workspace_path = ? ORDER BY started_at LIMIT 1')
+      .get(ws) as DbArchitect | undefined;
   }
   return row ? dbArchitectToArchitectState(row) : null;
 }
 
 /**
- * Get all architects (Spec 755).
+ * Get all architects belonging to a workspace (Spec 755 + Bugfix #826).
+ *
+ * The architect table is scoped by `workspace_path` (Bugfix #826 migration v11),
+ * eliminating the cross-workspace leak by construction: a workspace's
+ * `launchInstance` only sees its own architect rows, regardless of which other
+ * workspaces this Tower process is serving.
  */
-export function getArchitects(): ArchitectState[] {
+export function getArchitects(workspacePath: string): ArchitectState[] {
   const db = getDb();
-  const rows = db.prepare('SELECT * FROM architect ORDER BY id').all() as DbArchitect[];
+  const ws = canonicalize(workspacePath);
+  const rows = db
+    .prepare('SELECT * FROM architect WHERE workspace_path = ? ORDER BY id')
+    .all(ws) as DbArchitect[];
   return rows.map(dbArchitectToArchitectState);
 }
 
 /**
- * Get a single architect by name (Spec 755).
+ * Get a single architect by name within a workspace (Spec 755 + Bugfix #826).
  */
-export function getArchitectByName(name: string): ArchitectState | null {
+export function getArchitectByName(workspacePath: string, name: string): ArchitectState | null {
   const db = getDb();
-  const row = db.prepare('SELECT * FROM architect WHERE id = ?').get(name) as DbArchitect | undefined;
+  const ws = canonicalize(workspacePath);
+  const row = db
+    .prepare('SELECT * FROM architect WHERE workspace_path = ? AND id = ?')
+    .get(ws, name) as DbArchitect | undefined;
   return row ? dbArchitectToArchitectState(row) : null;
 }
 

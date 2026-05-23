@@ -693,7 +693,7 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
         // four exit handlers in tower-instances.ts.
         if (exitedArchitectName && !isIntentionallyStopping(workspacePath)) {
           try {
-            setArchitectByName(exitedArchitectName, null);
+            setArchitectByName(workspacePath, exitedArchitectName, null);
           } catch { /* best-effort cleanup */ }
         }
       });
@@ -860,7 +860,7 @@ export async function getTerminalsForWorkspace(
               // the reconciliation path above).
               if (exitedArchitectName && !isIntentionallyStopping(dbSession.workspace_path)) {
                 try {
-                  setArchitectByName(exitedArchitectName, null);
+                  setArchitectByName(dbSession.workspace_path, exitedArchitectName, null);
                 } catch { /* best-effort cleanup */ }
               }
             });

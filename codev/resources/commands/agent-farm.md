@@ -252,12 +252,12 @@ afx send architect "Status update"
 
 #### Persistence and recovery
 
-Spec 786 Phase 3 added graceful-restart persistence for sibling architects:
+Spec 786 Phase 3 added graceful-restart persistence for sibling architects; Bugfix #826 extended it with workspace scoping via a schema change — `state.db.architect` now has `workspace_path` as part of the composite primary key, so architects registered in workspace A cannot appear in queries scoped to workspace B.
 
-- **`afx workspace stop` → `afx workspace start`**: sibling architects survive. Tower's `stopInstance` marks the workspace as "intentionally stopping" so the cascaded exit handlers skip deleting `state.db.architect` rows. On next start, `launchInstance` creates `main` and then re-spawns persisted siblings via `addArchitect`.
+- **`afx workspace stop` → `afx workspace start`**: sibling architects survive. Tower's `stopInstance` marks the workspace as "intentionally stopping" so the cascaded architect exit handlers skip the `setArchitectByName(workspacePath, name, null)` call, preserving rows in `state.db.architect`. On next start, `launchInstance` creates `main` and then re-spawns persisted siblings via `addArchitect` — `getArchitects(resolvedPath)` returns only this workspace's rows (Bugfix #826).
 - **Tower crash**: `terminal_sessions` rows + shellper processes survive. Tower's `reconcileTerminalSessions()` reconnects on startup.
 - **Permanent exit (max-restart exhaustion, `remove-architect`)**: rows are auto-deleted from `state.db.architect` (Spec 786 OQ-B — keeps state.db an accurate mirror of reality).
-- **Dashboard "Stop All"** (or `POST /workspace/<base64>/api/stop` directly): full wipe, including sibling rows. Use this when you want to start over from scratch. There is no `afx workspace stop-all` CLI today — the full-wipe path is currently API-only via the dashboard.
+- **Dashboard "Stop All"** (or `POST /workspace/<base64>/api/stop` directly): full wipe, including sibling rows. Per-workspace `state.db.architect` rows are removed pre-emptively in the route handler. Use this when you want to start over from scratch. There is no `afx workspace stop-all` CLI today — the full-wipe path is currently API-only via the dashboard.
 
 ---
 

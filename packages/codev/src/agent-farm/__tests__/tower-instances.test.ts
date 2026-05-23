@@ -747,6 +747,19 @@ describe('tower-instances', () => {
       // And must skip already-present names for idempotency.
       expect(src).toMatch(/if\s*\(\s*entry\.architects\.has\(\s*a\.name\s*\)\s*\)\s*continue/);
     });
+
+    it('Bugfix #826: reconcile loop uses workspace-scoped getArchitects(resolvedPath)', async () => {
+      // Source-level property: with the schema migration v11 in place,
+      // `getArchitects()` is workspace-scoped (takes a workspacePath arg).
+      // The reconcile loop must pass `resolvedPath` so launchInstance(B)
+      // cannot iterate architects registered in workspace A.
+      const src = fs.readFileSync(
+        path.resolve(__dirname, '../servers/tower-instances.ts'),
+        'utf8',
+      );
+      // The reconcile call site must pass the workspace path.
+      expect(src).toMatch(/getArchitects\s*\(\s*resolvedPath\s*\)/);
+    });
   });
 
   describe('Spec 786 Phase 3 — intentional-stop flag', () => {

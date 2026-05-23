@@ -15,6 +15,7 @@ import type { Builder, ArchitectState, UtilTerminal, Annotation, BuilderType } f
  * table and rekeys the existing row's id to 'main'.
  */
 export interface DbArchitect {
+  workspace_path: string;
   id: string;
   pid: number;
   port: number;

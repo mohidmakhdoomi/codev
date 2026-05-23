@@ -507,8 +507,9 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
 
             // Spec 755: persist to local state.db (architect table) so afx
             // status / stop see the architect via loadState's scalar shim.
+            // Bugfix #826: scoped by workspace_path.
             try {
-              setArchitect({
+              setArchitect(resolvedPath, {
                 name: DEFAULT_ARCHITECT_NAME,
                 cmd: architectCmd,
                 startedAt: new Date().toISOString(),
@@ -538,7 +539,7 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
                 // intentional stop so the row survives a graceful stop+start.
                 if (exitedName && !isIntentionallyStopping(resolvedPath)) {
                   try {
-                    setArchitectByName(exitedName, null);
+                    setArchitectByName(resolvedPath, exitedName, null);
                   } catch { /* best-effort cleanup */ }
                 }
                 _deps!.log('INFO', `Architect shellper session exited for ${workspacePath} (code=${exitCode ?? null}, signal=${signal ?? null})`);
@@ -568,8 +569,9 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
           _deps.saveTerminalSession(session.id, resolvedPath, 'architect', 'main', session.pid, null, null, null, null, workspacePath);
 
           // Spec 755: persist to local state.db so afx status / stop see it.
+          // Bugfix #826: scoped by workspace_path.
           try {
-            setArchitect({
+            setArchitect(resolvedPath, {
               name: DEFAULT_ARCHITECT_NAME,
               cmd: architectCmd,
               startedAt: new Date().toISOString(),
@@ -596,7 +598,7 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
               // on permanent exit; preserve on intentional stop.
               if (exitedName && !isIntentionallyStopping(resolvedPath)) {
                 try {
-                  setArchitectByName(exitedName, null);
+                  setArchitectByName(resolvedPath, exitedName, null);
                 } catch { /* best-effort cleanup */ }
               }
               _deps!.log('INFO', `Architect pty exited for ${workspacePath}`);
@@ -617,15 +619,22 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
     // Spec 786 Phase 3: re-spawn persisted sibling architects.
     //
     // After `main` is guaranteed present (above), iterate any non-main rows in
-    // `state.db.architect` and call `addArchitect()` for each. This restores
-    // siblings that survived `afx workspace stop` (the intentional-stop flag
-    // preserved their rows). The ordering is critical: `addArchitect()` rejects
-    // when `entry.architects.size === 0`, so it MUST run after main creation.
+    // `state.db.architect` FOR THIS WORKSPACE and call `addArchitect()` for
+    // each. This restores siblings that survived `afx workspace stop` (the
+    // intentional-stop flag preserved their rows). The ordering is critical:
+    // `addArchitect()` rejects when `entry.architects.size === 0`, so it MUST
+    // run after main creation.
+    //
+    // Bugfix #826: `getArchitects(resolvedPath)` reads ONLY rows whose
+    // `workspace_path` matches — migration v11 added that column to the
+    // architect table as part of the composite primary key. Workspaces are
+    // isolated by construction; the cross-workspace leak is eliminated at the
+    // schema level rather than via per-call-site guards.
     //
     // Idempotency: skip names already in `entry.architects` so a re-entrant
     // launch (or a race with `reconcileTerminalSessions`) doesn't double-spawn.
     try {
-      const persisted = getArchitects();
+      const persisted = getArchitects(resolvedPath);
       for (const a of persisted) {
         if (a.name === 'main') continue;
         if (entry.architects.has(a.name)) continue;
@@ -918,8 +927,9 @@ export async function addArchitect(
 
       // Spec 755: persist to local state.db so the architect appears in
       // getArchitects() and is included in legacy stop.ts cleanup.
+      // Bugfix #826: scoped by workspace_path.
       try {
-        setArchitectByName(name, {
+        setArchitectByName(resolvedPath, name, {
           name,
           cmd: architectCmd,
           startedAt: new Date().toISOString(),
@@ -944,7 +954,7 @@ export async function addArchitect(
           // mid-intentional-stop so the sibling survives `afx workspace stop`.
           if (!isIntentionallyStopping(resolvedPath)) {
             try {
-              setArchitectByName(name, null);
+              setArchitectByName(resolvedPath, name, null);
             } catch { /* best-effort cleanup */ }
           }
           _deps!.log('INFO', `Architect shellper session '${name}' exited (code=${exitCode ?? null}, signal=${signal ?? null})`);
@@ -972,7 +982,8 @@ export async function addArchitect(
       _deps.saveTerminalSession(session.id, resolvedPath, 'architect', name, session.pid, null, null, null, null, workspacePath);
 
       try {
-        setArchitectByName(name, {
+        // Bugfix #826: scoped by workspace_path.
+        setArchitectByName(resolvedPath, name, {
           name,
           cmd: architectCmd,
           startedAt: new Date().toISOString(),
@@ -997,7 +1008,7 @@ export async function addArchitect(
           // mid-intentional-stop so the sibling survives `afx workspace stop`.
           if (!isIntentionallyStopping(resolvedPath)) {
             try {
-              setArchitectByName(name, null);
+              setArchitectByName(resolvedPath, name, null);
             } catch { /* best-effort cleanup */ }
           }
           _deps!.log('INFO', `Architect pty '${name}' exited`);
@@ -1090,8 +1101,9 @@ export async function removeArchitect(
 
     // Explicitly delete persisted rows (the intentional-stop flag suppressed
     // the exit-handler delete; we want the row gone for this remove path).
+    // Bugfix #826: scoped by workspace_path.
     try {
-      setArchitectByName(name, null);
+      setArchitectByName(resolvedPath, name, null);
     } catch { /* best-effort cleanup */ }
     try {
       _deps.deleteTerminalSession(terminalId);

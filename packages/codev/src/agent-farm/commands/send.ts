@@ -137,7 +137,11 @@ async function sendToAll(
   from: string,
   options: SendOptions,
 ): Promise<{ sent: string[]; failed: string[] }> {
-  const state = loadState();
+  // Bugfix #826: loadState is workspace-scoped (for the architect read).
+  // Builders are global per state.db; use the detected workspace root as
+  // scope. `process.cwd()` is a safe fallback when detection fails — the
+  // architect read returns [] and `--all` only uses `state.builders`.
+  const state = loadState(detectWorkspaceRoot() ?? process.cwd());
   const results = { sent: [] as string[], failed: [] as string[] };
 
   if (state.builders.length === 0) {

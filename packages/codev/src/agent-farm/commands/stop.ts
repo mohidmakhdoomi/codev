@@ -51,8 +51,9 @@ export async function stop(): Promise<void> {
     logger.debug(`Tower deactivation failed: ${result.error}, trying legacy cleanup`);
   }
 
-  // Legacy cleanup for processes not managed by tower
-  const state = loadState();
+  // Legacy cleanup for processes not managed by tower.
+  // Bugfix #826: scoped by workspace_path.
+  const state = loadState(workspacePath);
 
   let stopped = 0;
 
@@ -61,7 +62,8 @@ export async function stop(): Promise<void> {
   // workspaces must clean up every one, otherwise siblings would leak as
   // orphaned processes after the legacy fallback path runs).
   if (towerRunning) {
-    for (const architect of getArchitects()) {
+    // Bugfix #826: scoped by workspace_path.
+    for (const architect of getArchitects(workspacePath)) {
       if (!architect.terminalId) continue;
       logger.info(`Stopping architect '${architect.name}'...`);
       try {
