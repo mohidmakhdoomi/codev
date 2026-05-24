@@ -23,3 +23,20 @@ Three scenarios from acceptance criteria:
 - PR with builder still in `review` phase (blocked == null or some other label) → excluded.
 - PR with builder at `pr` gate (blocked == 'PR review') → included.
 - PR with no associated builder + `reviewStatus === 'REVIEW_REQUIRED'` → included; same but APPROVED → excluded.
+
+## PR-845 — CMAP iter-1
+
+- **Codex**: APPROVE / HIGH. Focused, addresses root cause, solid regression coverage.
+- **Claude**: APPROVE / HIGH. Clean, well-scoped. Flagged `waitingSince` as non-blocking observation.
+- **Gemini**: REQUEST_CHANGES / HIGH. Three points:
+  1. `waitingSince` should use `blockedSince` (not `pr.createdAt`) so the wait-time chip reflects "human became bottleneck" not "PR was opened."
+  2. Unconditional `continue` for pr-gate builders hides them entirely if their PR is missing from `prs` (cache miss, pagination). Only skip when the PR was actually emitted.
+  3. `gateKindClass` needs a `'PR review'` case for the fallback row from (2).
+
+## iter-2 (7ec0fc9c) — addressed all three Gemini points
+
+- `prGateSince: Map<issueId, blockedSince>` replaces `prGateIssueIds: Set<issueId>`.
+- New `emittedPrGateIssueIds: Set<string>` tracks PRs actually emitted; builder loop only dedupes when present.
+- `gateKindClass` gets `'PR review' → 'attention-kind--pr'`.
+- 3 new regression tests; 9/9 pass; full codev build passes.
+- Net diff: 254 LOC (well under the 300 BUGFIX threshold).
