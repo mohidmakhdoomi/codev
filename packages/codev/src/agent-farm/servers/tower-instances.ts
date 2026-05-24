@@ -488,7 +488,9 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         try {
           // Single architect (main only, or empty before first spawn) → safe.
           // Multiple → unsafe (sibling jsonls collide with main's in the same cwd).
-          safeToResume = getArchitects().length <= 1;
+          // Bugfix #826: getArchitects is workspace-scoped — pass resolvedPath
+          // (the canonical workspace path used by the architect table).
+          safeToResume = getArchitects(resolvedPath).length <= 1;
         } catch {
           // state.db read should never fail here, but if it does the safe
           // default is to skip resume rather than risk attaching main to
