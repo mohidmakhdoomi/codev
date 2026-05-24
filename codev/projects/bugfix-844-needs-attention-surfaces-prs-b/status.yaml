@@ -1,0 +1,12 @@
+id: bugfix-844
+title: needs-attention-surfaces-prs-b
+protocol: bugfix
+phase: verified
+plan_phases: []
+current_plan_phase: null
+gates: {}
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-05-24T16:21:04.768Z'
+updated_at: '2026-05-24T16:41:14.995Z'
