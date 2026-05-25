@@ -1,7 +1,7 @@
 id: bugfix-848
 title: ci-verify-install-script-still
 protocol: bugfix
-phase: investigate
+phase: fix
 plan_phases: []
 current_plan_phase: null
 gates: {}
@@ -9,4 +9,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-25T05:00:55.907Z'
-updated_at: '2026-05-25T05:00:55.908Z'
+updated_at: '2026-05-25T05:02:26.388Z'
