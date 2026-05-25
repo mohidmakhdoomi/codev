@@ -233,6 +233,11 @@ Projects currently in development (conceived through committed), sorted by prior
 
 ```yaml
 releases:
+  - version: "v3.1.3"
+    name: "Jacobean"
+    status: released
+    target_date: "2026-05-24"
+    notes: "Workspace recover for machine-reboot resilience (#833, @amrmelsayed) — enumerates porch projects, identifies builders whose shellper died, respawns them via afx spawn --resume; builder + main-architect conversation resume via on-disk jsonl discovery. CLI cleanup (#847): codev afx / codev agent-farm / codev af wrapper invocations removed (process.argv[1] invocation-style fragility surfaced in PR #833 integration review); standalone af bin removed (deprecated since v3.0.1). Multi-architect story is now end-to-end coherent across lifecycle, persistence, surface, isolation, and recovery."
   - version: "v3.1.2"
     name: "Jacobean"
     status: released
