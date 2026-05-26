@@ -47,3 +47,17 @@ This restores BUGFIX visibility for in-flight projects that pre-date this PR.
 - All 3152 porch+codev tests pass (148 files); all 17 dashboard tests pass
 - Pre-existing failure in `scrollController.test.ts` (terminal scroll, unrelated to this work)
 
+## iter-2: architect CMAP REQUEST_CHANGES
+Architect-side 3-way CMAP (dual-CMAP pattern) caught two real defects that iter-1's builder CMAP missed individually:
+
+**Fix 1 — Codex finding**: `isPrCreatingPhase` overmatched on bare consultation presence. RESEARCH's `investigate`/`critique` phases have consultation blocks for non-PR purposes (`type: "investigation"` / `"critique"`). Iter-1 would have set `pr_ready_for_human: true` on research builders. Narrowed the marker to `consultation.on === 'review'` — the existing field both BUGFIX and AIR already carry and RESEARCH lacks. Renamed `hasConsultation` → `hasPrConsultation` to reflect the narrower semantics.
+
+**Fix 2 — Gemini finding**: `NeedsAttentionList` builder loop did `!b.blocked || !b.blockedSince` early-out BEFORE checking `prReady`. BUGFIX builders have both null (no `pr` gate), so the missing-PR defense fell through silently. The iter-1 test passed only because it mocked a BUGFIX with `blocked='PR review'`, which is unrealistic. Restructured the loop: prReady check first, then gate-blocked. Added `waitingSince` fallback chain (`blockedSince → startedAt → now`) for gateless protocols.
+
+**iter-2 tests added**:
+- 6 `isPrCreatingPhase` classifier tests including 2 that pin RESEARCH `investigate` / `critique` to false (would fail under iter-1 logic)
+- Realistic BUGFIX missing-PR test (`blocked=null, blockedSince=null`) — would fail under iter-1 dashboard logic
+- AIR-style gated variant test preserves iter-1 coverage explicitly
+
+All 247 targeted tests pass; full build clean; one unrelated flaky timeout in `next.test.ts` (different test each run — parallel-load contention, not the classifier path).
+
