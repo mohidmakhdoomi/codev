@@ -1,7 +1,7 @@
 id: bugfix-872
 title: porch-emit-explicit-pr-ready-f
 protocol: bugfix
-phase: fix
+phase: pr
 plan_phases: []
 current_plan_phase: null
 gates: {}
@@ -9,4 +9,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-26T21:14:25.066Z'
-updated_at: '2026-05-26T21:39:52.686Z'
+updated_at: '2026-05-26T21:40:24.813Z'
