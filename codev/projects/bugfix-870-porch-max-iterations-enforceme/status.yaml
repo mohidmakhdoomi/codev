@@ -1,7 +1,7 @@
 id: bugfix-870
 title: porch-max-iterations-enforceme
 protocol: bugfix
-phase: investigate
+phase: fix
 plan_phases: []
 current_plan_phase: null
 gates: {}
@@ -9,4 +9,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-26T18:04:27.519Z'
-updated_at: '2026-05-26T18:04:27.520Z'
+updated_at: '2026-05-26T18:23:25.932Z'
