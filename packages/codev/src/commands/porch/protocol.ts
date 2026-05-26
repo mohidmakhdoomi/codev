@@ -230,6 +230,7 @@ function normalizePhase(p: unknown): ProtocolPhase {
     gate: gateName,
     checks: checks.length > 0 ? checks : undefined,
     next,
+    hasConsultation: !!(phase.consultation && typeof phase.consultation === 'object'),
   };
 }
 
@@ -411,4 +412,24 @@ export function getMaxIterations(protocol: Protocol, phaseId: string): number {
 export function getOnCompleteConfig(protocol: Protocol, phaseId: string): OnCompleteConfig | null {
   const phase = getPhaseConfig(protocol, phaseId);
   return phase?.on_complete || null;
+}
+
+/**
+ * Is this phase the one that creates the PR and runs CMAP at PR time?
+ *
+ * Two markers identify the PR-creating phase across the bundled protocols:
+ *   - `gate === 'pr'` — SPIR/ASPIR/PIR review, AIR pr (covers protocols with
+ *     an explicit PR-review gate).
+ *   - phase carries a `consultation` block — BUGFIX pr (once-phase that runs
+ *     CMAP via prompted builder steps and has no gate).
+ *
+ * Used by porch to set `pr_ready_for_human` on transitions out of this phase's
+ * CMAP-emitting state. The state-machine change for #872 is keyed off this
+ * single classifier so adding a new protocol with a CMAP-emitting PR phase
+ * just means landing either marker.
+ */
+export function isPrCreatingPhase(protocol: Protocol, phaseId: string): boolean {
+  const phase = getPhaseConfig(protocol, phaseId);
+  if (!phase) return false;
+  return phase.gate === 'pr' || !!phase.hasConsultation;
 }
