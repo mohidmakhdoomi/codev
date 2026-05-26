@@ -39,3 +39,22 @@ Implementation plan:
 ## 18:10 — Scope note on PR voice
 
 Architect: keep PR description, commit messages, code comments GENERIC. No external-adopter workspace names, no project IDs, no business-logic specifics. Issue body and reframe comment are already scrubbed — mirror that.
+
+## 18:23 — Implementation complete
+
+Code committed (abc06392), thread committed (5486e108), pushed to origin/builder/bugfix-870. PR #871 created. Diff: 237 LOC, 8 files. Full test suite: 3141 passed, 0 failed, 13 skipped (unrelated). Porch suite isolated: 319 passed.
+
+## 18:30 — CMAP unanimous APPROVE
+
+3-way `consult --protocol bugfix --type pr` (with `--project-id bugfix-870` to disambiguate the worktree's projects dir):
+
+- Gemini → APPROVE / HIGH / no issues
+- Codex → APPROVE / HIGH / no issues
+- Claude → APPROVE / HIGH / no issues (also flagged that the existing rebuttal-advance test still works because the test fixture's `max_iterations: 1` puts iter=1 at the ceiling → force-advance path, same observable `gate_pending` outcome)
+
+All reviews saved to `codev/projects/bugfix-870-porch-max-iterations-enforceme/`. PR body updated with CMAP summary table.
+
+## Open items
+
+- Architect approval needed before merge.
+- One minor lift the architect may want to consider for follow-up: PIR docs (`prompts/review.md`, `consult-types/pr-review.md`) describe `max_iterations: 1` as the canonical lever for "single advisory pass" — that wording is still correct in spirit, but the mechanical force-advance + audit-trail trace it now produces could be mentioned in the PIR docs so a future reader knows what to look for. Out of scope for this BUGFIX.
