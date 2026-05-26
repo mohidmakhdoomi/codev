@@ -206,6 +206,12 @@ Rejected per discipline §A in the issue body. The required-with-default form fo
 
 Rejected. `parseLabelDefaults` returns `{type, priority}` — adding `areas` would couple two unrelated namespaces and force every caller to destructure an unused field. Separate helper keeps each parser single-purpose.
 
+### Open question (tracked separately): mixed-separator convention
+
+This PIR ships `area/*` on slash while keeping `type:*` and `priority:*` on colon, per the issue body's stated Kubernetes-alignment rationale. The resulting mixed-separator state across Codev's label namespaces is a legitimate engineering concern (cognitive load, two near-identical parsers, no principled rule for future namespaces) — but not one to resolve inside this PIR.
+
+Tracked as **#869** ("Label namespace separator: resolve mixed colon-vs-slash convention") with three options laid out (A: all-slash, B: all-colon, C: stay mixed) and the "web dashboard pathway compatibility" constraint flagged for verification. Whichever way #869 resolves, the changes from #819 are forward-compatible — the `parseAreaLabels` helper would either stay (option C), get its `area/` literal swapped for `area:` (option B), or get merged into a unified slash-based parser alongside renamed `type/` and `priority/` (option A).
+
 ### Alternative: `resolvePrimaryArea` in `@cluesmith/codev-types`
 
 Rejected — types package is wire contracts only (per existing convention; see `packages/core/src/builder-helpers.ts:13-19` docstring on `IDLE_WAITING_THRESHOLD_MS` which spells this out). Policy / implementation goes in `@cluesmith/codev-core`.
