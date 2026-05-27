@@ -173,12 +173,13 @@ export interface OverviewBuilder {
    */
   spawnedByArchitect: string | null;
   /**
-   * `area/*` label values for this builder's issue (sorted, deduplicated,
-   * prefix stripped). `[]` when the builder has no issue or the issue has
-   * no `area/*` labels. Required-with-default — never `undefined`. Consumed
+   * Single `area/*` value for this builder's issue (Codev convention: one
+   * `area/` per issue; `area/cross-cutting` is the multi-area marker).
+   * `'Uncategorized'` when the builder has no issue or the issue has no
+   * `area/*` labels. Required-with-default — never `undefined`. Consumed
    * by the builders-tree grouping in #818 and the equivalent dashboard view.
    */
-  areas: string[];
+  area: string;
 }
 
 export interface OverviewPR {
@@ -198,12 +199,13 @@ export interface OverviewBacklogItem {
   type: string;
   priority: string;
   /**
-   * `area/*` label values for this issue (sorted, deduplicated, prefix
-   * stripped). `[]` when the issue has no `area/*` labels. Required-with-default
-   * — never `undefined`. Consumed by the backlog grouping in #811 and the
-   * equivalent vscode view.
+   * Single `area/*` value for this issue (Codev convention: one `area/`
+   * per issue; `area/cross-cutting` is the multi-area marker).
+   * `'Uncategorized'` when the issue has no `area/*` labels.
+   * Required-with-default — never `undefined`. Consumed by the backlog
+   * grouping in #811 and the equivalent vscode view.
    */
-  areas: string[];
+  area: string;
   hasSpec: boolean;
   hasPlan: boolean;
   hasReview: boolean;
