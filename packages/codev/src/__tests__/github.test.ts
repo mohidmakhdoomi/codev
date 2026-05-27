@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   parseLinkedIssue,
   parseLabelDefaults,
+  parseAreaLabels,
 } from '../lib/github.js';
 
 // Mock forge.js for concept command routing tests
@@ -288,6 +289,69 @@ describe('parseLabelDefaults', () => {
       type: 'bug',
       priority: 'medium',
     });
+  });
+});
+
+describe('parseAreaLabels', () => {
+  it('returns [] for an empty label array', () => {
+    expect(parseAreaLabels([])).toEqual([]);
+  });
+
+  it('returns [] for null labels (Gitea/Forgejo defensive path)', () => {
+    expect(parseAreaLabels(null)).toEqual([]);
+  });
+
+  it('returns [] for undefined labels (Gitea/Forgejo defensive path)', () => {
+    expect(parseAreaLabels(undefined)).toEqual([]);
+  });
+
+  it('returns [] for empty-string labels (Gitea/Forgejo defensive path)', () => {
+    expect(parseAreaLabels('')).toEqual([]);
+  });
+
+  it('extracts a single area/* label with the prefix stripped', () => {
+    expect(parseAreaLabels([{ name: 'area/auth' }])).toEqual(['auth']);
+  });
+
+  it('ignores non-area labels in a mixed set', () => {
+    expect(parseAreaLabels([
+      { name: 'area/core' },
+      { name: 'type:bug' },
+      { name: 'priority:high' },
+      { name: 'bug' },
+    ])).toEqual(['core']);
+  });
+
+  it('sorts multi-area output alphabetically', () => {
+    expect(parseAreaLabels([
+      { name: 'area/tower' },
+      { name: 'area/core' },
+      { name: 'area/porch' },
+    ])).toEqual(['core', 'porch', 'tower']);
+  });
+
+  it('keeps area/cross-cutting alongside other areas (UI policy lives in resolvePrimaryArea, not here)', () => {
+    expect(parseAreaLabels([
+      { name: 'area/auth' },
+      { name: 'area/cross-cutting' },
+      { name: 'area/tower' },
+    ])).toEqual(['auth', 'cross-cutting', 'tower']);
+  });
+
+  it('deduplicates repeated area/* labels', () => {
+    expect(parseAreaLabels([
+      { name: 'area/core' },
+      { name: 'area/core' },
+      { name: 'area/tower' },
+    ])).toEqual(['core', 'tower']);
+  });
+
+  it('does not match bare "area" without the slash', () => {
+    expect(parseAreaLabels([{ name: 'area' }])).toEqual([]);
+  });
+
+  it('does not match area: with a colon (would be a separator-typo)', () => {
+    expect(parseAreaLabels([{ name: 'area:core' }])).toEqual([]);
   });
 });
 

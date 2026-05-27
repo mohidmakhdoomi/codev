@@ -505,3 +505,25 @@ export function parseLabelDefaults(
     priority: priorityLabels[0] || 'medium',
   };
 }
+
+/**
+ * Extract `area/*` label values (Codev convention for grouping by product area).
+ * Returns sorted, deduplicated area names with the `area/` prefix stripped.
+ * Returns `[]` when no `area/*` labels are present.
+ *
+ * Mirrors `parseLabelDefaults`'s defensive non-array coercion: Gitea/Forgejo
+ * return `""` or `null` for empty labels instead of `[]`.
+ *
+ * The slash separator (vs. `type:` / `priority:`'s colon) is intentional;
+ * see #869 for the broader namespace-separator discussion.
+ */
+export function parseAreaLabels(
+  labels: Array<{ name: string }> | null | undefined | string,
+): string[] {
+  const names = Array.isArray(labels) ? labels.map(l => l.name) : [];
+  return [...new Set(
+    names
+      .filter(n => n.startsWith('area/'))
+      .map(n => n.slice(5)),
+  )].sort();
+}
