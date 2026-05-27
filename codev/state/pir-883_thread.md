@@ -55,3 +55,25 @@ worktrees (task-/worktree- prefix). Soft-mode terminals opened via
 QuickPick are keyed by PtySession UUID and not visible to a roleId-based
 diff. The issue's repro path is `afx spawn --protocol bugfix` (strict
 mode), so this is an accepted edge.
+
+## 2026-05-27 — implement phase
+
+Plan-approval gate approved. Implementation lives in:
+
+- `packages/vscode/src/prune-builder-terminals.ts` — new pure helper
+  module (no `vscode` import) holding `computeBuildersToClose` and
+  `roleIdsFromBuilders`. Plan called for the helper to live in
+  `extension.ts`; pulled it into a sidecar module so the vitest unit
+  can import it directly without mocking `vscode`. Functional shape is
+  identical.
+- `packages/vscode/src/extension.ts` — `pruneClosedBuilderTerminals` now
+  reads `overviewCache.getData()`, runs synchronously, drops the
+  `pruneInFlight` guard, and renames `prevBuilderIds` → `prevRoleIds`.
+- `packages/vscode/src/__tests__/prune-builder-terminals.test.ts` —
+  11 new vitest cases.
+
+Build clean (`pnpm --filter codev-vscode check-types` ✓,
+`pnpm --filter codev-vscode lint` ✓). Tests: 49 vitest unit
+(11 new) ✓, 83 mocha integration ✓.
+
+Pushed as commit `5c21360b`. Sitting at `dev-approval`.
