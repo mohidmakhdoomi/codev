@@ -42,3 +42,12 @@ Changes:
 - `test/backlog.test.ts`: dropped cross-cutting and empty-string fixtures; added `priorityAreas pins listed areas`, `Uncategorized stays last even when listed in priorityAreas` (defensive guard), `priorityAreas entries that match no present area are skipped silently`.
 
 Test results: `pnpm --filter codev-vscode test` → 92 pass.
+
+## 2026-05-27 — review phase
+
+PR #886 opened with the review file as body. Single advisory 3-way consultation pass:
+- Gemini: APPROVE
+- Codex: APPROVE
+- Claude: COMMENT (one cosmetic — `void` prefix on a fire-and-forget Promise; matches my own `feedback_no_void_floating_promise` convention)
+
+Addressed Claude's nit in `9ace0fcb` (dropped the `void` prefix). pr gate now pending; architect notified.
