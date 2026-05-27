@@ -1,7 +1,7 @@
 id: '885'
 title: vscode-capitalize-area-group-h
 protocol: pir
-phase: plan
+phase: implement
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -17,4 +17,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-27T23:05:37.187Z'
-updated_at: '2026-05-27T23:19:27.478Z'
+updated_at: '2026-05-27T23:19:33.948Z'
