@@ -33,26 +33,3 @@ export function isIdleWaiting(b: OverviewBuilder, now: number = Date.now()): boo
   if (!b.lastDataAt) { return false; }
   return now - new Date(b.lastDataAt).getTime() > IDLE_WAITING_THRESHOLD_MS;
 }
-
-/**
- * Pick the single group an issue / builder belongs to, per the area-grouping
- * convention shared by the dashboard backlog view (#811) and the vscode
- * builders tree (#818).
- *
- * Resolution order:
- *  - `'cross-cutting'` if `area/cross-cutting` is present (multi-area work
- *    by intent — never bucketed under one of its constituent areas)
- *  - the first alphabetical area otherwise (`areas` is already sorted by
- *    `parseAreaLabels`, so `areas[0]` is the lexicographically smallest)
- *  - `'Uncategorized'` if no `area/*` labels at all
- *
- * Lives here (not in `@cluesmith/codev-types`) because it's *application
- * policy* — the rule the UI applies when projecting a `string[]` of areas
- * to a single grouping bucket. Co-locating the policy here prevents silent
- * drift where the dashboard says "Auth" and vscode says "cross-cutting"
- * for the same multi-area builder.
- */
-export function resolvePrimaryArea(areas: string[]): string {
-  if (areas.includes('cross-cutting')) return 'cross-cutting';
-  return areas[0] ?? 'Uncategorized';
-}
