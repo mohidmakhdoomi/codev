@@ -4,6 +4,10 @@ What's changed in the Codev VS Code extension, version by version, written for t
 
 ## [Unreleased]
 
+### What's new
+
+- **Backlog tree groups by area.** GitHub issues in the Codev Backlog view are now grouped under their `area/*` labels, sorted alphabetically with `Uncategorized` last. Repos that haven't adopted `area/*` labels see no visual change — the grouping collapses to a flat list. (#811)
+
 ### Bug fixes
 
 - **Changed-file rows render with proper SCM colors again.** A builder's expanded file list now shows Added in green, Modified in yellow, and Deleted in red (matching your VSCode theme's `gitDecoration.*` tokens) — previously every row's filename was tinted grey because VSCode's built-in Git decorator treated the gitignored `.builders/<id>/` worktree paths as "ignored" and clobbered Codev's status colors. Fixed by switching the rows to a custom `codev-builder-diff:` URI scheme that the built-in Git decorator skips. (#799)
