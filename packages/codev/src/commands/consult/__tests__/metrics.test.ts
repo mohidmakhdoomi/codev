@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { MetricsDB, type MetricsRecord } from '../metrics.js';
 import { extractUsage, extractReviewText, type SDKResultLike } from '../usage-extractor.js';
+import { _MODEL_CONFIGS } from '../index.js';
 
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), 'metrics-test-'));
@@ -609,12 +610,12 @@ describe('Gemini graceful fallback for malformed output', () => {
     expect(usage).toBeNull();
   });
 
-  it('extractUsage computes per-model cost correctly for Pro pricing', () => {
+  it('extractUsage computes per-model cost correctly for 3.1 Pro pricing', () => {
     const geminiOutput = JSON.stringify({
       response: 'Review',
       stats: {
         models: {
-          'gemini-3-pro-preview': {
+          'gemini-3.1-pro-preview': {
             tokens: { prompt: 1_000_000, candidates: 1_000_000, cached: 0 },
           },
         },
@@ -622,8 +623,16 @@ describe('Gemini graceful fallback for malformed output', () => {
     });
     const usage = extractUsage('gemini', geminiOutput);
     expect(usage).not.toBeNull();
-    // Pro pricing: 1M input * $1.25/1M + 1M output * $5.00/1M = $6.25
-    expect(usage!.costUsd).toBeCloseTo(6.25, 1);
+    // 3.1 Pro pricing: 1M input * $2.00/1M + 1M output * $12.00/1M = $14.00
+    expect(usage!.costUsd).toBeCloseTo(14.00, 1);
+  });
+
+  it('gemini lane points at a current Gemini 3.x model identifier (regression: #878)', () => {
+    // #878: gemini-3-pro-preview was retired by Google on 2026-03-09; every
+    // CMAP gemini-side fast-failed with an opaque error. Guard against the
+    // identifier silently regressing back to a retired model.
+    const modelArg = _MODEL_CONFIGS.gemini.args[_MODEL_CONFIGS.gemini.args.indexOf('--model') + 1];
+    expect(modelArg).toBe('gemini-3.1-pro-preview');
   });
 
   it('extractUsage computes per-model cost correctly for Flash pricing', () => {

@@ -16,6 +16,7 @@
 // Maps model name prefixes to pricing tiers.
 // Longer prefixes must appear before shorter ones (e.g., flash-lite before flash).
 const GEMINI_PRICING: Record<string, { inputPer1M: number; cachedInputPer1M: number; outputPer1M: number }> = {
+  'gemini-3.1-pro':  { inputPer1M: 2.00,  cachedInputPer1M: 0.50,   outputPer1M: 12.00 },
   'gemini-3-pro':    { inputPer1M: 1.25,  cachedInputPer1M: 0.315,  outputPer1M: 5.00 },
   'gemini-2.5-pro':  { inputPer1M: 1.25,  cachedInputPer1M: 0.315,  outputPer1M: 5.00 },
   'gemini-3-flash':  { inputPer1M: 0.15,  cachedInputPer1M: 0.0375, outputPer1M: 0.60 },

@@ -35,7 +35,7 @@ interface ModelConfig {
 }
 
 const MODEL_CONFIGS: Record<string, ModelConfig> = {
-  gemini: { cli: 'gemini', args: ['--model', 'gemini-3-pro-preview'], envVar: 'GEMINI_SYSTEM_MD' },
+  gemini: { cli: 'gemini', args: ['--model', 'gemini-3.1-pro-preview'], envVar: 'GEMINI_SYSTEM_MD' },
   hermes: { cli: 'hermes', args: ['chat', '-q'], envVar: null },
 };
 
@@ -1631,4 +1631,5 @@ export {
   buildPRQuery as _buildPRQuery,
   composePRQueryText as _composePRQueryText,
   computePersistentOutputPath as _computePersistentOutputPath,
+  MODEL_CONFIGS as _MODEL_CONFIGS,
 };
