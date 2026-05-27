@@ -36,61 +36,41 @@ const ELIGIBLE_PATH_REGEX = /\/codev\/(plans|specs|reviews)\//;
 
 Nothing else changes — `isEligibleDocument`, `refreshDoc`, submit, and delete all consult this single predicate.
 
-### Fix 3 — Author from git config (with `architect` fallback)
+### Fix 3 — Author from `OverviewData.currentUser` (with `architect` fallback)
 
-The issue copy says "read git config user.name once at activation". Two entry points need the value (`plan-review.ts:submitReviewComment` and `commands/review.ts:addReviewComment`), so I'll introduce a tiny shared helper module rather than reading the value in two places or threading it through both activations from `extension.ts`.
+The issue copy proposes reading `git config user.name`, but Codev already has a richer identity mechanism: `OverviewData.currentUser` (sourced via the `user-identity` forge concept, default `gh api user --jq .login`). It's already consumed by `BacklogProvider` (`packages/vscode/src/views/backlog.ts:43-45`) for the "assigned to you" sort and rides on Tower's existing 60s + SSE overview refresh — no extra subprocess from the extension.
 
-**New file: `packages/vscode/src/comments/author.ts`**
+This is strictly better than `git config user.name` for REVIEW markers:
+- It's the **GitHub login**, which matches `@mentions` in issue threads (REVIEW markers are semantically @mentions of a reviewer)
+- Already cached and refreshed by Tower
+- Single source of truth — git `user.name` and GitHub login routinely diverge (people use display names in git; `@mentions` need the login)
+- Zero new subprocess calls from the VSCode side
 
-```ts
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import * as vscode from 'vscode';
+**Plumbing:** `overviewCache` already exists at the call site for `activateReviewComments` (`extension.ts:638`) and at the registration of `codev.addReviewComment` (`extension.ts:617`). Thread it through:
 
-const execFileAsync = promisify(execFile);
-const FALLBACK = 'architect';
+- `activateReviewComments(context, overviewCache)` — store `overviewCache` in closure, read `cache.getData()?.currentUser` inside `submitReviewComment` at the moment of writing.
+- `addReviewComment(overviewCache)` — same pattern. The command registration becomes `() => addReviewComment(overviewCache)`.
 
-let cached: Promise<string> | undefined;
-
-export function getReviewAuthor(): Promise<string> {
-  if (!cached) {
-    cached = resolve();
-  }
-  return cached;
-}
-
-async function resolve(): Promise<string> {
-  const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  try {
-    const { stdout } = await execFileAsync('git', ['config', 'user.name'], { cwd });
-    const name = stdout.trim();
-    return name.length > 0 ? name : FALLBACK;
-  } catch {
-    return FALLBACK;
-  }
-}
-```
-
-- Lazy + memoized → effectively "once at activation" without making activation itself async or blocking.
-- `cwd` defaults to the first workspace folder so local-override `user.name` is honored; falls back to process cwd / global config when no folder is open.
-- Failure modes (no git binary, no config, non-repo cwd) all collapse to `architect`.
+Read-at-write (not read-at-activate) is the right shape because Tower can refresh `currentUser` mid-session (config change, SSE update); read-at-activate would freeze a stale value. The lookup is a synchronous in-memory cache hit — no perf concern.
 
 Wire it into both call sites:
 
 - `plan-review.ts:144` →
   ```ts
-  const author = await getReviewAuthor();
+  const author = overviewCache.getData()?.currentUser ?? 'architect';
   const commentLine = `${indent}<!-- REVIEW(@${author}): ${body} -->`;
   ```
 - `commands/review.ts:22` →
   ```ts
-  const author = await getReviewAuthor();
+  const author = overviewCache.getData()?.currentUser ?? 'architect';
   const comment = syntax.wrap(`REVIEW(@${author}): `);
   ```
 
-`addReviewComment` is already `async`; `submitReviewComment` is already `async` — no signature churn.
+The fallback to `architect` covers: pre-first-fetch race at extension startup, `gh` unconfigured / unavailable, or no GitHub remote.
 
 The cursor-offset math at `commands/review.ts:29` is unaffected (offset is measured from the *closing* delimiter and is independent of body length).
+
+`addReviewComment` and `submitReviewComment` remain `async`; no signature/return-type changes beyond the extra `overviewCache` parameter. No new files needed.
 
 ### Fix 4 — Comments-panel discoverability
 
@@ -105,24 +85,27 @@ If the verification at the `dev-approval` gate shows threads missing, the most l
 - `packages/vscode/src/comments/plan-review.ts`
   - line 33 → extend regex to include `reviews`
   - lines 41-44 → add `controller.options` block after `createCommentController`
-  - line 144 → swap hardcoded `@architect` for `await getReviewAuthor()`
-  - new import for `getReviewAuthor`
+  - line 40 → `activateReviewComments(context, overviewCache)` — new parameter
+  - line 144 → swap hardcoded `@architect` for `overviewCache.getData()?.currentUser ?? 'architect'`
+  - new import for `OverviewCache` (type-only)
 - `packages/vscode/src/commands/review.ts`
-  - line 22 → swap hardcoded `@architect` for `await getReviewAuthor()`
-  - new import for `getReviewAuthor`
-- `packages/vscode/src/comments/author.ts` — new file, ~25 lines, helper module described above
-- *(no change)* `packages/vscode/snippets/review.json` — snippets can't expand shell commands; `@architect` stays as the template default per the issue's explicit instruction
+  - line 7 → `addReviewComment(overviewCache)` — new parameter
+  - line 22 → swap hardcoded `@architect` for `overviewCache.getData()?.currentUser ?? 'architect'`
+  - new import for `OverviewCache` (type-only)
+- `packages/vscode/src/extension.ts`
+  - line 617 → `() => addReviewComment(overviewCache)`
+  - line 638 → `activateReviewComments(context, overviewCache)`
+- *(no change)* `packages/vscode/snippets/review.json` — snippets can't expand commands; `@architect` stays as the template default per the issue's explicit instruction
 - *(no change)* `packages/vscode/package.json` — #839 already shipped the `Codev:` prefix
 
 No test file changes planned — the VS Code package's existing test harness covers extension activation; the changes here are user-facing wiring best validated at the `dev-approval` gate by exercising the inline comment flow against a real worktree.
 
 ## Risks & Alternatives Considered
 
-- **Risk: git binary missing or `user.name` unset on a fresh machine.** Mitigated by `try`/`catch` + `FALLBACK = 'architect'`. The user sees the exact same string as before; nothing breaks.
-- **Risk: `cwd` selection picks the wrong workspace folder.** Multi-root workspaces fall back to `workspaceFolders[0]`. In a Codev install the codev/ checkout is the primary root, and `git config user.name` is almost always set globally, not per-repo, so the cwd choice rarely matters. Documenting it inline in the helper for future readers.
-- **Risk: cached author goes stale if the user changes `git config user.name` mid-session.** Acceptable. The issue explicitly asks for "once at activation" semantics, and a VS Code reload picks up the new value. Not worth a file-watcher.
-- **Alternative considered: read author at `extension.ts` activation and pass it through to `activateReviewComments(context, author)` + a closure-captured `addReviewComment(author)`.** Rejected — pushes async resolution into the activation path and requires changes in three files instead of two; the lazy-memo helper achieves the same observable behavior with smaller blast radius.
-- **Alternative considered: inline `execFile` at each call site.** Rejected — duplicates the fallback / parse logic and runs the subprocess twice per session.
+- **Risk: `currentUser` is undefined at write time.** Possible during the pre-first-fetch window at extension startup, or if `gh` is unconfigured. Mitigated by the `?? 'architect'` fallback — the user sees the same string as before; nothing breaks.
+- **Risk: GitHub login differs from what the user expects to see in REVIEW markers.** Considered acceptable — login is the canonical `@mention` handle and is the same identity Tower uses for "assigned to you" sorting, so it stays consistent across the extension's surfaces.
+- **Alternative considered: `git config user.name` (the issue's original suggestion).** Rejected — `OverviewData.currentUser` is the existing project-wide identity mechanism, already cached by Tower, and produces the GitHub login (the right value for `@mention`-shaped markers). Reading `git config` would introduce a second identity source and an unnecessary subprocess.
+- **Alternative considered: read at activation and cache locally inside the comments module.** Rejected — `overviewCache` already handles freshness via Tower's 60s + SSE cycle. Read-at-write picks up identity changes mid-session for free.
 - **Back-compat:** existing `<!-- REVIEW(@architect): ... -->` markers in committed files keep rendering — `REVIEW_COMMENT_PATTERN` already captures any `@([^)]+)`, not just `@architect`.
 
 ## Test Plan
@@ -136,12 +119,12 @@ The reviewer will exercise this at the `dev-approval` gate (`afx dev pir-857` ag
 ### Manual — inline comments (Fix 1, 2)
 1. Open any `codev/plans/*.md` file in the worktree → hover a line → confirm the `+` appears.
 2. Click `+` → confirm the reply input shows **"Type your review comment, then Submit"** (Fix 1), not VS Code's default.
-3. Type a comment → Submit → confirm a `<!-- REVIEW(@<your-git-name>): ... -->` marker is written on the next line (Fix 3 — author should be your real git identity, not `architect`, unless your git is unconfigured).
+3. Type a comment → Submit → confirm a `<!-- REVIEW(@<your-github-login>): ... -->` marker is written on the next line (Fix 3 — author should be your GitHub login from `gh api user --jq .login`, not `architect`, unless `gh` is unconfigured or Tower hasn't done a first fetch yet).
 4. Repeat (1)-(3) against a `codev/specs/*.md` file → same behavior.
 5. **New for Fix 2**: repeat (1)-(3) against a `codev/reviews/*.md` file (e.g. any committed review under `codev/reviews/`) → confirm `+` appears and submitted comment lands inline.
 
 ### Manual — palette command (Fix 3, second call site)
-6. Open any markdown file → cmd+shift+P → "Codev: Add Review Comment" → confirm the inserted comment uses your git name as author.
+6. Open any markdown file → cmd+shift+P → "Codev: Add Review Comment" → confirm the inserted comment uses your GitHub login as author.
 
 ### Manual — back-compat (Fix 3 regression check)
 7. Open a file that already contains `<!-- REVIEW(@architect): ... -->` markers (any committed plan with prior review comments) → confirm threads render as collapsed comment UI exactly as before (the regex matches any `@<name>`).
@@ -155,4 +138,4 @@ The reviewer will exercise this at the `dev-approval` gate (`afx dev pir-857` ag
 11. If they don't appear, surface findings at the `dev-approval` gate so we can decide whether to iterate or accept the no-op finding (documented in the review file's "Comments panel aggregation" note).
 
 ### Cross-platform
-None — VS Code extension, behaves identically across OS for these changes. The `execFile('git', ...)` subprocess respects PATH on macOS / Linux / Windows.
+None — VS Code extension, behaves identically across OS for these changes. No subprocesses introduced.
