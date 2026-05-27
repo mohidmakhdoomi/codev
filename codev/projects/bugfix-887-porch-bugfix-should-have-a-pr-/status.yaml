@@ -1,7 +1,7 @@
 id: bugfix-887
 title: porch-bugfix-should-have-a-pr-
 protocol: bugfix
-phase: investigate
+phase: fix
 plan_phases: []
 current_plan_phase: null
 gates: {}
@@ -9,4 +9,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-27T13:41:02.865Z'
-updated_at: '2026-05-27T13:41:02.866Z'
+updated_at: '2026-05-27T13:44:32.898Z'
