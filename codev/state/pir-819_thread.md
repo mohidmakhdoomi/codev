@@ -94,3 +94,17 @@ Re-verification post-merge: `pnpm -w build` ✓, `pnpm --filter @cluesmith/codev
 - **Gemini**: persistently failing — three consecutive `consult -m gemini` attempts exited code 1 with opaque `[object Object]` error in ~2-4s, no output file written. The `[warn] Failed to extract usage for gemini: Unexpected end of JSON input` suggests Gemini API returned an empty/malformed body. Not a code issue — looks like an API/auth/quota problem with the `consult` CLI's Gemini path. Architect notified via `afx send` for direction (skip / retry later / investigate).
 
 Porch currently blocking on Gemini producing an output. PR gate not yet pending — `porch next 819` reports `status: tasks` requesting another Gemini attempt.
+
+### Architect directive — Gemini skip
+
+Architect responded with explicit directive: skip Gemini, advance to pr gate. Root cause confirmed architect-side — `consult` CLI is hardcoded to `gemini-3-pro-preview` which Google has retired (`ModelNotFoundError`). Tracking the model-identifier bump as a separate `area/consult` bug. Standing: Codex=COMMENT addressed, Claude=APPROVE, 2/2 favorable; Gemini's absence is infra failure not signal.
+
+Executed:
+- Wrote `819-review-iter1-gemini.txt` with `VERDICT: SKIPPED` + the architect's directive verbatim for audit trail.
+- Porch parsed SKIPPED as REQUEST_CHANGES (anything non-APPROVE/COMMENT does); wrote `819-review-iter1-rebuttals.md` documenting the architect-directed skip + Codex's addressed COMMENT + Claude's APPROVE.
+- `porch done 819` → checks green → `porch gate 819` → **pr gate now pending**.
+- Notified architect via `afx send` that pr gate is pending and ready for human approval.
+
+Consult artifacts (`819-review-iter1-*.txt`, `-rebuttals.md`) live in the worktree only — they're gitignored per codev convention; the audit trail stays in the worktree until cleanup.
+
+Awaiting `pr` gate approval; on approval, will merge via `gh pr merge --merge` then `porch done 819 --merged 876`.
