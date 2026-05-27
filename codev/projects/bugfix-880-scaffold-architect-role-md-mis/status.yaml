@@ -1,0 +1,13 @@
+id: bugfix-880
+title: scaffold-architect-role-md-mis
+protocol: bugfix
+phase: verified
+plan_phases: []
+current_plan_phase: null
+gates: {}
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-05-27T10:34:30.369Z'
+updated_at: '2026-05-27T10:55:12.011Z'
+pr_ready_for_human: true

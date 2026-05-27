@@ -22,7 +22,12 @@ import {
   hashFile,
   loadHashStore,
 } from '../lib/templates.js';
-import { copySkills, copyRootFiles } from '../lib/scaffold.js';
+import {
+  copySkills,
+  copyRootFiles,
+  backfillGitignore,
+  CODEV_GITIGNORE_ENTRIES,
+} from '../lib/scaffold.js';
 
 export interface UpdateOptions {
   dryRun?: boolean;
@@ -45,6 +50,8 @@ export interface UpdateResult {
   migrated?: boolean;
   cleanedFiles?: string[];
   preservedFiles?: string[];
+  gitignoreAdded?: string[];
+  gitignoreSkipped?: boolean;
   error?: string;
 }
 
@@ -241,6 +248,19 @@ export async function update(options: UpdateOptions = {}): Promise<UpdateResult>
       }
     }
 
+    // Backfill .gitignore with any missing Codev entries
+    const gitignoreResult = backfillGitignore(targetDir, CODEV_GITIGNORE_ENTRIES, { dryRun });
+    result.gitignoreAdded = gitignoreResult.added;
+    result.gitignoreSkipped = gitignoreResult.skipped;
+    if (gitignoreResult.skipped) {
+      log(chalk.dim('  .gitignore: not present, skipped'));
+    } else if (gitignoreResult.added.length > 0) {
+      const verb = dryRun ? 'would add' : 'added';
+      log(chalk.green(`  + (gitignore) ${verb} ${gitignoreResult.added.length} entries: ${gitignoreResult.added.join(', ')}`));
+    } else {
+      log(chalk.dim('  .gitignore: up to date'));
+    }
+
     // Summary
     log('');
     log(chalk.bold('Summary:'));
@@ -257,8 +277,19 @@ export async function update(options: UpdateOptions = {}): Promise<UpdateResult>
     if (result.rootConflicts.length > 0) {
       log(chalk.yellow(`  ! ${result.rootConflicts.length} conflicts`));
     }
+    if (result.gitignoreAdded && result.gitignoreAdded.length > 0) {
+      log(chalk.green(`  gitignore: added ${result.gitignoreAdded.length} entries`));
+    } else if (!result.gitignoreSkipped) {
+      log(chalk.dim('  gitignore: up to date'));
+    }
 
-    if (!result.migrated && result.newFiles.length === 0 && result.updated.length === 0 && result.rootConflicts.length === 0) {
+    if (
+      !result.migrated &&
+      result.newFiles.length === 0 &&
+      result.updated.length === 0 &&
+      result.rootConflicts.length === 0 &&
+      (!result.gitignoreAdded || result.gitignoreAdded.length === 0)
+    ) {
       log(chalk.dim('  Already up to date!'));
     }
 

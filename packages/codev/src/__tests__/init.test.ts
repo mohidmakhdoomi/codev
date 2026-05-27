@@ -144,6 +144,8 @@ describe('init command', () => {
         expect(gitignore).toContain('.agent-farm/');
         expect(gitignore).toContain('.consult/');
         expect(gitignore).toContain('.builders/');
+        // Regression for issue #880
+        expect(gitignore).toContain('.architect-role.md');
       } finally {
         process.chdir(originalCwd);
       }
