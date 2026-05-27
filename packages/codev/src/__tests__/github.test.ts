@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   parseLinkedIssue,
   parseLabelDefaults,
-  parseAreaLabels,
+  parseArea,
 } from '../lib/github.js';
 
 // Mock forge.js for concept command routing tests
@@ -292,66 +292,70 @@ describe('parseLabelDefaults', () => {
   });
 });
 
-describe('parseAreaLabels', () => {
-  it('returns [] for an empty label array', () => {
-    expect(parseAreaLabels([])).toEqual([]);
+describe('parseArea', () => {
+  it('returns "Uncategorized" for an empty label array', () => {
+    expect(parseArea([])).toBe('Uncategorized');
   });
 
-  it('returns [] for null labels (Gitea/Forgejo defensive path)', () => {
-    expect(parseAreaLabels(null)).toEqual([]);
+  it('returns "Uncategorized" for null labels (Gitea/Forgejo defensive path)', () => {
+    expect(parseArea(null)).toBe('Uncategorized');
   });
 
-  it('returns [] for undefined labels (Gitea/Forgejo defensive path)', () => {
-    expect(parseAreaLabels(undefined)).toEqual([]);
+  it('returns "Uncategorized" for undefined labels (Gitea/Forgejo defensive path)', () => {
+    expect(parseArea(undefined)).toBe('Uncategorized');
   });
 
-  it('returns [] for empty-string labels (Gitea/Forgejo defensive path)', () => {
-    expect(parseAreaLabels('')).toEqual([]);
+  it('returns "Uncategorized" for empty-string labels (Gitea/Forgejo defensive path)', () => {
+    expect(parseArea('')).toBe('Uncategorized');
   });
 
   it('extracts a single area/* label with the prefix stripped', () => {
-    expect(parseAreaLabels([{ name: 'area/auth' }])).toEqual(['auth']);
+    expect(parseArea([{ name: 'area/auth' }])).toBe('auth');
   });
 
   it('ignores non-area labels in a mixed set', () => {
-    expect(parseAreaLabels([
+    expect(parseArea([
       { name: 'area/core' },
       { name: 'type:bug' },
       { name: 'priority:high' },
       { name: 'bug' },
-    ])).toEqual(['core']);
+    ])).toBe('core');
   });
 
-  it('sorts multi-area output alphabetically', () => {
-    expect(parseAreaLabels([
+  it('picks first alphabetical for malformed multi-area input lacking cross-cutting', () => {
+    expect(parseArea([
       { name: 'area/tower' },
       { name: 'area/core' },
       { name: 'area/porch' },
-    ])).toEqual(['core', 'porch', 'tower']);
+    ])).toBe('core');
   });
 
-  it('keeps area/cross-cutting alongside other areas (UI policy lives in resolvePrimaryArea, not here)', () => {
-    expect(parseAreaLabels([
+  it('returns "cross-cutting" when present, regardless of other area labels', () => {
+    expect(parseArea([
       { name: 'area/auth' },
       { name: 'area/cross-cutting' },
       { name: 'area/tower' },
-    ])).toEqual(['auth', 'cross-cutting', 'tower']);
+    ])).toBe('cross-cutting');
   });
 
-  it('deduplicates repeated area/* labels', () => {
-    expect(parseAreaLabels([
-      { name: 'area/core' },
-      { name: 'area/core' },
+  it('returns "cross-cutting" when it is the only area label', () => {
+    expect(parseArea([{ name: 'area/cross-cutting' }])).toBe('cross-cutting');
+  });
+
+  it('deduplicates repeated area/* labels before picking', () => {
+    expect(parseArea([
       { name: 'area/tower' },
-    ])).toEqual(['core', 'tower']);
+      { name: 'area/tower' },
+      { name: 'area/core' },
+    ])).toBe('core');
   });
 
   it('does not match bare "area" without the slash', () => {
-    expect(parseAreaLabels([{ name: 'area' }])).toEqual([]);
+    expect(parseArea([{ name: 'area' }])).toBe('Uncategorized');
   });
 
-  it('does not match area: with a colon (would be a separator-typo)', () => {
-    expect(parseAreaLabels([{ name: 'area:core' }])).toEqual([]);
+  it('does not match area: with a colon (separator-typo)', () => {
+    expect(parseArea([{ name: 'area:core' }])).toBe('Uncategorized');
   });
 });
 
