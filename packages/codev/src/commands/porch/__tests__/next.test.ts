@@ -467,6 +467,120 @@ describe('porch next', () => {
   });
 
   // --------------------------------------------------------------------------
+  // Issue #870 — asymmetric COMMENT vs REQUEST_CHANGES policy
+  // --------------------------------------------------------------------------
+
+  it('advances when reviewers return only COMMENT verdicts (no REQUEST_CHANGES)', async () => {
+    // Asymmetric policy: COMMENT is not a change-request, so any combination
+    // of APPROVE and COMMENT (with no REQUEST_CHANGES) must advance directly,
+    // not emit a rebuttal task.
+    const state = makeState({ build_complete: true });
+    setupState(testDir, state);
+
+    const projectDir = getProjectDir(testDir, '0001', 'test-feature');
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    const approveContent = `Review text that is long enough to pass the minimum length threshold for parsing.\n\n---\nVERDICT: APPROVE\n---`;
+    const commentContent = `Review text that is long enough to pass the minimum length threshold for parsing.\n\n---\nVERDICT: COMMENT\n---`;
+
+    fs.writeFileSync(path.join(projectDir, '0001-specify-iter1-gemini.txt'), approveContent);
+    fs.writeFileSync(path.join(projectDir, '0001-specify-iter1-codex.txt'), commentContent);
+    fs.writeFileSync(path.join(projectDir, '0001-specify-iter1-claude.txt'), commentContent);
+
+    const result = await next(testDir, '0001');
+
+    expect(result.status).toBe('gate_pending');
+    expect(result.gate).toBe('spec-approval');
+    // No rebuttal task should have been emitted
+    expect(result.tasks![0].subject).not.toContain('Write rebuttal');
+  });
+
+  it('re-iters when rebuttal exists and iteration is below the safety ceiling', async () => {
+    // Set up a protocol with max_iterations: 5 so iter=2 is well below the ceiling.
+    const reIterProtocol = JSON.parse(JSON.stringify(spirProtocol));
+    reIterProtocol.phases.find((p: { id: string }) => p.id === 'specify').max_iterations = 5;
+    setupProtocol(testDir, 'spir', reIterProtocol);
+
+    const state = makeState({ build_complete: true, iteration: 2 });
+    setupState(testDir, state);
+
+    const projectDir = getProjectDir(testDir, '0001', 'test-feature');
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    const approveContent = `Review text that is long enough to pass the minimum length threshold for parsing.\n\n---\nVERDICT: APPROVE\n---`;
+    const rcContent = `Review text that is long enough to pass the minimum length threshold for parsing.\n\n---\nVERDICT: REQUEST_CHANGES\n---`;
+    fs.writeFileSync(path.join(projectDir, '0001-specify-iter2-gemini.txt'), approveContent);
+    fs.writeFileSync(path.join(projectDir, '0001-specify-iter2-codex.txt'), rcContent);
+    fs.writeFileSync(path.join(projectDir, '0001-specify-iter2-claude.txt'), approveContent);
+    fs.writeFileSync(
+      path.join(projectDir, '0001-specify-iter2-rebuttals.md'),
+      '## Rebuttal\n\nAddressing codex feedback...'
+    );
+
+    const result = await next(testDir, '0001');
+
+    // Re-iter: porch should now emit a fresh build task (iter=3)
+    expect(result.status).toBe('tasks');
+    expect(result.iteration).toBe(3);
+    expect(result.tasks![0].subject).toContain('Specify');
+    expect(result.tasks![0].subject).toContain('iteration');
+
+    // State on disk reflects the increment and reset build_complete
+    const statusPath = getStatusPath(testDir, '0001', 'test-feature');
+    const persisted = JSON.parse(JSON.stringify(
+      // status.yaml uses YAML; just match the salient fields
+      { content: fs.readFileSync(statusPath, 'utf-8') }
+    ));
+    expect(persisted.content).toContain('iteration: 3');
+    expect(persisted.content).toContain('build_complete: false');
+    // No force_advanced field should have been written
+    expect(persisted.content).not.toContain('force_advanced:');
+  });
+
+  it('force-advances with audit trail when REQUEST_CHANGES persists at the safety ceiling', async () => {
+    // Set up a protocol with max_iterations: 2 so iter=2 IS the ceiling.
+    const ceilingProtocol = JSON.parse(JSON.stringify(spirProtocol));
+    ceilingProtocol.phases.find((p: { id: string }) => p.id === 'specify').max_iterations = 2;
+    setupProtocol(testDir, 'spir', ceilingProtocol);
+
+    const state = makeState({ build_complete: true, iteration: 2 });
+    setupState(testDir, state);
+
+    const projectDir = getProjectDir(testDir, '0001', 'test-feature');
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    const approveContent = `Review text that is long enough to pass the minimum length threshold for parsing.\n\n---\nVERDICT: APPROVE\n---`;
+    const rcContent = `Review text that is long enough to pass the minimum length threshold for parsing.\n\n---\nVERDICT: REQUEST_CHANGES\n---`;
+    fs.writeFileSync(path.join(projectDir, '0001-specify-iter2-gemini.txt'), approveContent);
+    fs.writeFileSync(path.join(projectDir, '0001-specify-iter2-codex.txt'), rcContent);
+    fs.writeFileSync(path.join(projectDir, '0001-specify-iter2-claude.txt'), approveContent);
+    fs.writeFileSync(
+      path.join(projectDir, '0001-specify-iter2-rebuttals.md'),
+      '## Rebuttal\n\nThe outstanding feedback is unactionable.'
+    );
+
+    const result = await next(testDir, '0001');
+
+    // Force-advance still passes through handleVerifyApproved → gate request
+    expect(result.status).toBe('gate_pending');
+    expect(result.gate).toBe('spec-approval');
+    // Ceiling notice prepended to the gate task description
+    expect(result.tasks![0].description).toContain('FORCE-ADVANCE');
+    expect(result.tasks![0].description).toContain('safety ceiling = 2');
+    expect(result.tasks![0].description).toContain('0001-specify-iter2-rebuttals.md');
+
+    // Audit trail on status.yaml
+    const statusPath = getStatusPath(testDir, '0001', 'test-feature');
+    const persisted = fs.readFileSync(statusPath, 'utf-8');
+    expect(persisted).toContain('force_advanced:');
+    expect(persisted).toContain('max_iterations: 2');
+    expect(persisted).toContain('rebuttal_file: 0001-specify-iter2-rebuttals.md');
+
+    // Rebuttal file is preserved on disk
+    expect(fs.existsSync(path.join(projectDir, '0001-specify-iter2-rebuttals.md'))).toBe(true);
+  });
+
+  // --------------------------------------------------------------------------
   // Rebuttal advancement — advances when rebuttal file exists
   // --------------------------------------------------------------------------
 
