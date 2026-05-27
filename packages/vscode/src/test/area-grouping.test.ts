@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { groupByArea } from '@cluesmith/codev-core/area-grouping';
+import { groupByArea, formatAreaForDisplay } from '@cluesmith/codev-core/area-grouping';
 
 interface AreaItem {
 	id: string;
@@ -78,5 +78,39 @@ suite('groupByArea', () => {
 		assert.deepStrictEqual(out.map(g => g.area), ['tower', 'vscode']);
 		assert.deepStrictEqual(out[0].items.map(b => b.id), ['a', 'c']);
 		assert.deepStrictEqual(out[1].items.map(b => b.id), ['b']);
+	});
+});
+
+suite('formatAreaForDisplay', () => {
+	test('lowercase single word -> capitalized first char', () => {
+		assert.strictEqual(formatAreaForDisplay('vscode'), 'Vscode');
+		assert.strictEqual(formatAreaForDisplay('tower'), 'Tower');
+		assert.strictEqual(formatAreaForDisplay('porch'), 'Porch');
+	});
+
+	test('hyphenated -> separator replaced with space, each word capitalized', () => {
+		assert.strictEqual(formatAreaForDisplay('cross-cutting'), 'Cross Cutting');
+	});
+
+	test('underscored -> separator replaced with space, each word capitalized', () => {
+		assert.strictEqual(formatAreaForDisplay('front_end'), 'Front End');
+	});
+
+	test('mixed separators and >2 words', () => {
+		assert.strictEqual(formatAreaForDisplay('front-end_ui'), 'Front End Ui');
+	});
+
+	test('Uncategorized sentinel is a no-op (single word, first char already upper)', () => {
+		assert.strictEqual(formatAreaForDisplay('Uncategorized'), 'Uncategorized');
+	});
+
+	test('empty string -> empty string (defensive)', () => {
+		assert.strictEqual(formatAreaForDisplay(''), '');
+	});
+
+	test('collapses multiple consecutive separators', () => {
+		// Pathological but cheap to lock — no accidental double-spacing.
+		assert.strictEqual(formatAreaForDisplay('a--b'), 'A B');
+		assert.strictEqual(formatAreaForDisplay('a__b'), 'A B');
 	});
 });

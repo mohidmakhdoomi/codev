@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { formatAreaForDisplay } from '@cluesmith/codev-core/area-grouping';
 
 export type AreaGroupKind = 'backlog' | 'builder';
 
@@ -12,6 +13,12 @@ export type AreaGroupKind = 'backlog' | 'builder';
  * are thin tags around this base — they exist so each view's
  * onDidExpand/Collapse handler can scope to its own groups via
  * `instanceof` rather than discriminating on a string field.
+ *
+ * `areaName`, `id`, and `contextValue` all use the raw wire value so
+ * expansion-state persistence and `areaName === ...` matchers in the
+ * per-view providers keep working. Only the human-visible label is
+ * passed through `formatAreaForDisplay` (title-case + separator-to-
+ * space, see #885).
  */
 export class AreaGroupTreeItem extends vscode.TreeItem {
   constructor(
@@ -20,7 +27,7 @@ export class AreaGroupTreeItem extends vscode.TreeItem {
     count: number,
     collapsibleState: vscode.TreeItemCollapsibleState,
   ) {
-    super(`${areaName} (${count})`, collapsibleState);
+    super(`${formatAreaForDisplay(areaName)} (${count})`, collapsibleState);
     this.id = `${kind}-group:${areaName}`;
     this.contextValue = `${kind}-group`;
   }
