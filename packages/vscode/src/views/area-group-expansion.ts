@@ -39,7 +39,7 @@ export class AreaGroupExpansionStore {
  * Returns the two `Disposable` subscriptions so the caller can push
  * them into the extension `context.subscriptions` array.
  */
-export function wireAreaGroupExpansion(
+export function persistAreaGroupExpansion(
   view: vscode.TreeView<vscode.TreeItem>,
   GroupClass: new (...args: never[]) => AreaGroupTreeItem,
   store: AreaGroupExpansionStore,
