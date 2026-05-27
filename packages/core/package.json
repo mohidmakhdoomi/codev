@@ -31,6 +31,10 @@
     "./builder-helpers": {
       "types": "./dist/builder-helpers.d.ts",
       "default": "./dist/builder-helpers.js"
+    },
+    "./area-grouping": {
+      "types": "./dist/area-grouping.d.ts",
+      "default": "./dist/area-grouping.js"
     }
   },
   "files": [
