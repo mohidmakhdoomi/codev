@@ -233,6 +233,11 @@ Projects currently in development (conceived through committed), sorted by prior
 
 ```yaml
 releases:
+  - version: "v3.1.4"
+    name: "Jacobean"
+    status: released
+    target_date: "2026-05-27"
+    notes: "Three patch ships on the Jacobean line. #851 (CI): verify-install probes afx instead of removed af (fallout from v3.1.3's codev-afx-wrapper removal — main was red since v3.1.3 merge). #871 (porch consultation policy): asymmetric COMMENT vs REQUEST_CHANGES — ADVANCE on all-APPROVE-or-COMMENT, RE-ITER on any REQUEST_CHANGES with no normal-flow cap, max_iterations kept as high safety ceiling (default 1→8); reported by external adopter's architect via 21-iter natural experiment that retracted their own per-N-cap proposal; PIR's max_iterations=1 now correctly enforces single-pass advisory CMAP. #874 (Needs Attention regression closure): canonical pr_ready_for_human signal across all 5 protocols closes the BUGFIX gap shipped in v3.1.3 (PR #845 gated on blocked==='PR review' but BUGFIX has no pr gate). v3.1.2-style dual-CMAP discipline caught both architect-side blockers on PR #874 (isPrCreatingPhase over-matched RESEARCH's investigate/critique; NeedsAttentionList builder fallback dropped BUGFIX builders before prReady check) that the builder's own unanimous CMAP missed."
   - version: "v3.1.3"
     name: "Jacobean"
     status: released
