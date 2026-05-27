@@ -851,13 +851,17 @@ describe('porch next', () => {
   });
 
   // --------------------------------------------------------------------------
-  // Bugfix complete — no merge task, no second notification (#319)
+  // Bugfix complete — merge task emitted post-gate-approval (#887)
+  // Pre-#887 BUGFIX had no `pr` gate and stopped at `verified` with an
+  // "architect takes it from here" summary. After #887 BUGFIX carries the
+  // same `gate: "pr"` as AIR; the builder merges (post-gate-approval) via
+  // the standard merge-task path, mirroring AIR exactly.
   // --------------------------------------------------------------------------
 
-  it('returns no tasks for completed bugfix protocol (no merge instruction)', async () => {
+  it('returns merge task for completed bugfix protocol (matches AIR post-#887)', async () => {
     const bugfixProtocol = {
       name: 'bugfix',
-      version: '1.1.0',
+      version: '1.2.0',
       phases: [
         {
           id: 'investigate',
@@ -875,6 +879,7 @@ describe('porch next', () => {
           id: 'pr',
           name: 'Create PR',
           type: 'once',
+          gate: 'pr',
           transition: { on_complete: null },
         },
       ],
@@ -885,10 +890,17 @@ describe('porch next', () => {
       id: 'builder-bugfix-42',
       title: 'login-spaces',
       protocol: 'bugfix',
-      phase: 'complete',
+      phase: 'verified',
       plan_phases: [],
       current_plan_phase: null,
-      gates: {},
+      // Terminal state retains the approved pr gate (no longer `{}`)
+      gates: {
+        pr: {
+          status: 'approved',
+          requested_at: '2026-05-27T00:00:00.000Z',
+          approved_at: '2026-05-27T00:30:00.000Z',
+        },
+      },
       iteration: 1,
       build_complete: false,
       history: [],
@@ -900,10 +912,9 @@ describe('porch next', () => {
     const result = await next(testDir, 'builder-bugfix-42');
 
     expect(result.status).toBe('complete');
-    // No manual commit-status task — writeStateAndCommit handles it automatically
-    // Must NOT contain merge instructions — bugfix builder doesn't merge
-    expect(result.summary).not.toContain('Merge');
-    expect(result.summary).toContain('architect');
+    expect(result.tasks!.length).toBe(1);
+    expect(result.tasks![0].subject).toContain('Merge');
+    expect(result.tasks![0].description).toContain('pr-merge');
   });
 
   it('returns merge task for completed non-bugfix protocol (no manual commit-status task)', async () => {

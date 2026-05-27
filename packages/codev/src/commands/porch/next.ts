@@ -20,7 +20,6 @@ import {
   getPhaseGate,
   isPhased,
   isBuildVerify,
-  isPrCreatingPhase,
   getBuildConfig,
   getVerifyConfig,
   getOnCompleteConfig,
@@ -248,16 +247,6 @@ export async function next(workspaceRoot: string, projectId: string): Promise<Po
   // Note: status.yaml is already committed automatically by writeStateAndCommit
   // at every phase transition. No manual "commit status.yaml" task needed.
   if (state.phase === 'verified' || state.phase === 'complete' || !phaseConfig) {
-    // Bugfix builders are done after PR + CMAP — architect handles merge/cleanup
-    if (state.protocol === 'bugfix') {
-      return {
-        status: 'complete',
-        phase: state.phase,
-        iteration: state.iteration,
-        summary: `Project ${state.id} has completed the ${state.protocol} protocol. The architect will review, merge, and clean up.`,
-      };
-    }
-
     // For protocols with a verify phase (SPIR, ASPIR), merge already happened in verify.
     // For protocols without verify (AIR, BUGFIX, MAINTAIN), merge is still needed.
     const hasVerifyPhase = protocol.phases.some(p => p.id === 'verify');
@@ -762,8 +751,9 @@ async function handleVerifyApproved(
     state.history = [];
     // Issue #872: when CMAP completes for the PR-creating phase, expose a
     // canonical `pr_ready_for_human=true` so consumers don't have to derive
-    // it from the protocol-specific gate shape.
-    if (gateName === 'pr' || isPrCreatingPhase(protocol, state.phase)) {
+    // it from the protocol-specific gate shape. All five PR-emitting protocols
+    // carry `gate: "pr"` on their PR-creating phase (#887 closed the BUGFIX gap).
+    if (gateName === 'pr') {
       state.pr_ready_for_human = true;
     }
     await writeStateAndCommit(statusPath, state, `chore(porch): ${state.id} ${gateName} gate-requested`);
@@ -781,14 +771,10 @@ async function handleVerifyApproved(
     };
   }
 
-  // No gate — advance to next phase directly. If we're advancing out of a
-  // PR-creating phase (BUGFIX: pr → verified after CMAP), set the canonical
-  // pr-ready signal before the write so consumers pick it up immediately.
-  const advancingFromPrPhase = isPrCreatingPhase(protocol, state.phase);
+  // No gate — advance to next phase directly.
   const nextPhase = getNextPhase(protocol, state.phase);
   if (!nextPhase) {
     state.phase = 'verified';
-    if (advancingFromPrPhase) state.pr_ready_for_human = true;
     await writeStateAndCommit(statusPath, state, `chore(porch): ${state.id} protocol complete`);
     return next(workspaceRoot, projectId);
   }
@@ -797,7 +783,6 @@ async function handleVerifyApproved(
   state.iteration = 1;
   state.build_complete = false;
   state.history = [];
-  if (advancingFromPrPhase) state.pr_ready_for_human = true;
   await writeStateAndCommit(statusPath, state, `chore(porch): ${state.id} ${state.phase} phase-transition`);
   return next(workspaceRoot, projectId);
 }

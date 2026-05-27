@@ -89,8 +89,11 @@ Send a **single** notification that includes the PR link and each model's verdic
 afx send architect "PR #<number> ready for review (fixes issue #{{issue.number}}). CMAP: gemini=<APPROVE|REQUEST_CHANGES>, codex=<APPROVE|REQUEST_CHANGES>, claude=<APPROVE|REQUEST_CHANGES>"
 ```
 
-**This is the only notification you send.** After this, your work is done — the architect
-takes it from here (reviews, merges, cleans up).
+Then run `porch done <project-id>` to auto-request the `pr` gate. The PR surfaces
+in Needs Attention from this point; **STOP and wait** for the architect to call
+`porch approve <project-id> pr`. After gate approval, porch will emit a merge task
+(via the next `porch next` call) — follow it to merge the PR and advance to
+`verified`.
 
 ## Signals
 

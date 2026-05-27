@@ -30,7 +30,6 @@ import {
   getPhaseGate,
   isPhased,
   isBuildVerify,
-  isPrCreatingPhase,
   getVerifyConfig,
 } from './protocol.js';
 import {
@@ -484,11 +483,11 @@ export async function done(workspaceRoot: string, projectId: string, resolver?: 
     }
     if (!state.gates[gate].requested_at) {
       state.gates[gate].requested_at = new Date().toISOString();
-      // Issue #872: AIR pr (once-phase, gate=pr) reaches the human-review
+      // Issue #872: AIR / BUGFIX pr (once-phase, gate=pr) reaches the human-review
       // bottleneck here — done auto-requests the `pr` gate. Set the canonical
       // pr-ready signal in the same write so consumers don't have to wait for
       // a subsequent state mutation to learn the PR is ready for a reviewer.
-      if (gate === 'pr' || isPrCreatingPhase(protocol, state.phase)) {
+      if (gate === 'pr') {
         state.pr_ready_for_human = true;
       }
       await writeStateAndCommit(statusPath, state, `chore(porch): ${state.id} ${gate} gate-requested`);
@@ -518,16 +517,10 @@ export async function done(workspaceRoot: string, projectId: string, resolver?: 
 }
 
 async function advanceProtocolPhase(workspaceRoot: string, state: ProjectState, protocol: Protocol, statusPath: string, resolver?: ArtifactResolver): Promise<void> {
-  // Issue #872: BUGFIX runs CMAP on a once-phase with no gate. Calling `done`
-  // on its `pr` phase advances directly to `verified`, and the human is now
-  // the reviewer bottleneck. Snapshot this before mutating state.phase so the
-  // pr-ready signal fires in the same write that records the advance.
-  const advancingFromPrPhase = isPrCreatingPhase(protocol, state.phase);
   const nextPhase = getNextPhase(protocol, state.phase);
 
   if (!nextPhase) {
     state.phase = 'verified';
-    if (advancingFromPrPhase) state.pr_ready_for_human = true;
     await writeStateAndCommit(statusPath, state, `chore(porch): ${state.id} protocol complete`);
     console.log('');
     console.log(chalk.green.bold('🎉 PROTOCOL COMPLETE'));
@@ -538,7 +531,6 @@ async function advanceProtocolPhase(workspaceRoot: string, state: ProjectState, 
   state.phase = nextPhase.id;
   state.build_complete = false;
   state.iteration = 1;
-  if (advancingFromPrPhase) state.pr_ready_for_human = true;
 
   // If entering a phased phase (implement), extract plan phases
   if (isPhased(protocol, nextPhase.id)) {

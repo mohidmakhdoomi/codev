@@ -188,7 +188,7 @@ const airProtocol = {
 
 const bugfixProtocol = {
   name: 'bugfix',
-  version: '1.0.0',
+  version: '1.2.0',
   phases: [
     {
       id: 'investigate',
@@ -207,6 +207,7 @@ const bugfixProtocol = {
       name: 'Create PR',
       type: 'once',
       consultation: { on: 'review', models: ['gemini', 'codex'], type: 'impl' },
+      gate: 'pr',
       transition: { on_complete: null },
     },
   ],
@@ -231,14 +232,14 @@ describe('Issue #872 — pr_ready_for_human lifecycle', () => {
   // isPrCreatingPhase classifier — must NOT overmatch RESEARCH (iter-2 fix)
   // --------------------------------------------------------------------------
 
-  describe('isPrCreatingPhase classifier (iter-2: narrow consultation.on === "review")', () => {
-    it('returns true for AIR pr (consultation.on === "review")', () => {
+  describe('isPrCreatingPhase classifier (single marker: gate === "pr")', () => {
+    it('returns true for AIR pr (once-phase, gate=pr)', () => {
       setupProtocol(testDir, 'air', airProtocol);
       const protocol = loadProtocol(testDir, 'air');
       expect(isPrCreatingPhase(protocol, 'pr')).toBe(true);
     });
 
-    it('returns true for BUGFIX pr (consultation.on === "review")', () => {
+    it('returns true for BUGFIX pr (once-phase, gate=pr — #887 normalized BUGFIX onto AIR shape)', () => {
       setupProtocol(testDir, 'bugfix', bugfixProtocol);
       const protocol = loadProtocol(testDir, 'bugfix');
       expect(isPrCreatingPhase(protocol, 'pr')).toBe(true);
@@ -250,11 +251,12 @@ describe('Issue #872 — pr_ready_for_human lifecycle', () => {
       expect(isPrCreatingPhase(loadProtocol(testDir, 'spir'), 'review')).toBe(true);
     });
 
-    it('returns FALSE for RESEARCH investigate (consultation present but on is not "review")', () => {
-      // This is the bug architect-side CMAP caught in iter-1: the iter-1
-      // classifier matched bare `consultation` presence, which would have
-      // misclassified RESEARCH's investigation phase as PR-creating and leaked
-      // pr_ready_for_human: true into research state.
+    it('returns FALSE for RESEARCH investigate (consultation present but no pr gate)', () => {
+      // Architect-side CMAP for #872 iter-1 caught a precursor of this case:
+      // the iter-1 classifier matched bare `consultation` presence, which would
+      // have misclassified RESEARCH's investigation phase as PR-creating. After
+      // #887 the classifier checks `gate === 'pr'` alone — RESEARCH carries no
+      // `pr` gate, so the gap is closed by construction.
       setupProtocol(testDir, 'research', researchShapedProtocol);
       const protocol = loadProtocol(testDir, 'research');
       expect(isPrCreatingPhase(protocol, 'investigate')).toBe(false);
@@ -263,8 +265,8 @@ describe('Issue #872 — pr_ready_for_human lifecycle', () => {
     it('returns FALSE for RESEARCH critique (consultation + gate, but gate is not "pr")', () => {
       setupProtocol(testDir, 'research', researchShapedProtocol);
       const protocol = loadProtocol(testDir, 'research');
-      // Critique has a `research-complete` gate, NOT `pr`, and its consultation
-      // block has no `on: "review"`. Both classifier markers miss it.
+      // Critique has a `research-complete` gate, NOT `pr`. The classifier
+      // matches on `gate === 'pr'` only, so this phase is correctly excluded.
       expect(isPrCreatingPhase(protocol, 'critique')).toBe(false);
     });
 
@@ -372,21 +374,62 @@ describe('Issue #872 — pr_ready_for_human lifecycle', () => {
   });
 
   // --------------------------------------------------------------------------
-  // BUGFIX: once-phase pr, NO gate (the regression that motivated #872)
+  // BUGFIX: once-phase pr with gate=pr (post-#887 — same shape as AIR).
+  // The original #872 set-point (`advanceProtocolPhase` terminal-exit) is now
+  // unreachable: BUGFIX no longer transitions to `verified` until after the
+  // gate-request → approve cycle. These tests pin the gate-request path so
+  // future refactors can't silently regress the timing.
   // --------------------------------------------------------------------------
 
-  describe('BUGFIX pr (once-phase, no gate — the #872 regression case)', () => {
-    it('sets pr_ready_for_human=true when done advances pr → verified', async () => {
+  describe('BUGFIX pr (once-phase, gate=pr — #887)', () => {
+    it('sets pr_ready_for_human=true when done auto-requests the pr gate (matches AIR)', async () => {
       setupProtocol(testDir, 'bugfix', bugfixProtocol);
 
-      const state = makeState({ id: 'bugfix-0001', protocol: 'bugfix', phase: 'pr', gates: {} });
+      const state = makeState({
+        id: 'bugfix-0001',
+        protocol: 'bugfix',
+        phase: 'pr',
+        gates: { pr: { status: 'pending' as const } },
+      });
+      setupState(testDir, state);
+
+      await done(testDir, 'bugfix-0001');
+
+      const after = readStateFor(testDir, state);
+      // Builder stays on `pr` with the gate pending until the architect approves.
+      expect(after.phase).toBe('pr');
+      expect(after.pr_ready_for_human).toBe(true);
+      expect(after.gates['pr']?.status).toBe('pending');
+      expect(after.gates['pr']?.requested_at).toBeTruthy();
+    });
+
+    it('advances pr → verified after gate approval + done, leaving gates.pr approved', async () => {
+      setupProtocol(testDir, 'bugfix', bugfixProtocol);
+
+      // Builder ran CMAP + porch done, architect approved the gate.
+      const state = makeState({
+        id: 'bugfix-0001',
+        protocol: 'bugfix',
+        phase: 'pr',
+        pr_ready_for_human: true,
+        gates: {
+          pr: {
+            status: 'approved' as const,
+            requested_at: new Date(Date.now() - 60_000).toISOString(),
+            approved_at: new Date().toISOString(),
+          },
+        },
+      });
       setupState(testDir, state);
 
       await done(testDir, 'bugfix-0001');
 
       const after = readStateFor(testDir, state);
       expect(after.phase).toBe('verified');
-      expect(after.pr_ready_for_human).toBe(true);
+      // The approved gate is preserved on the terminal state (no longer `{}`).
+      expect(after.gates['pr']?.status).toBe('approved');
+      expect(after.gates['pr']?.requested_at).toBeTruthy();
+      expect(after.gates['pr']?.approved_at).toBeTruthy();
     });
 
     it('does NOT set pr_ready_for_human=true when done advances an earlier (non-pr) phase', async () => {
