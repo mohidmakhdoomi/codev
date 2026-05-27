@@ -15,6 +15,7 @@ import {
   copyRootFiles,
   createGitignore,
   updateGitignore,
+  backfillGitignore,
   CODEV_GITIGNORE_ENTRIES,
 } from '../lib/scaffold.js';
 
@@ -285,6 +286,17 @@ describe('Scaffold Utilities', () => {
       expect(content).toContain('.consult/');
       expect(content).toContain('.builders/');
     });
+
+    // Regression for issue #880: .architect-role.md must be ignored from day one
+    it('should include .architect-role.md (issue #880)', () => {
+      const targetDir = path.join(tempDir, 'project');
+      fs.mkdirSync(targetDir, { recursive: true });
+
+      createGitignore(targetDir);
+
+      const content = fs.readFileSync(path.join(targetDir, '.gitignore'), 'utf-8');
+      expect(content).toContain('.architect-role.md');
+    });
   });
 
   describe('updateGitignore', () => {
@@ -328,6 +340,117 @@ describe('Scaffold Utilities', () => {
       expect(CODEV_GITIGNORE_ENTRIES).toContain('.agent-farm/');
       expect(CODEV_GITIGNORE_ENTRIES).toContain('.consult/');
       expect(CODEV_GITIGNORE_ENTRIES).toContain('.builders/');
+    });
+
+    // Regression for issue #880
+    it('should contain .architect-role.md (issue #880)', () => {
+      expect(CODEV_GITIGNORE_ENTRIES).toContain('.architect-role.md');
+    });
+  });
+
+  describe('backfillGitignore (issue #880)', () => {
+    it('appends missing entries under a dated Codev header', () => {
+      const targetDir = path.join(tempDir, 'project');
+      fs.mkdirSync(targetDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(targetDir, '.gitignore'),
+        '# Codev\n.agent-farm/\n.consult/\ncodev/.update-hashes.json\n.builders/\n'
+      );
+
+      const result = backfillGitignore(targetDir, CODEV_GITIGNORE_ENTRIES, { today: new Date('2026-05-27') });
+
+      expect(result.skipped).toBe(false);
+      expect(result.added).toEqual(['.architect-role.md']);
+      expect(result.alreadyPresent).toEqual(
+        expect.arrayContaining(['.agent-farm/', '.consult/', 'codev/.update-hashes.json', '.builders/'])
+      );
+
+      const content = fs.readFileSync(path.join(targetDir, '.gitignore'), 'utf-8');
+      expect(content).toContain('# Codev (added by codev update 2026-05-27)');
+      expect(content).toContain('.architect-role.md');
+    });
+
+    it('is idempotent — second run after a clean state is a no-op', () => {
+      const targetDir = path.join(tempDir, 'project');
+      fs.mkdirSync(targetDir, { recursive: true });
+      fs.writeFileSync(path.join(targetDir, '.gitignore'), CODEV_GITIGNORE_ENTRIES);
+
+      const result = backfillGitignore(targetDir, CODEV_GITIGNORE_ENTRIES);
+
+      expect(result.added).toEqual([]);
+      expect(result.alreadyPresent.length).toBeGreaterThan(0);
+
+      const contentAfter = fs.readFileSync(path.join(targetDir, '.gitignore'), 'utf-8');
+      expect(contentAfter).toBe(CODEV_GITIGNORE_ENTRIES);
+    });
+
+    it('preserves custom user entries verbatim', () => {
+      const targetDir = path.join(tempDir, 'project');
+      fs.mkdirSync(targetDir, { recursive: true });
+      const userGitignore = [
+        '# my project',
+        'node_modules/',
+        'dist/',
+        '.env.local',
+        '',
+        '# Codev',
+        '.agent-farm/',
+        '.consult/',
+        'codev/.update-hashes.json',
+        '.builders/',
+        '',
+      ].join('\n');
+      fs.writeFileSync(path.join(targetDir, '.gitignore'), userGitignore);
+
+      backfillGitignore(targetDir, CODEV_GITIGNORE_ENTRIES, { today: new Date('2026-05-27') });
+
+      const content = fs.readFileSync(path.join(targetDir, '.gitignore'), 'utf-8');
+      expect(content.startsWith(userGitignore)).toBe(true);
+      expect(content).toContain('.architect-role.md');
+      // Custom entries untouched
+      expect(content).toContain('# my project');
+      expect(content).toContain('.env.local');
+    });
+
+    it('skips silently when no .gitignore exists', () => {
+      const targetDir = path.join(tempDir, 'project');
+      fs.mkdirSync(targetDir, { recursive: true });
+
+      const result = backfillGitignore(targetDir, CODEV_GITIGNORE_ENTRIES);
+
+      expect(result.skipped).toBe(true);
+      expect(result.added).toEqual([]);
+      expect(fs.existsSync(path.join(targetDir, '.gitignore'))).toBe(false);
+    });
+
+    it('does not write in dry-run mode', () => {
+      const targetDir = path.join(tempDir, 'project');
+      fs.mkdirSync(targetDir, { recursive: true });
+      const original = '# Codev\n.agent-farm/\n.consult/\ncodev/.update-hashes.json\n.builders/\n';
+      fs.writeFileSync(path.join(targetDir, '.gitignore'), original);
+
+      const result = backfillGitignore(targetDir, CODEV_GITIGNORE_ENTRIES, { dryRun: true });
+
+      expect(result.added).toEqual(['.architect-role.md']);
+      expect(fs.readFileSync(path.join(targetDir, '.gitignore'), 'utf-8')).toBe(original);
+    });
+
+    it('does not duplicate when invoked twice in a row', () => {
+      const targetDir = path.join(tempDir, 'project');
+      fs.mkdirSync(targetDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(targetDir, '.gitignore'),
+        '# Codev\n.agent-farm/\n.consult/\ncodev/.update-hashes.json\n.builders/\n'
+      );
+
+      backfillGitignore(targetDir, CODEV_GITIGNORE_ENTRIES, { today: new Date('2026-05-27') });
+      const afterFirst = fs.readFileSync(path.join(targetDir, '.gitignore'), 'utf-8');
+      backfillGitignore(targetDir, CODEV_GITIGNORE_ENTRIES, { today: new Date('2026-05-28') });
+      const afterSecond = fs.readFileSync(path.join(targetDir, '.gitignore'), 'utf-8');
+
+      expect(afterFirst).toBe(afterSecond);
+      // Only one occurrence of .architect-role.md
+      expect(afterSecond.match(/\.architect-role\.md/g) || []).toHaveLength(1);
     });
   });
 

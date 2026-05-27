@@ -129,6 +129,8 @@ describe('adopt command', () => {
       const gitignore = fs.readFileSync(path.join(projectDir, '.gitignore'), 'utf-8');
       expect(gitignore).toContain('node_modules/');
       expect(gitignore).toContain('.agent-farm/');
+      // Regression for issue #880
+      expect(gitignore).toContain('.architect-role.md');
     });
 
     it('should create .gitignore if it does not exist', async () => {
@@ -143,6 +145,8 @@ describe('adopt command', () => {
       expect(fs.existsSync(path.join(projectDir, '.gitignore'))).toBe(true);
       const gitignore = fs.readFileSync(path.join(projectDir, '.gitignore'), 'utf-8');
       expect(gitignore).toContain('.agent-farm/');
+      // Regression for issue #880
+      expect(gitignore).toContain('.architect-role.md');
     });
   });
 

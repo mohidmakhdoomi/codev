@@ -466,6 +466,88 @@ describe('update command', () => {
     });
   });
 
+  describe('gitignore backfill (issue #880)', () => {
+    it('appends .architect-role.md to a stale .gitignore on update', async () => {
+      const projectDir = path.join(testBaseDir, 'gitignore-backfill');
+      fs.mkdirSync(path.join(projectDir, 'codev'), { recursive: true });
+
+      const staleGitignore = [
+        'node_modules/',
+        '',
+        '# Codev',
+        '.agent-farm/',
+        '.consult/',
+        'codev/.update-hashes.json',
+        '.builders/',
+        '',
+      ].join('\n');
+      fs.writeFileSync(path.join(projectDir, '.gitignore'), staleGitignore);
+
+      process.chdir(projectDir);
+
+      const { update } = await import('../commands/update.js');
+      const result = await update({ agent: true });
+
+      expect(result.error).toBeUndefined();
+      expect(result.gitignoreAdded).toEqual(['.architect-role.md']);
+
+      const content = fs.readFileSync(path.join(projectDir, '.gitignore'), 'utf-8');
+      expect(content).toContain('.architect-role.md');
+      // User entries preserved
+      expect(content).toContain('node_modules/');
+    });
+
+    it('does not write to .gitignore in dry-run', async () => {
+      const projectDir = path.join(testBaseDir, 'gitignore-dryrun');
+      fs.mkdirSync(path.join(projectDir, 'codev'), { recursive: true });
+
+      const stale = '# Codev\n.agent-farm/\n.consult/\ncodev/.update-hashes.json\n.builders/\n';
+      fs.writeFileSync(path.join(projectDir, '.gitignore'), stale);
+
+      process.chdir(projectDir);
+
+      const { update } = await import('../commands/update.js');
+      const result = await update({ agent: true, dryRun: true });
+
+      expect(result.gitignoreAdded).toEqual(['.architect-role.md']);
+      expect(fs.readFileSync(path.join(projectDir, '.gitignore'), 'utf-8')).toBe(stale);
+    });
+
+    it('skips silently when .gitignore is absent', async () => {
+      const projectDir = path.join(testBaseDir, 'gitignore-absent');
+      fs.mkdirSync(path.join(projectDir, 'codev'), { recursive: true });
+
+      process.chdir(projectDir);
+
+      const { update } = await import('../commands/update.js');
+      const result = await update({ agent: true });
+
+      expect(result.gitignoreSkipped).toBe(true);
+      expect(result.gitignoreAdded).toEqual([]);
+      expect(fs.existsSync(path.join(projectDir, '.gitignore'))).toBe(false);
+    });
+
+    it('is idempotent — second update is a no-op for the gitignore', async () => {
+      const projectDir = path.join(testBaseDir, 'gitignore-idempotent');
+      fs.mkdirSync(path.join(projectDir, 'codev'), { recursive: true });
+
+      const stale = '# Codev\n.agent-farm/\n.consult/\ncodev/.update-hashes.json\n.builders/\n';
+      fs.writeFileSync(path.join(projectDir, '.gitignore'), stale);
+
+      process.chdir(projectDir);
+
+      const { update } = await import('../commands/update.js');
+      await update({ agent: true });
+      const afterFirst = fs.readFileSync(path.join(projectDir, '.gitignore'), 'utf-8');
+
+      const result = await update({ agent: true });
+      const afterSecond = fs.readFileSync(path.join(projectDir, '.gitignore'), 'utf-8');
+
+      expect(result.gitignoreAdded).toEqual([]);
+      expect(afterFirst).toBe(afterSecond);
+    });
+  });
+
   describe('hash store management', () => {
     it('should preserve existing hashes after update', async () => {
       const projectDir = path.join(testBaseDir, 'hash-preserve');
