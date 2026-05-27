@@ -29,3 +29,22 @@ The discrepancy is likely due to different gemini-cli versions / model-rollout c
 4. Test fixture → update to `gemini-3.1-pro-preview` with new expected cost $14 (1M input × $2 + 1M output × $12)
 
 Size: ~10 LOC. Comfortably within BUGFIX scope.
+
+## Fix + PR phases — 2026-05-26
+
+Implemented the fix, ran the full test suite locally (3162 passed, 0 failed),
+opened PR #879, ran CMAP-3, and notified the architect.
+
+CMAP-3 verdicts (all APPROVE, no actionable issues raised):
+- gemini: APPROVE — "Correctly bumps retired Gemini 3 model to gemini-3.1-pro-preview"
+- codex: APPROVE — "Focused bugfix updates the Gemini consult model, pricing, docs, and regression coverage"
+- claude: APPROVE — "Clean, focused bugfix — model identifier updated in all active locations, pricing added, regression test guards against silent re-regression"
+
+Note for future readers: the initial 3-way CMAP (gemini/codex/claude) failed for codex and claude
+because `--issue 878` is required when multiple projects exist in the same worktree — the consult
+CLI errors with "Multiple projects found: ..." otherwise. Re-ran with `--issue 878 --output <path>`
+and all three returned APPROVE. The first gemini run actually succeeded because gemini's exit-code
+semantics print the review *and* report success even when consult's project-resolution failed; the
+APPROVE was for a *generic* (no diff) review, not the PR. The re-run with `--issue 878` was scoped
+to the PR diff and also returned APPROVE.
+
