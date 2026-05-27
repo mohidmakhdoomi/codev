@@ -10,23 +10,42 @@ Where the label is built today: `packages/vscode/src/views/area-group-tree-item.
 
 ## Proposed Change
 
-Apply plain sentence-case (`name.charAt(0).toUpperCase() + name.slice(1)`) to the displayed label inside `AreaGroupTreeItem`'s constructor. The raw `areaName` field, the `id`, and the `contextValue` keep using the wire value verbatim — only the human-visible TreeItem label gets capitalized.
+Apply **title-case with separator-to-space normalization** to the displayed label inside `AreaGroupTreeItem`'s constructor. Split on `-`, `_`, and whitespace; capitalize the first character of each word; rejoin with a single space.
 
-**Picking sentence-case over the per-repo override map**:
+```ts
+export function formatAreaForDisplay(area: string): string {
+  return area
+    .split(/[-_\s]+/)
+    .filter(w => w.length > 0)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+```
 
-- Codev's actual `area/*` set is `vscode, tower, porch, consult, panel, terminal, config, core, docs, cross-cutting`. None of these are real acronyms — `vscode` is a product name written without expansion in the wild. `Vscode (12)` reads fine.
-- `'Uncategorized'.charAt(0).toUpperCase() + slice(1)` is a no-op (the fallback stays `Uncategorized`), so a single uniform rule covers every area including the sentinel — no special-case branch needed.
-- Smallest change that fixes the visual inconsistency the issue actually reports.
-- A `codev.areaDisplayNames` config override is a clean follow-up if acronym pain surfaces in a repo with `area/api`, `area/ui`, etc. The helper signature is single-string in, string out — adding a config-lookup wrapper later is non-breaking. Not paying that cost preemptively (YAGNI; the codev repo has zero acronyms today).
-- Framework-neutrality: a pure capitalize-first-char rule operates on whatever string is passed in. A hardcoded `{ vscode: 'VSCode', api: 'API' }` dictionary inside codev would privilege specific label values, which conflicts with the principle that teams using codev pick their own labeling semantics.
+Expected outputs:
 
-**Helper location**: a new `formatAreaForDisplay(area: string): string` exported from `packages/core/src/area-grouping.ts`. Sits next to `groupByArea` — same concern, no vscode dep, reusable by future consumers (e.g. the dashboard equivalent of these views) without a second migration. The subpath `@cluesmith/codev-core/area-grouping` is already exported, so no `packages/core/package.json` change.
+- `vscode` → `Vscode`
+- `tower` → `Tower`
+- `cross-cutting` → `Cross Cutting`
+- `front_end` → `Front End`
+- `Uncategorized` → `Uncategorized` (no-op on the fallback sentinel)
+
+The raw `areaName` field, the `id`, and the `contextValue` keep using the wire value verbatim — only the human-visible TreeItem label is transformed.
+
+**Why this rule**:
+
+- Codev's actual `area/*` set is `vscode, tower, porch, consult, panel, terminal, config, core, docs, cross-cutting`. None are real acronyms. The multi-word case (`cross-cutting`) is the most visible difference between rules, and `Cross Cutting` reads as a proper category name instead of a tag ID — meaningfully better than `Cross-cutting` or `Cross-Cutting`.
+- The same rule applied to `Uncategorized` is a no-op (single-word, first char already upper), so a single uniform path covers every area including the sentinel — no special-case branch.
+- Single-word acronyms (`api`, `ui`, `cli`) still mangle to `Api`, `Ui`, `Cli`. Codev's set has none today; if a downstream repo surfaces real acronym pain, the helper signature stays single-string-in, single-string-out, so adding a `codev.areaDisplayNames: Record<string, string>` config override on top is a clean non-breaking extension.
+- Framework-neutrality: this is a purely structural rule (separator handling + capitalize first letter). No hardcoded list of "known acronyms" — that would privilege specific label values inside framework code and conflict with the principle that teams using codev decide their own label semantics.
+
+**Helper location**: exported from `packages/core/src/area-grouping.ts`. Sits next to `groupByArea` — same concern, no vscode dep, reusable by future consumers (e.g. dashboard equivalent of these views) without a second migration. The subpath `@cluesmith/codev-core/area-grouping` is already exported, so no `packages/core/package.json` change.
 
 ## Files to Change
 
 - `packages/core/src/area-grouping.ts` — add `export function formatAreaForDisplay(area: string): string`. Two lines plus a brief JSDoc explaining the "wire stays raw; this is display-only" contract.
 - `packages/vscode/src/views/area-group-tree-item.ts:23` — wrap `areaName` in the call site: `super(\`${formatAreaForDisplay(areaName)} (${count})\`, collapsibleState)`. Add the import at top.
-- `packages/vscode/src/test/area-grouping.test.ts` — append a `suite('formatAreaForDisplay', ...)` block covering: lowercase area → capitalized first char; `'Uncategorized'` → unchanged; hyphenated (`'cross-cutting'` → `'Cross-cutting'`); empty string → empty string (defensive — never expected, but cheap to lock).
+- `packages/vscode/src/test/area-grouping.test.ts` — append a `suite('formatAreaForDisplay', ...)` block covering: lowercase single-word area → capitalized first char; hyphenated `'cross-cutting'` → `'Cross Cutting'`; underscored `'front_end'` → `'Front End'`; mixed/multi-word; `'Uncategorized'` → unchanged; empty string → empty string (defensive — never expected, but cheap to lock).
 
 **Not changed** (per issue scope):
 - `packages/core/src/constants.ts` — `UNCATEGORIZED_AREA` literal stays.
@@ -43,10 +62,11 @@ Apply plain sentence-case (`name.charAt(0).toUpperCase() + name.slice(1)`) to th
 
 **Alternatives rejected**:
 
-- **Per-repo `codev.areaDisplayNames` setting (issue's option 2)**: would solve the acronym problem cleanly, but costs a settings entry + config-read plumbing for a problem codev's own area set doesn't have. Defer until a real repo surfaces the pain.
-- **Hardcoded acronym dictionary inside codev** (e.g. `const ACRONYMS = { vscode: 'VSCode' }`): privileges specific label values inside framework code, conflicting with the principle that teams using codev decide their own labeling semantics.
-- **Title-case (capitalize every word)**: gains nothing for codev's single-word areas (`tower`, `porch`, etc.) and complicates `cross-cutting` → `Cross-Cutting` vs the issue's `Cross-cutting` expectation. Sentence-case matches what `Uncategorized` looks like.
-- **Inline the helper at the call site (skip core export)**: only one caller today (`AreaGroupTreeItem`), so inlining is arguably YAGNI in the other direction. Exporting from core costs one extra file modification but pays for itself the first time another consumer (dashboard, CLI status output) needs the same display rule. Two callers in the same package would already justify the helper; a future cross-package consumer is plausible enough that I'd rather front-load the small abstraction than copy-paste later.
+- **Plain sentence-case** (`name.charAt(0).toUpperCase() + name.slice(1)`): renders `cross-cutting` as `Cross-cutting`, which reads as a tag ID rather than a proper category label. Title-case + separator-to-space gives `Cross Cutting`, which sits visually next to `Uncategorized` as a peer.
+- **Per-repo `codev.areaDisplayNames` setting (issue's option 2)**: would solve single-word-acronym mangling cleanly, but costs a settings entry + config-read plumbing for a problem codev's own area set doesn't have. The chosen helper's signature (single string in, single string out) keeps this a clean non-breaking follow-up: a config-lookup wrapper layered on top, falling back to the structural rule for unconfigured areas.
+- **Hardcoded acronym dictionary inside codev** (e.g. `const ACRONYMS = { vscode: 'VSCode', api: 'API' }`): privileges specific label values inside framework code, conflicting with the principle that teams using codev decide their own labeling semantics. A user-supplied config override is the framework-neutral way to opt in.
+- **Length-based or vowel-pattern acronym heuristic** (e.g. uppercase if ≤3 chars, or no vowels): every variant has false positives in codev's own set — `web → WEB`, `app → APP`, `core → CORE`, `docs → DOCS`. No clean general rule exists.
+- **Inline the helper at the call site (skip core export)**: only one caller today (`AreaGroupTreeItem`), so inlining is arguably YAGNI in the other direction. Exporting from core costs one extra file modification but pays for itself the first time another consumer (dashboard, CLI status output) needs the same display rule. A future cross-package consumer is plausible enough that I'd rather front-load the small abstraction than copy-paste later.
 
 ## Test Plan
 
@@ -56,7 +76,8 @@ Append a `suite('formatAreaForDisplay', ...)` to `packages/vscode/src/test/area-
 
 - `formatAreaForDisplay('vscode')` → `'Vscode'`
 - `formatAreaForDisplay('tower')` → `'Tower'`
-- `formatAreaForDisplay('cross-cutting')` → `'Cross-cutting'`
+- `formatAreaForDisplay('cross-cutting')` → `'Cross Cutting'`
+- `formatAreaForDisplay('front_end')` → `'Front End'`
 - `formatAreaForDisplay('Uncategorized')` → `'Uncategorized'` (no-op on the fallback sentinel — the single uniform rule covers it)
 - `formatAreaForDisplay('')` → `''` (defensive — never expected, but cheap to lock the contract)
 
@@ -65,8 +86,8 @@ Append a `suite('formatAreaForDisplay', ...)` to `packages/vscode/src/test/area-
 - Run `afx dev pir-885` to launch the worktree's VSCode extension dev host.
 - Open the Codev sidebar. Both **Backlog** and **Builders** trees should now show:
   - `Vscode (N)`, `Tower (N)`, `Porch (N)` — capitalized first letter, lowercase rest.
-  - `Cross-cutting (N)` if there are cross-cutting items.
-  - `Uncategorized (N)` last — unchanged in appearance (was already PascalCase).
+  - `Cross Cutting (N)` if there are cross-cutting items (hyphen replaced with space, each word capitalized).
+  - `Uncategorized (N)` last — unchanged in appearance (was already PascalCase, rule is a no-op).
 - Expand/collapse a group; reload the extension. The expansion state should persist (verifies `id` stability).
 - Right-click a group header → context menu should still work (verifies `contextValue` stability).
 - Right-click a builder / backlog row inside a group → existing per-row commands still work (verifies the tree-item shape downstream of the group is unchanged).
