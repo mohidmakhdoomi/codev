@@ -173,11 +173,11 @@ export interface OverviewBuilder {
    */
   spawnedByArchitect: string | null;
   /**
-   * Single `area/*` value for this builder's issue (Codev convention: one
-   * `area/` per issue; `area/cross-cutting` is the multi-area marker).
-   * `'Uncategorized'` when the builder has no issue or the issue has no
-   * `area/*` labels. Required-with-default — never `undefined`. Consumed
-   * by the builders-tree grouping in #818 and the equivalent dashboard view.
+   * Single `area/*` value for this builder's issue, projected via
+   * `parseArea` (first-alphabetical wins; `'Uncategorized'` when the
+   * builder has no issue or the issue has no `area/*` labels).
+   * Required-with-default — never `undefined`. Consumed by the
+   * builders-tree grouping in #818 and the equivalent dashboard view.
    */
   area: string;
 }
@@ -199,11 +199,10 @@ export interface OverviewBacklogItem {
   type: string;
   priority: string;
   /**
-   * Single `area/*` value for this issue (Codev convention: one `area/`
-   * per issue; `area/cross-cutting` is the multi-area marker).
-   * `'Uncategorized'` when the issue has no `area/*` labels.
-   * Required-with-default — never `undefined`. Consumed by the backlog
-   * grouping in #811 and the equivalent vscode view.
+   * Single `area/*` value for this issue, projected via `parseArea`
+   * (first-alphabetical wins; `'Uncategorized'` when the issue has no
+   * `area/*` labels). Required-with-default — never `undefined`. Consumed
+   * by the backlog grouping in #811 and the equivalent vscode view.
    */
   area: string;
   hasSpec: boolean;

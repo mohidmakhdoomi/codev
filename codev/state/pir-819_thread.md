@@ -56,3 +56,16 @@ Plan header updated with a revision note explaining the change.
 Re-verification: build ✓, github tests (67 pass, +1) ✓, vscode check-types ✓. Net diff vs original revised design: ~30 LOC smaller (deleted helper + simpler test cases offset the unchanged parser body).
 
 Still at `dev-approval`.
+
+## Implement phase — cross-cutting privilege removed (2026-05-27)
+
+User flagged that the parser still baked in a semantic convention about a specific label name (`if (areas.includes('cross-cutting')) return 'cross-cutting'`). Stripped: parser is now policy-free about which `area/*` value any team uses. First alphabetical wins; `'Uncategorized'` fallback. Codev framework code shouldn't impose its own conventions on teams using Codev — they pick their own labeling semantics.
+
+Changes:
+- Removed the `cross-cutting` privilege line from `parseArea`.
+- Dropped two `cross-cutting`-specific test cases; added one explicit no-privilege regression-guard that uses `area/cross-cutting` as fixture data alongside other areas and asserts first-alphabetical wins regardless.
+- Stripped docstring references to `cross-cutting` from `parseArea`, `BacklogItem.area`, `BuilderOverview.area` (server-internal), and `OverviewBacklogItem.area` / `OverviewBuilder.area` (wire-contract). Docstrings now only describe the mechanical behavior ("first-alphabetical wins; `'Uncategorized'` when no `area/*` labels").
+
+Re-verification: build ✓, github tests (66 pass, net −1 from previous since two cross-cutting tests collapsed into one no-privilege guard) ✓.
+
+Still at `dev-approval`.

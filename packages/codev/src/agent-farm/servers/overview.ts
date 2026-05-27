@@ -82,14 +82,13 @@ export interface BuilderOverview {
    */
   spawnedByArchitect: string | null;
   /**
-   * Single `area/*` value for this builder's issue (Codev convention: one
-   * `area/` per issue; `area/cross-cutting` is the multi-area marker — see
-   * `parseArea`). `'Uncategorized'` when the builder has no issue or the
-   * issue has no `area/*` labels. Populated by `getOverview` via the
-   * issue-cache join after `discoverBuilders` returns — `discoverBuilders`
-   * itself sets it to `'Uncategorized'` since it has no access to the issue
-   * payload. Consumed by the builders-tree grouping in #818 and the
-   * equivalent dashboard view.
+   * Single `area/*` value for this builder's issue, projected via
+   * `parseArea` (first-alphabetical wins; `'Uncategorized'` when the
+   * builder has no issue or the issue has no `area/*` labels). Populated
+   * by `getOverview` via the issue-cache join after `discoverBuilders`
+   * returns — `discoverBuilders` itself sets it to `'Uncategorized'` since
+   * it has no access to the issue payload. Consumed by the builders-tree
+   * grouping in #818 and the equivalent dashboard view.
    */
   area: string;
 }
@@ -111,10 +110,10 @@ export interface BacklogItem {
   type: string;
   priority: string;
   /**
-   * Single `area/*` value for this issue (Codev convention: one `area/`
-   * per issue; `area/cross-cutting` is the multi-area marker — see
-   * `parseArea`). `'Uncategorized'` when the issue has no `area/*` labels.
-   * Consumed by the backlog grouping in #811 and the equivalent vscode view.
+   * Single `area/*` value for this issue, projected via `parseArea`
+   * (first-alphabetical wins; `'Uncategorized'` when the issue has no
+   * `area/*` labels). Consumed by the backlog grouping in #811 and the
+   * equivalent vscode view.
    */
   area: string;
   hasSpec: boolean;

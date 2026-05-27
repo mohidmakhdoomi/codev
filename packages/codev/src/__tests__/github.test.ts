@@ -322,7 +322,7 @@ describe('parseArea', () => {
     ])).toBe('core');
   });
 
-  it('picks first alphabetical for malformed multi-area input lacking cross-cutting', () => {
+  it('picks first alphabetical for multi-area input', () => {
     expect(parseArea([
       { name: 'area/tower' },
       { name: 'area/core' },
@@ -330,16 +330,14 @@ describe('parseArea', () => {
     ])).toBe('core');
   });
 
-  it('returns "cross-cutting" when present, regardless of other area labels', () => {
+  it('does not privilege any specific area name (alphabetical wins; no special-cased label)', () => {
+    // Regression guard: the parser must remain policy-free about what any
+    // given area name means. Teams using Codev decide their own conventions.
     expect(parseArea([
       { name: 'area/auth' },
       { name: 'area/cross-cutting' },
       { name: 'area/tower' },
-    ])).toBe('cross-cutting');
-  });
-
-  it('returns "cross-cutting" when it is the only area label', () => {
-    expect(parseArea([{ name: 'area/cross-cutting' }])).toBe('cross-cutting');
+    ])).toBe('auth');
   });
 
   it('deduplicates repeated area/* labels before picking', () => {

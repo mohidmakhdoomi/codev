@@ -507,17 +507,13 @@ export function parseLabelDefaults(
 }
 
 /**
- * Extract the single `area/*` value for an issue (Codev convention: one
- * `area/` label per issue; `area/cross-cutting` is the explicit multi-area
- * marker — see [[feedback-single-area-per-issue]]). Symmetric with
+ * Extract the single `area/*` value for an issue. Symmetric with
  * `parseLabelDefaults`'s single-string `type` / `priority` returns.
  *
  * Resolution order:
- *  - `'cross-cutting'` if `area/cross-cutting` is present (always wins,
- *    regardless of other `area/*` labels — those are convention violations
- *    and `cross-cutting` is the canonical multi-area bucket)
- *  - the first alphabetical area otherwise (graceful handling of malformed
- *    multi-area issues that lack `cross-cutting`)
+ *  - the first alphabetical `area/*` value (no label name is privileged —
+ *    the parser is policy-free about what any particular area means; teams
+ *    using Codev decide their own labeling conventions)
  *  - `'Uncategorized'` when no `area/*` labels are present
  *
  * Mirrors `parseLabelDefaults`'s defensive non-array coercion: Gitea/Forgejo
@@ -535,6 +531,5 @@ export function parseArea(
       .filter(n => n.startsWith('area/'))
       .map(n => n.slice(5)),
   )].sort();
-  if (areas.includes('cross-cutting')) return 'cross-cutting';
   return areas[0] ?? 'Uncategorized';
 }
