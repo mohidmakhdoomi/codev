@@ -130,7 +130,7 @@ export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     if (element) {
       return [];
     }
-    return this.groupHeaders();
+    return this.rootChildren();
   }
 
   /**
@@ -143,12 +143,21 @@ export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     void this.workspaceState.update(EXPANSION_STATE_KEY, map);
   }
 
-  private groupHeaders(): vscode.TreeItem[] {
+  private rootChildren(): vscode.TreeItem[] {
     const data = this.cache.getData();
     if (!data) { return []; }
 
     const items = this.orderedSpawnable(data);
     const groups = groupBacklogByArea(items, this.readPriorityAreas());
+
+    // Degenerate case: a repo that doesn't use `area/*` labels yields a
+    // single `Uncategorized` group containing every issue. Rendering its
+    // header would add no information — collapse to flat rows so the
+    // backlog looks the same as it did before grouping shipped.
+    if (groups.length === 1 && groups[0].area === UNCATEGORIZED_AREA) {
+      return groups[0].items.map(item => this.makeRow(item, data));
+    }
+
     const expansion = this.readExpansionState();
     return groups.map(g => {
       const expanded = expansion[g.area] ?? true;
@@ -168,25 +177,27 @@ export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem>
       .find(g => g.area === areaName);
     if (!group) { return []; }
 
-    const me = data.currentUser?.toLowerCase();
-    const isMine = (item: OverviewBacklogItem) =>
-      !!me && !!item.assignees?.some(a => a.toLowerCase() === me);
+    return group.items.map(item => this.makeRow(item, data));
+  }
 
-    return group.items.map(item => {
-      const assigned = isMine(item);
-      const author = item.author ? ` @${item.author}` : '';
-      const ti = new BacklogTreeItem(item.id, item.url, `#${item.id} ${item.title}${author}`);
-      ti.tooltip = item.url;
-      ti.contextValue = 'backlog-item';
-      ti.iconPath = new vscode.ThemeIcon(assigned ? 'account' : 'issues');
-      if (assigned) { ti.description = 'assigned to you'; }
-      ti.command = {
-        command: 'codev.viewBacklogIssue',
-        title: 'View Issue',
-        arguments: [item.id],
-      };
-      return ti;
-    });
+  private makeRow(
+    item: OverviewBacklogItem,
+    data: NonNullable<ReturnType<OverviewCache['getData']>>,
+  ): BacklogTreeItem {
+    const me = data.currentUser?.toLowerCase();
+    const assigned = !!me && !!item.assignees?.some(a => a.toLowerCase() === me);
+    const author = item.author ? ` @${item.author}` : '';
+    const ti = new BacklogTreeItem(item.id, item.url, `#${item.id} ${item.title}${author}`);
+    ti.tooltip = item.url;
+    ti.contextValue = 'backlog-item';
+    ti.iconPath = new vscode.ThemeIcon(assigned ? 'account' : 'issues');
+    if (assigned) { ti.description = 'assigned to you'; }
+    ti.command = {
+      command: 'codev.viewBacklogIssue',
+      title: 'View Issue',
+      arguments: [item.id],
+    };
+    return ti;
   }
 
   /**
