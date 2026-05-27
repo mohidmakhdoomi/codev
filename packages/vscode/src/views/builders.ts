@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { existsSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { OverviewBuilder } from '@cluesmith/codev-types';
 import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
 import type { OverviewCache } from './overview-data.js';
@@ -106,14 +108,17 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
       // toggles the file list.
       item.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
       item.tooltip = `Protocol: ${b.protocol} | Mode: ${b.mode} | Progress: ${b.progress}%`;
-      // contextValue encodes the row's state-family + protocol so menus can
-      // scope by either (Approve Gate inline only on blocked-builder-*;
-      // everything else applies to all three families).
-      item.contextValue = isBlocked
-        ? `blocked-builder-${b.protocol || 'unknown'}`
-        : isIdle
-        ? `awaiting-builder-${b.protocol || 'unknown'}`
-        : `builder-${b.protocol || 'unknown'}`;
+      // contextValue encodes the row's state-family + protocol so menus
+      // can scope by either (Approve Gate inline only on
+      // blocked-builder-*; everything else applies to all three
+      // families). The optional `-review` suffix signals that the
+      // builder has committed a review file on disk — the
+      // `codev.viewReviewFile` menu entry's `when` clause keys off it so
+      // PIR rows hide the entry until the review phase produces the file.
+      const family = isBlocked ? 'blocked-builder' : isIdle ? 'awaiting-builder' : 'builder';
+      const protocol = b.protocol || 'unknown';
+      const reviewSuffix = builderHasReviewFile(b) ? '-review' : '';
+      item.contextValue = `${family}-${protocol}${reviewSuffix}`;
       // Three icons for three states: bell (gate), comment-discussion
       // (silent, likely waiting on a question), circle-filled (live/active).
       item.iconPath = isBlocked
@@ -200,6 +205,35 @@ function materialiseNode(
     return placeholder(node.name);
   }
   return new BuilderFileTreeItem(builderId, worktreePath, baseRef, node.file.change, node.file.plan);
+}
+
+/**
+ * Sync-check whether a builder has committed a review file on disk.
+ *
+ * Mirrors the prefix filter in `commands/view-artifact.ts`: a file
+ * counts if it lives in `<worktree>/codev/reviews/`, ends in `.md`, and
+ * either starts with `<id>-` or is exactly `<id>.md`. Used by the
+ * Builders tree row builder to suffix `contextValue` with `-review` so
+ * PIR rows can hide `codev.viewReviewFile` until the review phase emits
+ * the file (non-PIR protocols always show the entry — they fall back to
+ * the missing-file toast in `view-artifact.ts`).
+ *
+ * One `readdirSync` per builder per render — the reviews dir is small,
+ * local, and only inspected when overview data changes. Cheaper than
+ * the diff-cache work the row triggers on expansion.
+ */
+function builderHasReviewFile(b: OverviewBuilder): boolean {
+  if (!b.worktreePath) { return false; }
+  const dir = resolve(b.worktreePath, 'codev/reviews');
+  if (!existsSync(dir)) { return false; }
+  const prefix = `${b.id}-`;
+  try {
+    return readdirSync(dir).some(
+      f => f.endsWith('.md') && (f.startsWith(prefix) || f === `${b.id}.md`),
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** Non-clickable informational leaf (no worktree / no changes / error). */
