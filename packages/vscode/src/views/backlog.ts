@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 import type { OverviewBacklogItem } from '@cluesmith/codev-types';
 import { UNCATEGORIZED_AREA } from '@cluesmith/codev-core/constants';
+import { groupByArea } from '@cluesmith/codev-core/area-grouping';
 import type { OverviewCache } from './overview-data.js';
 import { BacklogGroupTreeItem, BacklogTreeItem } from './backlog-tree-item.js';
-
-const EXPANSION_STATE_KEY = 'codev.backlogGroupExpansion';
+import { AreaGroupExpansionStore } from './area-group-expansion.js';
 
 /**
  * Backlog rows the user can act on — exclude issues that already have an
@@ -14,49 +14,6 @@ const EXPANSION_STATE_KEY = 'codev.backlogGroupExpansion';
  */
 export function spawnableBacklog(items: OverviewBacklogItem[]): OverviewBacklogItem[] {
   return items.filter(i => !i.hasBuilder);
-}
-
-/**
- * Group backlog items by their resolved `area` (already projected on the
- * server via `parseArea`; see #819). Returned groups are ordered:
- *
- *   1. Alphabetical specific areas
- *   2. `Uncategorized` (last)
- *
- * Within-group order preserves the input order — the caller has already
- * applied any "mine-first" or sort policy. Empty groups are omitted
- * (no `<area> (0)` headers).
- *
- * Pure function — no VSCode dependency, unit-testable.
- */
-export function groupBacklogByArea(
-  items: OverviewBacklogItem[],
-): Array<{ area: string; items: OverviewBacklogItem[] }> {
-  const buckets = new Map<string, OverviewBacklogItem[]>();
-  for (const item of items) {
-    const bucket = buckets.get(item.area);
-    if (bucket) {
-      bucket.push(item);
-    } else {
-      buckets.set(item.area, [item]);
-    }
-  }
-
-  const result: Array<{ area: string; items: OverviewBacklogItem[] }> = [];
-  const uncategorized = buckets.get(UNCATEGORIZED_AREA);
-
-  const specifics = [...buckets.keys()]
-    .filter(a => a !== UNCATEGORIZED_AREA)
-    .sort();
-  for (const area of specifics) {
-    result.push({ area, items: buckets.get(area)! });
-  }
-
-  if (uncategorized) {
-    result.push({ area: UNCATEGORIZED_AREA, items: uncategorized });
-  }
-
-  return result;
 }
 
 /**
@@ -78,11 +35,13 @@ export function groupBacklogByArea(
 export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.changeEmitter.event;
+  readonly expansion: AreaGroupExpansionStore;
 
   constructor(
     private readonly cache: OverviewCache,
-    private readonly workspaceState: vscode.Memento,
+    workspaceState: vscode.Memento,
   ) {
+    this.expansion = new AreaGroupExpansionStore(workspaceState, 'codev.backlogGroupExpansion');
     cache.onDidChange(() => this.changeEmitter.fire());
   }
 
@@ -100,22 +59,12 @@ export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     return this.rootChildren();
   }
 
-  /**
-   * Persist a user's expand/collapse choice for an area group. Called
-   * from `extension.ts` via `backlogView.onDidExpand/CollapseElement`.
-   */
-  setGroupExpanded(areaName: string, expanded: boolean): void {
-    const map = this.readExpansionState();
-    map[areaName] = expanded;
-    this.workspaceState.update(EXPANSION_STATE_KEY, map);
-  }
-
   private rootChildren(): vscode.TreeItem[] {
     const data = this.cache.getData();
     if (!data) { return []; }
 
     const items = this.orderedSpawnable(data);
-    const groups = groupBacklogByArea(items);
+    const groups = groupByArea(items, i => i.area);
 
     // Degenerate case: a repo that doesn't use `area/*` labels yields a
     // single `Uncategorized` group containing every issue. Rendering its
@@ -125,7 +74,7 @@ export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem>
       return groups[0].items.map(item => this.makeRow(item, data));
     }
 
-    const expansion = this.readExpansionState();
+    const expansion = this.expansion.read();
     return groups.map(g => {
       const expanded = expansion[g.area] ?? true;
       const state = expanded
@@ -140,7 +89,7 @@ export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     if (!data) { return []; }
 
     const items = this.orderedSpawnable(data);
-    const group = groupBacklogByArea(items).find(g => g.area === areaName);
+    const group = groupByArea(items, i => i.area).find(g => g.area === areaName);
     if (!group) { return []; }
 
     return group.items.map(item => this.makeRow(item, data));
@@ -180,9 +129,5 @@ export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     const mine = items.filter(isMine);
     const rest = items.filter(item => !isMine(item));
     return [...mine, ...rest];
-  }
-
-  private readExpansionState(): Record<string, boolean> {
-    return this.workspaceState.get<Record<string, boolean>>(EXPANSION_STATE_KEY, {});
   }
 }

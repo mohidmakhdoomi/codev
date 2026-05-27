@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { AreaGroupTreeItem } from './area-group-tree-item.js';
 
 /**
  * TreeItem subclass that carries a backlog issue's id and URL as typed fields.
@@ -24,23 +25,13 @@ export class BacklogTreeItem extends vscode.TreeItem {
 }
 
 /**
- * TreeItem subclass for an area group header in the backlog tree.
- *
- * Carries the canonical area name (e.g. `'vscode'`, `'cross-cutting'`,
- * `'Uncategorized'`) so the expand/collapse persistence handler can key
- * the workspaceState map by area name regardless of the rendered label
- * (which includes the count suffix). `id` is set from the area name so
- * VSCode reuses the same TreeItem identity across refreshes — letting
- * the user's collapse choice survive `OverviewCache` ticks.
+ * Area group header in the Backlog tree. Thin subclass of
+ * `AreaGroupTreeItem` so the per-view expand/collapse handler in
+ * `extension.ts` can scope to backlog groups via `instanceof`
+ * (distinct from `BuilderGroupTreeItem`, which uses the same base).
  */
-export class BacklogGroupTreeItem extends vscode.TreeItem {
-  constructor(
-    public readonly areaName: string,
-    count: number,
-    collapsibleState: vscode.TreeItemCollapsibleState,
-  ) {
-    super(`${areaName} (${count})`, collapsibleState);
-    this.id = `backlog-group:${areaName}`;
-    this.contextValue = 'backlog-group';
+export class BacklogGroupTreeItem extends AreaGroupTreeItem {
+  constructor(areaName: string, count: number, collapsibleState: vscode.TreeItemCollapsibleState) {
+    super(areaName, 'backlog', count, collapsibleState);
   }
 }
