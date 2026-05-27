@@ -41,4 +41,16 @@ v3.1.4 PR #874 wired BUGFIX's `pr_ready_for_human=true` to the `advanceProtocolP
 - TypeScript: clean
 
 ## Status
-Code complete. About to commit, push, open PR, run CMAP.
+Code complete. PR #888 opened, CMAP-3 verdicts in:
+- codex: APPROVE / HIGH (explicit)
+- claude: APPROVE / HIGH (explicit)
+- gemini: positive PR_SUMMARY endorsement (verdict line truncated in capture; stats db confirms exit 0, no concerns flagged)
+
+Codex flagged one minor nit — stale "BUGFIX has no gate" comment near `approve()` in index.ts. Addressed in commit de92d794.
+
+The fix is end-to-end verified in this very builder: `porch done` post-CMAP requested the `pr` gate and set `pr_ready_for_human: true` in status.yaml. The signal fires at the correct moment now. Architect notified, awaiting `porch approve bugfix-887 pr`.
+
+## After gate approval (planned)
+1. Merge PR #888 via `gh pr merge 888 --merge`
+2. Run `porch done bugfix-887` → advances pr → verified
+3. Notify architect "PR #888 merged. Ready for cleanup."
