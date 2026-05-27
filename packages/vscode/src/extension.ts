@@ -25,6 +25,7 @@ import { activateReviewDecorations } from './review-decorations.js';
 import { activateReviewComments } from './comments/plan-review.js';
 import { BuilderSpawnHandler } from './builder-spawn-handler.js';
 import { BuilderTerminalLinkProvider } from './terminal-link-provider.js';
+import { computeBuildersToClose, roleIdsFromBuilders } from './prune-builder-terminals.js';
 import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
 import { BuildersProvider } from './views/builders.js';
 import { PullRequestsProvider } from './views/pull-requests.js';
@@ -196,41 +197,27 @@ export async function activate(context: vscode.ExtensionContext) {
 		buildersView.badge = { value: total, tooltip };
 	};
 
-	// Close builder/dev terminal tabs when their builder disappears from Tower
-	// state. Covers cleanup triggered from the VSCode "Cleanup Builder" command,
-	// `afx cleanup` on the CLI, or any other removal path — otherwise Tower
-	// kills the PTY but the VSCode tab lingers as a dead "Process exited" entry.
-	// Uses a present→absent diff so freshly-spawned builders whose first state
-	// refresh hasn't landed aren't pre-emptively closed; the inFlight guard
-	// drops overlapping state fetches so a stale response can't overwrite a
-	// fresher prevBuilderIds.
-	let prevBuilderIds: Set<string> | null = null;
-	let pruneInFlight = false;
-	const pruneClosedBuilderTerminals = async () => {
-		if (pruneInFlight) { return; }
-		if (connectionManager?.getState() !== 'connected') { return; }
-		const client = connectionManager.getClient();
-		const workspacePath = connectionManager.getWorkspacePath();
-		if (!client || !workspacePath) { return; }
-		pruneInFlight = true;
-		try {
-			const state = await client.getWorkspaceState(workspacePath);
-			if (!state?.builders) { return; }
-			const currIds = new Set(state.builders.map(b => b.id));
-			if (prevBuilderIds !== null) {
-				for (const prev of prevBuilderIds) {
-					if (!currIds.has(prev)) {
-						terminalManager?.closeBuilderTerminal(prev);
-					}
-				}
-			}
-			prevBuilderIds = currIds;
-		} catch {
-			// Transient state-fetch failures must not drop prevBuilderIds —
-			// next successful tick will resync.
-		} finally {
-			pruneInFlight = false;
+	// Close builder/dev terminal tabs when their builder disappears from the
+	// overview data. Covers cleanup triggered from the VSCode "Cleanup Builder"
+	// command, `afx cleanup` on the CLI, or any other removal path — otherwise
+	// Tower kills the PTY but the VSCode tab lingers as a dead "Process exited"
+	// entry. Uses a present→absent diff so freshly-spawned builders whose first
+	// state refresh hasn't landed aren't pre-emptively closed.
+	//
+	// Reads from `overviewCache.getData()` — i.e. `/api/overview.builders`,
+	// which is sourced from `discoverBuilders`' `readdirSync(.builders/)` scan
+	// (see #883). The previous `getWorkspaceState` source was rebuilt from
+	// SQLite `terminal_sessions` and got pinned open by surviving shellper
+	// processes after `afx cleanup`, so the diff never saw the absence.
+	let prevRoleIds: Set<string> | null = null;
+	const pruneClosedBuilderTerminals = (): void => {
+		const data = overviewCache.getData();
+		if (!data?.builders) { return; }
+		const currRoleIds = roleIdsFromBuilders(data.builders);
+		for (const roleId of computeBuildersToClose(prevRoleIds, currRoleIds)) {
+			terminalManager?.closeBuilderTerminal(roleId);
 		}
+		prevRoleIds = currRoleIds;
 	};
 
 	// Sidebar TreeViews (overviewCache created above, before TerminalManager)
