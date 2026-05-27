@@ -27,6 +27,7 @@ import { BuilderSpawnHandler } from './builder-spawn-handler.js';
 import { BuilderTerminalLinkProvider } from './terminal-link-provider.js';
 import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
 import { BuildersProvider } from './views/builders.js';
+import { BuilderGroupTreeItem } from './views/builder-tree-item.js';
 import { PullRequestsProvider } from './views/pull-requests.js';
 import { BacklogProvider, spawnableBacklog } from './views/backlog.js';
 import { RecentlyClosedProvider } from './views/recently-closed.js';
@@ -38,6 +39,7 @@ import { BuilderFileTreeItem } from './views/builder-file-tree-item.js';
 import { BuilderDiffCache } from './views/builder-diff-cache.js';
 import { BuilderFileDecorationProvider } from './views/builder-file-decoration.js';
 import { BacklogGroupTreeItem, BacklogTreeItem } from './views/backlog-tree-item.js';
+import { wireAreaGroupExpansion } from './views/area-group-expansion.js';
 
 let connectionManager: ConnectionManager | null = null;
 let terminalManager: TerminalManager | null = null;
@@ -252,23 +254,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// List views use createTreeView so their title can carry a live item
 	// count; the rest stay on registerTreeDataProvider.
-	const buildersProvider = new BuildersProvider(overviewCache, builderDiffCache);
+	const buildersProvider = new BuildersProvider(overviewCache, builderDiffCache, context.workspaceState);
 	buildersView = vscode.window.createTreeView('codev.builders', { treeDataProvider: buildersProvider });
+	context.subscriptions.push(...wireAreaGroupExpansion(
+		buildersView, BuilderGroupTreeItem, buildersProvider.expansion,
+	));
 	pullRequestsView = vscode.window.createTreeView('codev.pullRequests', { treeDataProvider: new PullRequestsProvider(overviewCache) });
 	const backlogProvider = new BacklogProvider(overviewCache, context.workspaceState);
 	backlogView = vscode.window.createTreeView('codev.backlog', { treeDataProvider: backlogProvider });
-	context.subscriptions.push(
-		backlogView.onDidExpandElement((e) => {
-			if (e.element instanceof BacklogGroupTreeItem) {
-				backlogProvider.setGroupExpanded(e.element.areaName, true);
-			}
-		}),
-		backlogView.onDidCollapseElement((e) => {
-			if (e.element instanceof BacklogGroupTreeItem) {
-				backlogProvider.setGroupExpanded(e.element.areaName, false);
-			}
-		}),
-	);
+	context.subscriptions.push(...wireAreaGroupExpansion(
+		backlogView, BacklogGroupTreeItem, backlogProvider.expansion,
+	));
 	recentlyClosedView = vscode.window.createTreeView('codev.recentlyClosed', { treeDataProvider: new RecentlyClosedProvider(overviewCache) });
 	// Seed the badge so it's correct immediately if overview data is already
 	// cached, instead of waiting for the next onDidChange tick.

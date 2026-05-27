@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { AreaGroupTreeItem } from './area-group-tree-item.js';
 
 /**
  * TreeItem subclass that carries a builder id as a typed field.
@@ -19,5 +20,17 @@ export class BuilderTreeItem extends vscode.TreeItem {
     label: string,
   ) {
     super(label);
+  }
+}
+
+/**
+ * Area group header in the Builders tree. Thin subclass of
+ * `AreaGroupTreeItem` so the per-view expand/collapse handler in
+ * `extension.ts` can scope to builder groups via `instanceof`
+ * (distinct from `BacklogGroupTreeItem`, which uses the same base).
+ */
+export class BuilderGroupTreeItem extends AreaGroupTreeItem {
+  constructor(areaName: string, count: number, collapsibleState: vscode.TreeItemCollapsibleState) {
+    super(areaName, 'builder', count, collapsibleState);
   }
 }

@@ -1,12 +1,15 @@
 import * as vscode from 'vscode';
 import type { OverviewBuilder } from '@cluesmith/codev-types';
 import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
+import { UNCATEGORIZED_AREA } from '@cluesmith/codev-core/constants';
+import { groupByArea } from '@cluesmith/codev-core/area-grouping';
 import type { OverviewCache } from './overview-data.js';
-import { BuilderTreeItem } from './builder-tree-item.js';
+import { BuilderGroupTreeItem, BuilderTreeItem } from './builder-tree-item.js';
 import { BuilderFileTreeItem } from './builder-file-tree-item.js';
 import { BuilderFolderTreeItem } from './builder-folder-tree-item.js';
 import { buildFilePathTree, type FilePathNode } from './file-path-tree.js';
 import type { BuilderDiffCache } from './builder-diff-cache.js';
+import { AreaGroupExpansionStore } from './area-group-expansion.js';
 
 /**
  * Order builders for the Builders tree: three buckets, top-down.
@@ -29,20 +32,37 @@ export function orderForDisplay(builders: OverviewBuilder[], now: number = Date.
 }
 
 /**
- * Unified Builders view. Blocked builders sort to the top with a bell icon
+ * Unified Builders view. Builders are grouped by their resolved `area`
+ * (alphabetical specific areas first, then `Uncategorized` last), and
+ * within each group blocked builders sort to the top with a bell icon
  * and a wait-time suffix; active builders sit below with a play icon.
- * Replaces the previous split between a Needs Attention tree (blocked only)
- * and a Builders tree (everything) — the duplication caused more noise than
- * the at-a-glance triage was worth.
+ * Replaces the previous split between a Needs Attention tree (blocked
+ * only) and a Builders tree (everything) — the duplication caused more
+ * noise than the at-a-glance triage was worth.
+ *
+ * Group expand/collapse state persists per area name via `workspaceState`
+ * under `codev.buildersGroupExpansion`. Default for an untouched group:
+ * expanded. When the only group present is `Uncategorized` (repo
+ * hasn't adopted `area/*` labels), the header is suppressed and builder
+ * rows render at root — zero visual regression for unlabeled repos.
  */
 export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.changeEmitter.event;
+  readonly expansion: AreaGroupExpansionStore;
+  // Populated each time `rootChildren()` returns groups; consulted by
+  // `getParent` so the accordion's `reveal(builderItem)` can walk the
+  // parent chain in grouping mode. Empty in the single-`Uncategorized`
+  // flatten case (builders are root again), so `getParent` returns
+  // `undefined` and the accordion works unchanged on that branch.
+  private groupParentByBuilderId = new Map<string, BuilderGroupTreeItem>();
 
   constructor(
     private cache: OverviewCache,
     private readonly diffCache: BuilderDiffCache,
+    workspaceState: vscode.Memento,
   ) {
+    this.expansion = new AreaGroupExpansionStore(workspaceState, 'codev.buildersGroupExpansion');
     cache.onDidChange(() => this.changeEmitter.fire());
   }
 
@@ -59,9 +79,14 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     return element;
   }
 
-  // Required for `TreeView.reveal` (used by the accordion). Builder rows are
-  // roots → undefined; file rows are never revealed.
-  getParent(): vscode.TreeItem | undefined {
+  // The accordion's `reveal(builderItem)` needs the parent chain.
+  // Builders nested under a group return their cached group; everything
+  // else (group rows themselves, file/folder rows, builders in the
+  // single-Uncategorized flatten case) is treated as a root by VSCode.
+  getParent(element: vscode.TreeItem): vscode.TreeItem | undefined {
+    if (element instanceof BuilderTreeItem) {
+      return this.groupParentByBuilderId.get(element.builderId);
+    }
     return undefined;
   }
 
@@ -81,59 +106,108 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     if (element instanceof BuilderFileTreeItem) {
       return [];
     }
-    // Root: the builder list.
+    // Group rows expand to their builders.
+    if (element instanceof BuilderGroupTreeItem) {
+      return this.rowsForGroup(element.areaName);
+    }
+    // Root: group headers, or the single-Uncategorized flatten case.
+    return this.rootChildren();
+  }
+
+  private rootChildren(): vscode.TreeItem[] {
+    const data = this.cache.getData();
+    if (!data) {
+      this.groupParentByBuilderId.clear();
+      return [];
+    }
+
+    const now = Date.now();
+    const ordered = orderForDisplay(data.builders, now);
+    const groups = groupByArea(ordered, b => b.area);
+
+    // Degenerate case: a repo that doesn't use `area/*` labels yields a
+    // single `Uncategorized` group containing every builder. Rendering
+    // its header would add no information — collapse to flat rows so
+    // the tree looks the same as it did before grouping shipped.
+    if (groups.length === 1 && groups[0].area === UNCATEGORIZED_AREA) {
+      this.groupParentByBuilderId.clear();
+      return groups[0].items.map(b => this.makeBuilderRow(b, now));
+    }
+
+    const expansion = this.expansion.read();
+    this.groupParentByBuilderId.clear();
+    return groups.map(g => {
+      const expanded = expansion[g.area] ?? true;
+      const state = expanded
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.Collapsed;
+      const groupItem = new BuilderGroupTreeItem(g.area, g.items.length, state);
+      for (const b of g.items) {
+        this.groupParentByBuilderId.set(b.id, groupItem);
+      }
+      return groupItem;
+    });
+  }
+
+  private rowsForGroup(areaName: string): vscode.TreeItem[] {
     const data = this.cache.getData();
     if (!data) { return []; }
 
     const now = Date.now();
-    return orderForDisplay(data.builders, now).map(b => {
-      const isBlocked = !!b.blocked;
-      const isIdle = !isBlocked && isIdleWaiting(b, now);
-      const waitTime = isBlocked && b.blockedSince ? ` [${timeSince(b.blockedSince)}]` : '';
-      const idleTime = isIdle && b.lastDataAt ? ` [${timeSince(b.lastDataAt)} silent]` : '';
-      const phaseLabel = isBlocked
-        ? `blocked on ${b.blocked}${waitTime}`
-        : isIdle
-        ? `waiting on input${idleTime}`
-        : `[${b.phase}]`;
-      const item = new BuilderTreeItem(b.id, `#${b.issueId ?? b.id} ${b.issueTitle ?? ''} ${phaseLabel}`);
-      // Stable id (not the churning label) so VSCode persists expansion across
-      // the frequent overview-poll refreshes, and so the accordion's
-      // collapseAll+reveal can target this row reliably.
-      item.id = b.id;
-      // Expandable so the second-level changed-files list can hang off it.
-      // The row keeps its open-terminal command (single click); the chevron
-      // toggles the file list.
-      item.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
-      item.tooltip = `Protocol: ${b.protocol} | Mode: ${b.mode} | Progress: ${b.progress}%`;
-      // contextValue encodes the row's state-family + protocol so menus can
-      // scope by either (Approve Gate inline only on blocked-builder-*;
-      // everything else applies to all three families).
-      item.contextValue = isBlocked
-        ? `blocked-builder-${b.protocol || 'unknown'}`
-        : isIdle
-        ? `awaiting-builder-${b.protocol || 'unknown'}`
-        : `builder-${b.protocol || 'unknown'}`;
-      // Three icons for three states: bell (gate), comment-discussion
-      // (silent, likely waiting on a question), circle-filled (live/active).
-      item.iconPath = isBlocked
-        ? new vscode.ThemeIcon('bell', new vscode.ThemeColor('notificationsWarningIcon.foreground'))
-        : isIdle
-        ? new vscode.ThemeIcon('comment-discussion', new vscode.ThemeColor('notificationsInfoIcon.foreground'))
-        : new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('testing.iconPassed'));
-      // The row click runs `codev.openBuilderRow` — a wrapper that opens the
-      // builder terminal AND expands the row (so single-click matches what
-      // most users expect). Pass the item itself so the handler can call
-      // `buildersView.reveal(...)` against this row. Other callers
-      // (terminal-link clicks, etc.) still use `codev.openBuilderById`
-      // directly with just the id and don't trigger expansion.
-      item.command = {
-        command: 'codev.openBuilderRow',
-        title: 'Open Builder Terminal',
-        arguments: [item],
-      };
-      return item;
-    });
+    const ordered = orderForDisplay(data.builders, now);
+    const group = groupByArea(ordered, b => b.area).find(g => g.area === areaName);
+    if (!group) { return []; }
+
+    return group.items.map(b => this.makeBuilderRow(b, now));
+  }
+
+  private makeBuilderRow(b: OverviewBuilder, now: number): BuilderTreeItem {
+    const isBlocked = !!b.blocked;
+    const isIdle = !isBlocked && isIdleWaiting(b, now);
+    const waitTime = isBlocked && b.blockedSince ? ` [${timeSince(b.blockedSince)}]` : '';
+    const idleTime = isIdle && b.lastDataAt ? ` [${timeSince(b.lastDataAt)} silent]` : '';
+    const phaseLabel = isBlocked
+      ? `blocked on ${b.blocked}${waitTime}`
+      : isIdle
+      ? `waiting on input${idleTime}`
+      : `[${b.phase}]`;
+    const item = new BuilderTreeItem(b.id, `#${b.issueId ?? b.id} ${b.issueTitle ?? ''} ${phaseLabel}`);
+    // Stable id (not the churning label) so VSCode persists expansion across
+    // the frequent overview-poll refreshes, and so the accordion's
+    // collapseAll+reveal can target this row reliably.
+    item.id = b.id;
+    // Expandable so the second-level changed-files list can hang off it.
+    // The row keeps its open-terminal command (single click); the chevron
+    // toggles the file list.
+    item.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
+    item.tooltip = `Protocol: ${b.protocol} | Mode: ${b.mode} | Progress: ${b.progress}%`;
+    // contextValue encodes the row's state-family + protocol so menus can
+    // scope by either (Approve Gate inline only on blocked-builder-*;
+    // everything else applies to all three families).
+    item.contextValue = isBlocked
+      ? `blocked-builder-${b.protocol || 'unknown'}`
+      : isIdle
+      ? `awaiting-builder-${b.protocol || 'unknown'}`
+      : `builder-${b.protocol || 'unknown'}`;
+    // Three icons for three states: bell (gate), comment-discussion
+    // (silent, likely waiting on a question), circle-filled (live/active).
+    item.iconPath = isBlocked
+      ? new vscode.ThemeIcon('bell', new vscode.ThemeColor('notificationsWarningIcon.foreground'))
+      : isIdle
+      ? new vscode.ThemeIcon('comment-discussion', new vscode.ThemeColor('notificationsInfoIcon.foreground'))
+      : new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('testing.iconPassed'));
+    // The row click runs `codev.openBuilderRow` — a wrapper that opens the
+    // builder terminal AND expands the row (so single-click matches what
+    // most users expect). Pass the item itself so the handler can call
+    // `buildersView.reveal(...)` against this row. Other callers
+    // (terminal-link clicks, etc.) still use `codev.openBuilderById`
+    // directly with just the id and don't trigger expansion.
+    item.command = {
+      command: 'codev.openBuilderRow',
+      title: 'Open Builder Terminal',
+      arguments: [item],
+    };
+    return item;
   }
 
   /**
