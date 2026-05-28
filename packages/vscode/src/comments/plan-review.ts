@@ -19,6 +19,7 @@
  */
 
 import * as vscode from 'vscode';
+import type { OverviewCache } from '../views/overview-data.js';
 
 /**
  * Matches the canonical inline form. Capture groups:
@@ -30,18 +31,25 @@ import * as vscode from 'vscode';
  */
 const REVIEW_COMMENT_PATTERN = /<!--\s*REVIEW\s*\(@([^)]+)\)\s*:\s*([\s\S]*?)\s*-->/g;
 
-const ELIGIBLE_PATH_REGEX = /\/codev\/(plans|specs)\//;
+const ELIGIBLE_PATH_REGEX = /\/codev\/(plans|specs|reviews)\//;
 
 const CONTROLLER_ID = 'codev-review';
 
 /** Tracks threads we created per document URI so we can refresh on edit. */
 const threadsByDoc = new Map<string, vscode.CommentThread[]>();
 
-export function activateReviewComments(context: vscode.ExtensionContext): void {
+export function activateReviewComments(
+  context: vscode.ExtensionContext,
+  overviewCache: OverviewCache,
+): void {
   const controller = vscode.comments.createCommentController(
     CONTROLLER_ID,
     'Codev Plan Review',
   );
+  controller.options = {
+    prompt: 'Add review comment',
+    placeHolder: 'Type your review comment, then Submit',
+  };
   context.subscriptions.push(controller);
 
   // Where the "+" appears. We accept any line in eligible files.
@@ -112,7 +120,7 @@ export function activateReviewComments(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(
       'codev.submitReviewComment',
       async (reply: vscode.CommentReply) => {
-        await submitReviewComment(reply);
+        await submitReviewComment(reply, overviewCache);
       },
     ),
   );
@@ -129,7 +137,10 @@ export function activateReviewComments(context: vscode.ExtensionContext): void {
   );
 }
 
-async function submitReviewComment(reply: vscode.CommentReply): Promise<void> {
+async function submitReviewComment(
+  reply: vscode.CommentReply,
+  overviewCache: OverviewCache,
+): Promise<void> {
   const thread = reply.thread;
   if (!thread.range) { return; }
   const document = await vscode.workspace.openTextDocument(thread.uri);
@@ -138,10 +149,12 @@ async function submitReviewComment(reply: vscode.CommentReply): Promise<void> {
   // Normalize whitespace — review markers are single-line by convention,
   // and review-decorations.ts assumes the marker fits one line.
   const body = reply.text.replace(/\s+/g, ' ').trim();
-  // Author hardcoded to "architect" to match the existing
-  // `codev.addReviewComment` palette command (commands/review.ts) and the
-  // review.json snippet — same on-disk format from every entry point.
-  const commentLine = `${indent}<!-- REVIEW(@architect): ${body} -->`;
+  // Author = current GitHub login (from Tower's overview cache), falling back
+  // to "architect" before Tower has done a first fetch or when `gh` is
+  // unconfigured. Same handle used for "assigned to you" sorting in the
+  // Backlog view, so REVIEW markers @mention a real GitHub user.
+  const author = overviewCache.getData()?.currentUser ?? 'architect';
+  const commentLine = `${indent}<!-- REVIEW(@${author}): ${body} -->`;
 
   const edit = new vscode.WorkspaceEdit();
   edit.insert(thread.uri, new vscode.Position(line + 1, 0), commentLine + '\n');
