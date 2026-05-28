@@ -8,7 +8,7 @@ What's changed in the Codev VS Code extension, version by version, written for t
 
 - **Backlog tree groups by area.** GitHub issues in the Codev Backlog view are now grouped under their `area/*` labels, sorted alphabetically with `Uncategorized` last. Repos that haven't adopted `area/*` labels see no visual change — the grouping collapses to a flat list. (#811)
 - **Builders tree groups by area.** Active builders in the Codev Builders view are now grouped the same way — by their underlying issue's `area/*` labels, sorted alphabetically with `Uncategorized` last. One mental model now applies across both the Backlog and Builders views: same axis, same ordering. Repos without `area/*` labels see no visual change. (#818)
-- **Area group headers are capitalized.** Group headers in the Backlog and Builders trees now render with capitalized first letters (e.g. `Vscode (4)` instead of `vscode (4)`). The underlying `area/*` labels themselves stay lowercase — only the display label changes. (#885)
+- **Area group headers display in UPPERCASE.** Group headers in the Backlog and Builders trees now render in uppercase (e.g. `VSCODE (4)` instead of `vscode (4)`) — matching the convention used by VSCode's own panel headers (`EXPLORER`, `SEARCH`, `SOURCE CONTROL`). The underlying `area/*` label values themselves stay lowercase; only the displayed header changes. (#885, #895)
 
 ### Bug fixes
 
