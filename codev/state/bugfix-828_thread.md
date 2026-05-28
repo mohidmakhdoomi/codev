@@ -29,4 +29,21 @@ page.locator('.work-section:has(h3.work-section-title:text-is("Backlog"))')
 
 ## Implement
 
-(in progress)
+All four `.work-section:has-text(...)` occurrences in `work-view-backlog.test.ts` replaced with `.work-section:has(h3.work-section-title:text-is("..."))`. Single short comment on the first occurrence explains the workaround (referencing #828). Diff: +60 / -5, test-only.
+
+`porch check` build/tests both pass (after one-time core build to materialize `@cluesmith/codev-core` declaration files in the worktree).
+
+## Review
+
+CMAP-3 all APPROVE:
+- Gemini — APPROVE / HIGH
+- Codex — APPROVE / MEDIUM
+- Claude — APPROVE / HIGH
+
+No KEY_ISSUES from any reviewer. Claude noted `.tab-bar-item:has-text("Work")` uses the same `:has-text` pattern but is safe (button with fixed link text, no dynamic descendants) — verified during sweep.
+
+PR #917 created with CMAP table in body. Architect notified.
+
+## Awaiting
+
+`pr` gate approval from human.
