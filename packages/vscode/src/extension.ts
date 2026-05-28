@@ -30,7 +30,8 @@ import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
 import { BuildersProvider } from './views/builders.js';
 import { BuilderGroupTreeItem } from './views/builder-tree-item.js';
 import { PullRequestsProvider } from './views/pull-requests.js';
-import { BacklogProvider, spawnableBacklog } from './views/backlog.js';
+import { BacklogProvider } from './views/backlog.js';
+import { visibleBacklogCount, formatBacklogTitle } from './views/backlog-filter.js';
 import { RecentlyClosedProvider } from './views/recently-closed.js';
 import { TeamProvider } from './views/team.js';
 import { StatusProvider } from './views/status.js';
@@ -175,13 +176,24 @@ export async function activate(context: vscode.ExtensionContext) {
 	let pullRequestsView: vscode.TreeView<vscode.TreeItem> | undefined;
 	let backlogView: vscode.TreeView<vscode.TreeItem> | undefined;
 	let recentlyClosedView: vscode.TreeView<vscode.TreeItem> | undefined;
+	const readBacklogShowAll = () =>
+		vscode.workspace.getConfiguration('codev').get<boolean>('backlogShowAll', false);
 	const updateListViewTitles = () => {
 		const data = overviewCache.getData();
 		const withCount = (base: string, n: number | undefined) =>
 			typeof n === 'number' ? `${base} (${n})` : base;
 		if (buildersView) { buildersView.title = withCount('Builders', data?.builders.length); }
 		if (pullRequestsView) { pullRequestsView.title = withCount('Pull Requests', data?.pendingPRs.length); }
-		if (backlogView) { backlogView.title = withCount('Backlog', data ? spawnableBacklog(data.backlog).length : undefined); }
+		if (backlogView) {
+			// Backlog title reflects the *visible* row count (mine-only vs show-all),
+			// not the unfiltered spawnable total. `formatBacklogTitle` renders
+			// `Backlog (V of T)` when the mine-only filter is hiding rows, so the
+			// "of T" affordance signals "click the eye icon to see all".
+			const { visible, total } = data
+				? visibleBacklogCount(data, readBacklogShowAll())
+				: { visible: undefined, total: undefined };
+			backlogView.title = formatBacklogTitle(visible, total);
+		}
 		if (recentlyClosedView) { recentlyClosedView.title = withCount('Recently Closed', data?.recentlyClosed.length); }
 	};
 
@@ -354,15 +366,19 @@ export async function activate(context: vscode.ExtensionContext) {
 	// so a fresh install opens to "what's on my plate". Same mechanics as
 	// the two toggles above: read setting, mirror to context key so the
 	// paired view-title commands swap correctly, refresh the provider on
-	// change so the filter takes effect immediately.
-	const readBacklogShowAll = () =>
-		vscode.workspace.getConfiguration('codev').get<boolean>('backlogShowAll', false);
+	// change so the filter takes effect immediately. `readBacklogShowAll`
+	// is hoisted above `updateListViewTitles` so the title-count helper
+	// can read it on every refresh.
 	vscode.commands.executeCommand('setContext', 'codev.backlogShowAll', readBacklogShowAll());
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeConfiguration((e) => {
 			if (!e.affectsConfiguration('codev.backlogShowAll')) { return; }
 			vscode.commands.executeCommand('setContext', 'codev.backlogShowAll', readBacklogShowAll());
 			backlogProvider.refresh();
+			// Title-count depends on the showAll flag too — refresh it in lockstep
+			// with the tree, otherwise the title stays stale until the next overview
+			// tick rebroadcasts.
+			updateListViewTitles();
 		}),
 	);
 
