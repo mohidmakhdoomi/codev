@@ -69,8 +69,6 @@ gh label list --search "<prefix>/"
 
 Before bulk-applying labels or relabeling issues, ask the user to confirm the convention — don't assume.
 
-For operational recipes (group / edit / audit / bulk-move), see `codev/roles/architect.md` — they live with the architect role since they're architect-specific bulk ops.
-
 ## Quick Start
 
 1. For new features, start with the Specification phase

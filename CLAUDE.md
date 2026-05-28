@@ -148,8 +148,6 @@ Key locations:
 - **No `type:*` labels.** Codev classifies issues by area only.
 - `area/` uses **slash**. Other label families (if ever introduced) would keep colons.
 
-For operational recipes (group / edit / audit / bulk-move), see `codev/roles/architect.md` — they live with the architect role since they're architect-specific bulk ops.
-
 **🚨 CRITICAL: Two human approval gates exist:**
 - **conceived → specified**: AI creates spec, but ONLY the human can approve it
 - **committed → integrated**: AI can merge PRs, but ONLY the human can validate production

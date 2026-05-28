@@ -259,7 +259,7 @@ Update status as projects progress:
 
 ## Working with Project Labels
 
-The vocabulary your project uses (if any) and the per-issue policy live in `CLAUDE.md` / `AGENTS.md`, which load automatically into every session. The recipes below are the architect-specific bulk operations — substitute `<prefix>` and `<value>` for your project's actual labels (or skip this section if your project doesn't use prefix-structured labels).
+If your project uses prefix-structured labels (e.g. `area/*`, `team/*`, `priority/*`) to organize issues, the recipes below are the architect-specific bulk operations — substitute `<prefix>` and `<value>` for your project's actual labels. (Skip this section if your project doesn't use prefix-structured labels.)
 
 **Operational recipes:**
 

@@ -258,8 +258,6 @@ Update status as projects progress:
 
 ## Working with Area Labels
 
-The label vocabulary (the 14 `area/*` labels and their scope hints) and the per-issue policy live in `CLAUDE.md` / `AGENTS.md`, which load automatically into every session. The recipes below are the architect-specific bulk operations.
-
 **Operational recipes:**
 
 ```bash
