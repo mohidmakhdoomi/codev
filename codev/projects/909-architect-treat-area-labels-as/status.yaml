@@ -1,0 +1,18 @@
+id: '909'
+title: architect-treat-area-labels-as
+protocol: pir
+phase: plan
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: pending
+  dev-approval:
+    status: pending
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-05-28T05:03:04.695Z'
+updated_at: '2026-05-28T05:03:04.695Z'
