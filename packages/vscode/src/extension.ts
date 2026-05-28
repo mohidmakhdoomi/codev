@@ -614,7 +614,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('codev.connectTunnel', () => connectTunnel(connectionManager!)),
 		vscode.commands.registerCommand('codev.disconnectTunnel', () => disconnectTunnel(connectionManager!)),
 		vscode.commands.registerCommand('codev.cronTasks', () => listCronTasks(connectionManager!)),
-		vscode.commands.registerCommand('codev.addReviewComment', () => addReviewComment()),
+		vscode.commands.registerCommand('codev.addReviewComment', () => addReviewComment(overviewCache)),
 	);
 
 	// Read-only `codev-issue:` content provider backing the "View Issue"
@@ -635,7 +635,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	// any line in codev/plans/*.md or codev/specs/*.md; submit writes
 	// `<!-- REVIEW(@architect): ... -->` inline, matching the format
 	// produced by `codev.addReviewComment` and review.json snippet.
-	activateReviewComments(context);
+	activateReviewComments(context, overviewCache);
 
 	// Toast on new gate-pending — surfaces blocked builders without forcing the
 	// user to watch the Builders tree. Respects `codev.gateToasts.enabled`.

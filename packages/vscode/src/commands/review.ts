@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
+import type { OverviewCache } from '../views/overview-data.js';
 
 /**
  * Codev: Add Review Comment — inserts a REVIEW comment at the cursor
  * using the correct comment syntax for the file type.
  */
-export async function addReviewComment(): Promise<void> {
+export async function addReviewComment(overviewCache: OverviewCache): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
     vscode.window.showWarningMessage('Codev: No active editor');
@@ -19,7 +20,11 @@ export async function addReviewComment(): Promise<void> {
 
   const line = editor.selection.active.line;
   const indent = editor.document.lineAt(line).text.match(/^\s*/)?.[0] ?? '';
-  const comment = syntax.wrap('REVIEW(@architect): ');
+  // Author = current GitHub login (from Tower's overview cache); same source
+  // as the inline gutter-comment path in comments/plan-review.ts. Falls back
+  // to "architect" before Tower's first fetch / when gh is unconfigured.
+  const author = overviewCache.getData()?.currentUser ?? 'architect';
+  const comment = syntax.wrap(`REVIEW(@${author}): `);
 
   await editor.edit(editBuilder => {
     editBuilder.insert(new vscode.Position(line + 1, 0), `${indent}${comment}\n`);
