@@ -20,3 +20,7 @@ Reviewer flagged that codev already has a project-wide identity mechanism: `Over
 - Single source of truth (git config and GitHub login routinely diverge)
 
 Dropped the new `author.ts` helper; thread `overviewCache` into `activateReviewComments` and `addReviewComment` instead. Read-at-write (not read-at-activate) so identity stays fresh through Tower's refresh cycle. Fallback to `'architect'` covers the pre-first-fetch race and unconfigured `gh`.
+
+## 2026-05-28 — Implement phase
+
+Applied the four edits per plan: `controller.options`, regex extension to `reviews`, overviewCache threading + `?? 'architect'` fallback in both call sites, and corresponding wiring updates in `extension.ts`. Type-check, lint, and the 83-test vscode-test suite all green. Awaiting `dev-approval` gate.
