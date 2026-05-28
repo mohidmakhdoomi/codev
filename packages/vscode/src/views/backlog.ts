@@ -5,17 +5,12 @@ import { groupByArea } from '@cluesmith/codev-core/area-grouping';
 import type { OverviewCache } from './overview-data.js';
 import { BacklogGroupTreeItem, BacklogTreeItem } from './backlog-tree-item.js';
 import { AreaGroupExpansionStore } from './area-group-expansion.js';
-import { filterMine } from './backlog-filter.js';
+import { filterMine, spawnableBacklog } from './backlog-filter.js';
 
-/**
- * Backlog rows the user can act on — exclude issues that already have an
- * active builder. Mirrors the dashboard's BacklogList
- * (`items.filter(i => !i.hasBuilder)`) so the extension and web show the
- * same "available work" set and you can't double-spawn from the Backlog.
- */
-export function spawnableBacklog(items: OverviewBacklogItem[]): OverviewBacklogItem[] {
-  return items.filter(i => !i.hasBuilder);
-}
+// Re-export so existing call sites (extension.ts, src/test/backlog.test.ts)
+// keep their import path. The definition lives in `backlog-filter.ts` so
+// vitest helpers can share the primitive without pulling in `vscode`.
+export { spawnableBacklog };
 
 /**
  * Backlog view: open GitHub issues with no PR yet, grouped by `area/*`
