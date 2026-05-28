@@ -1,7 +1,7 @@
 id: bugfix-901
 title: needs-attention-surfaces-build
 protocol: bugfix
-phase: investigate
+phase: fix
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -11,4 +11,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-28T01:48:37.300Z'
-updated_at: '2026-05-28T01:48:37.301Z'
+updated_at: '2026-05-28T01:51:13.214Z'
