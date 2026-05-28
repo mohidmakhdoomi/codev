@@ -1,7 +1,7 @@
 id: '911'
 title: vscode-backlog-tree-title-coun
 protocol: pir
-phase: review
+phase: verified
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -21,7 +21,7 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-28T08:16:25.739Z'
-updated_at: '2026-05-28T09:15:21.224Z'
+updated_at: '2026-05-28T09:15:32.050Z'
 pr_history:
   - phase: review
     pr_number: 914
