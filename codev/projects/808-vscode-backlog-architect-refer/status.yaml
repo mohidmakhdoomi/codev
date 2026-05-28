@@ -1,0 +1,18 @@
+id: '808'
+title: vscode-backlog-architect-refer
+protocol: pir
+phase: plan
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: pending
+  dev-approval:
+    status: pending
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-05-28T01:29:30.057Z'
+updated_at: '2026-05-28T01:29:30.058Z'
