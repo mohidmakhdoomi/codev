@@ -1,7 +1,7 @@
 id: bugfix-894
 title: porch-flaky-5s-timeout-in-next
 protocol: bugfix
-phase: investigate
+phase: fix
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -11,4 +11,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-28T00:50:34.526Z'
-updated_at: '2026-05-28T00:50:34.527Z'
+updated_at: '2026-05-28T00:55:59.958Z'
