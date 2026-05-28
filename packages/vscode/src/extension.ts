@@ -632,9 +632,10 @@ export async function activate(context: vscode.ExtensionContext) {
 	activateReviewDecorations(context);
 
 	// Inline plan-review comments via VSCode Comments API. Gutter "+" on
-	// any line in codev/plans/*.md or codev/specs/*.md; submit writes
-	// `<!-- REVIEW(@architect): ... -->` inline, matching the format
-	// produced by `codev.addReviewComment` and review.json snippet.
+	// any line in codev/plans|specs|reviews/*.md; submit writes
+	// `<!-- REVIEW(@<currentUser>): ... -->` inline (author from
+	// OverviewData.currentUser, falling back to "architect"), matching the
+	// format produced by `codev.addReviewComment` and review.json snippet.
 	activateReviewComments(context, overviewCache);
 
 	// Toast on new gate-pending — surfaces blocked builders without forcing the
