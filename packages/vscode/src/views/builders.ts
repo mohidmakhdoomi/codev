@@ -115,7 +115,14 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
       // builder has committed a review file on disk — the
       // `codev.viewReviewFile` menu entry's `when` clause keys off it so
       // PIR rows hide the entry until the review phase produces the file.
-      const family = isBlocked ? 'blocked-builder' : isIdle ? 'awaiting-builder' : 'builder';
+      let family: 'blocked-builder' | 'awaiting-builder' | 'builder';
+      if (isBlocked) {
+        family = 'blocked-builder';
+      } else if (isIdle) {
+        family = 'awaiting-builder';
+      } else {
+        family = 'builder';
+      }
       const protocol = b.protocol || 'unknown';
       const reviewSuffix = builderHasReviewFile(b) ? '-review' : '';
       item.contextValue = `${family}-${protocol}${reviewSuffix}`;
