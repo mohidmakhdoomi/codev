@@ -47,6 +47,51 @@ This succeeds if the protocol is registered (including via the skeleton fallback
 - **Reviews**: `codev/reviews/` - Reviews and lessons learned
 - **Protocols**: `codev/protocols/` - Development protocols
 
+## Working with Project Labels
+
+If your project uses GitHub labels with a structured prefix (e.g. `area/*`, `team/*`, `priority/*`) to organize issues, treat them as the primary axis when users ask about grouping, editing, or auditing. Run `gh label list` to discover what your project uses, infer the convention from how existing issues are labeled, and ask the user to confirm before applying broad changes.
+
+**Discover the convention:**
+
+```bash
+# List all labels (skim for structured prefixes)
+gh label list
+
+# Filter to a specific prefix family
+gh label list --search "<prefix>/"
+```
+
+**Inferring policy:** conventions vary across projects. Common patterns:
+
+- **One label per axis.** Many projects allow only one `<prefix>/*` label per issue, with a dedicated multi-axis fallback (e.g. `<prefix>/cross-cutting`).
+- **Layered families.** Some projects use multiple prefixes together (`area/*` + `team/*` + `priority/*`).
+- **Separator style.** `<family>/<value>` (Kubernetes-style) and `<family>:<value>` both exist in the wild — respect whatever convention the project already uses.
+- **Issue assignment.** Some projects require `--assignee @me` on `gh issue create` so issues land in the user's assigned list; check the existing issues to confirm.
+
+Before bulk-applying labels or relabeling issues, ask the user to confirm the convention — don't assume.
+
+**Operational recipes** (substitute `<prefix>` and `<value>` for your project's actual labels):
+
+```bash
+# Group: tally open issues by <prefix>/* label
+gh issue list --state open --limit 500 --json number,title,labels --jq \
+  'group_by([.labels[].name | select(startswith("<prefix>/"))]) | .[] | "\(.[0].labels[] | select(.name | startswith("<prefix>/")).name): \(length)"'
+
+# Edit: change a label on a single issue
+gh issue edit <N> --remove-label <prefix>/<old> --add-label <prefix>/<new>
+
+# Audit: find open issues with no <prefix>/* label
+gh issue list --state open --limit 500 --json number,title,labels \
+  --jq '.[] | select([.labels[].name] | any(startswith("<prefix>/")) | not) | "#\(.number) \(.title)"'
+
+# Bulk-move: relabel all open <prefix>/<old> issues to <prefix>/<new>
+for n in $(gh issue list --state open --limit 500 --label <prefix>/<old> --json number --jq '.[].number'); do
+  gh issue edit "$n" --remove-label <prefix>/<old> --add-label <prefix>/<new>
+done
+```
+
+When in doubt, run `gh label list` — it is the source of truth for what your project uses.
+
 ## Quick Start
 
 1. For new features, start with the Specification phase

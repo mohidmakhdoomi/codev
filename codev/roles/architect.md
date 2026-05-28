@@ -256,6 +256,56 @@ gh issue view 42
 Update status as projects progress:
 - `conceived` → `specified` → `planned` → `implementing` → `committed` → `integrated`
 
+## Working with Area Labels
+
+`area/*` is the **primary axis** for organizing GitHub Issues in this repo. When users ask to group, edit, audit, or bulk-move issues, treat `area/*` as the grouping dimension first — not `type:*` (we don't use them), not milestones, not assignees.
+
+**Live vocabulary** (run `gh label list --search area/` to confirm):
+
+| Label | Scope (with common synonyms) |
+|---|---|
+| `area/docs` | Documentation — CLAUDE/AGENTS, role files, `codev/resources/` |
+| `area/vscode` | VSCode extension — sidebar views, commands, keybindings |
+| `area/panel` | The **dashboard** webview (the "codev panel" tab inside the VSCode extension). Synonym alert: users say "dashboard"; the label is `area/panel`. |
+| `area/consult` | `consult` CLI and consultation tooling |
+| `area/tower` | Tower server + `afx` / agent-farm CLI. **No separate `area/agent-farm`** — afx work goes here. |
+| `area/cross-cutting` | Multi-area work — used **alone**, never alongside another `area/*` |
+| `area/porch` | Porch state machine / protocol orchestration |
+| `area/config` | `.codev/config.json` and workspace setup |
+| `area/terminal` | Terminal-specific — PTY, VSCode terminal pane |
+| `area/core` | Shared core library / forge abstraction; also the current catch-all for install/scaffold and release tooling until those get dedicated labels |
+
+**Synonym alert:** users often say "dashboard" — that's `area/panel`. Users may also say "web" or "mobile" — codev has neither today, so don't invent area labels for them. If `gh label list` disagrees with this table, trust the live list.
+
+**Policy:**
+
+- **Exactly one** `area/*` per issue. Multi-area work uses `area/cross-cutting` *alone* — never two `area/*` labels.
+- **No `type:*` labels.** Codev classifies issues by area only.
+- `area/` uses **slash** (Kubernetes/Terraform convention).
+- All `gh issue create` invocations include `--assignee @me`.
+
+**Operational recipes:**
+
+```bash
+# Group: tally open issues by area
+gh issue list --state open --limit 500 --json number,title,labels --jq \
+  'group_by([.labels[].name | select(startswith("area/"))]) | .[] | "\(.[0].labels[] | select(.name | startswith("area/")).name): \(length)"'
+
+# Edit: change area on a single issue
+gh issue edit <N> --remove-label area/old --add-label area/new
+
+# Audit: find open issues with no area label
+gh issue list --state open --limit 500 --json number,title,labels \
+  --jq '.[] | select([.labels[].name] | any(startswith("area/")) | not) | "#\(.number) \(.title)"'
+
+# Bulk-move: relabel all open `area/<old>` issues to `area/<new>`
+for n in $(gh issue list --state open --limit 500 --label area/old --json number --jq '.[].number'); do
+  gh issue edit "$n" --remove-label area/old --add-label area/new
+done
+```
+
+When in doubt, run `gh label list --search area/` — it is the source of truth.
+
 ## Handling Blocked Builders
 
 When a builder reports blocked:
