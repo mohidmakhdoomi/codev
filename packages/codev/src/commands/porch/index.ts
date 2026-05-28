@@ -364,6 +364,14 @@ export async function done(workspaceRoot: string, projectId: string, resolver?: 
     console.log(chalk.green(`Marked PR #${options.merged} as merged.`));
     return;
   }
+
+  // Idempotency for terminal state: re-running `porch done` on an already-verified
+  // project must be a silent no-op, not a fresh state write + commit (#903).
+  if (state.phase === 'verified') {
+    console.log(chalk.dim(`Project ${state.id} already verified — nothing to do.`));
+    return;
+  }
+
   const protocol = loadProtocol(workspaceRoot, state.protocol);
   const overrides = loadCheckOverrides(workspaceRoot);
   const phaseConfig = getPhaseConfig(protocol, state.phase);

@@ -409,6 +409,57 @@ describe('porch done — verification enforcement', () => {
     expect(updated.gates['verify-approval'].requested_at).toBeDefined();
   });
 
+  // --------------------------------------------------------------------------
+  // Test: porch done is idempotent on terminal 'verified' state (#903)
+  // --------------------------------------------------------------------------
+
+  it('is a no-op when state.phase is already verified (#903)', async () => {
+    const state = makeState({
+      phase: 'verified',
+      build_complete: true,
+      gates: {
+        'spec-approval': { status: 'approved' as const },
+        'plan-approval': { status: 'approved' as const },
+        'pr': { status: 'approved' as const },
+      },
+    });
+    setupState(testDir, state);
+
+    const statusPath = getStatusPath(testDir, '0001', 'test-feature');
+    const before = fs.readFileSync(statusPath, 'utf-8');
+
+    await done(testDir, '0001');
+
+    const after = fs.readFileSync(statusPath, 'utf-8');
+    // status.yaml must be byte-identical — no redundant write
+    expect(after).toBe(before);
+
+    const output = logSpy.mock.calls.map(c => c.join(' ')).join('\n');
+    expect(output).toContain('already verified');
+    // Must NOT print the "protocol complete" banner from advanceProtocolPhase
+    expect(output).not.toContain('PROTOCOL COMPLETE');
+  });
+
+  it('record-only --pr still works on verified projects (#903)', async () => {
+    const state = makeState({
+      phase: 'verified',
+      build_complete: true,
+      gates: {
+        'spec-approval': { status: 'approved' as const },
+        'plan-approval': { status: 'approved' as const },
+        'pr': { status: 'approved' as const },
+      },
+    });
+    setupState(testDir, state);
+
+    await done(testDir, '0001', undefined, { pr: 42, branch: 'feature/x' });
+
+    const updated = readState(getStatusPath(testDir, '0001', 'test-feature'));
+    expect(updated.pr_history).toBeDefined();
+    expect(updated.pr_history![0].pr_number).toBe(42);
+    expect(updated.phase).toBe('verified');
+  });
+
   it('readState migrates phase complete to verified (backward compat)', () => {
     const state = makeState({ phase: 'complete' as string });
     const statusPath = getStatusPath(testDir, '0001', 'test-feature');
