@@ -8,24 +8,21 @@ import { UNCATEGORIZED_AREA } from './constants.js';
  * `UNCATEGORIZED_AREA` sentinel) MUST continue to be used for
  * bucketing (`groupByArea`), id stability, and `===` matchers.
  *
- * Rule: split on `-`, `_`, and whitespace; capitalize the first
- * character of each word; rejoin with a single space. Examples:
- *   'vscode'        -> 'Vscode'
- *   'cross-cutting' -> 'Cross Cutting'
- *   'front_end'     -> 'Front End'
- *   'Uncategorized' -> 'Uncategorized'  (no-op; sentinel is already
- *                                        single-word, first-char-upper)
+ * Rule: uppercase the entire string. Separators (`-`, `_`) are
+ * preserved as-is so the header reads as a single visual token
+ * matching VSCode's own container-label convention (EXPLORER,
+ * SOURCE CONTROL, etc.). Examples:
+ *   'vscode'        -> 'VSCODE'
+ *   'cross-cutting' -> 'CROSS-CUTTING'
+ *   'front_end'     -> 'FRONT_END'
+ *   'Uncategorized' -> 'UNCATEGORIZED'
  *
  * Purely structural: no hardcoded list of "known acronyms". Teams
  * using Codev decide their own labeling semantics; a per-repo
  * override map can be layered on top as a non-breaking extension.
  */
-export function formatAreaForDisplay(area: string): string {
-  return area
-    .split(/[-_\s]+/)
-    .filter(w => w.length > 0)
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
+export function uppercaseAreaName(area: string): string {
+  return area.toUpperCase();
 }
 
 /**

@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { groupByArea, formatAreaForDisplay } from '@cluesmith/codev-core/area-grouping';
+import { groupByArea, uppercaseAreaName } from '@cluesmith/codev-core/area-grouping';
 
 interface AreaItem {
 	id: string;
@@ -81,36 +81,35 @@ suite('groupByArea', () => {
 	});
 });
 
-suite('formatAreaForDisplay', () => {
-	test('lowercase single word -> capitalized first char', () => {
-		assert.strictEqual(formatAreaForDisplay('vscode'), 'Vscode');
-		assert.strictEqual(formatAreaForDisplay('tower'), 'Tower');
-		assert.strictEqual(formatAreaForDisplay('porch'), 'Porch');
+suite('uppercaseAreaName', () => {
+	test('lowercase single word -> full uppercase', () => {
+		assert.strictEqual(uppercaseAreaName('vscode'), 'VSCODE');
+		assert.strictEqual(uppercaseAreaName('tower'), 'TOWER');
+		assert.strictEqual(uppercaseAreaName('porch'), 'PORCH');
 	});
 
-	test('hyphenated -> separator replaced with space, each word capitalized', () => {
-		assert.strictEqual(formatAreaForDisplay('cross-cutting'), 'Cross Cutting');
+	test('hyphenated -> uppercase with hyphen preserved', () => {
+		assert.strictEqual(uppercaseAreaName('cross-cutting'), 'CROSS-CUTTING');
 	});
 
-	test('underscored -> separator replaced with space, each word capitalized', () => {
-		assert.strictEqual(formatAreaForDisplay('front_end'), 'Front End');
+	test('underscored -> uppercase with underscore preserved', () => {
+		assert.strictEqual(uppercaseAreaName('front_end'), 'FRONT_END');
 	});
 
-	test('mixed separators and >2 words', () => {
-		assert.strictEqual(formatAreaForDisplay('front-end_ui'), 'Front End Ui');
+	test('mixed separators preserved verbatim', () => {
+		assert.strictEqual(uppercaseAreaName('front-end_ui'), 'FRONT-END_UI');
 	});
 
-	test('Uncategorized sentinel is a no-op (single word, first char already upper)', () => {
-		assert.strictEqual(formatAreaForDisplay('Uncategorized'), 'Uncategorized');
+	test('Uncategorized sentinel uppercases to UNCATEGORIZED', () => {
+		assert.strictEqual(uppercaseAreaName('Uncategorized'), 'UNCATEGORIZED');
 	});
 
 	test('empty string -> empty string (defensive)', () => {
-		assert.strictEqual(formatAreaForDisplay(''), '');
+		assert.strictEqual(uppercaseAreaName(''), '');
 	});
 
-	test('collapses multiple consecutive separators', () => {
-		// Pathological but cheap to lock — no accidental double-spacing.
-		assert.strictEqual(formatAreaForDisplay('a--b'), 'A B');
-		assert.strictEqual(formatAreaForDisplay('a__b'), 'A B');
+	test('consecutive separators preserved verbatim (no collapsing)', () => {
+		assert.strictEqual(uppercaseAreaName('a--b'), 'A--B');
+		assert.strictEqual(uppercaseAreaName('a__b'), 'A__B');
 	});
 });

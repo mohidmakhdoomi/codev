@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { formatAreaForDisplay } from '@cluesmith/codev-core/area-grouping';
+import { uppercaseAreaName } from '@cluesmith/codev-core/area-grouping';
 
 export type AreaGroupKind = 'backlog' | 'builder';
 
@@ -17,8 +17,8 @@ export type AreaGroupKind = 'backlog' | 'builder';
  * `areaName`, `id`, and `contextValue` all use the raw wire value so
  * expansion-state persistence and `areaName === ...` matchers in the
  * per-view providers keep working. Only the human-visible label is
- * passed through `formatAreaForDisplay` (title-case + separator-to-
- * space, see #885).
+ * passed through `uppercaseAreaName`, matching VSCode's own
+ * container-label convention (EXPLORER, SOURCE CONTROL, etc.).
  */
 export class AreaGroupTreeItem extends vscode.TreeItem {
   constructor(
@@ -27,7 +27,7 @@ export class AreaGroupTreeItem extends vscode.TreeItem {
     count: number,
     collapsibleState: vscode.TreeItemCollapsibleState,
   ) {
-    super(`${formatAreaForDisplay(areaName)} (${count})`, collapsibleState);
+    super(`${uppercaseAreaName(areaName)} (${count})`, collapsibleState);
     this.id = `${kind}-group:${areaName}`;
     this.contextValue = `${kind}-group`;
   }
