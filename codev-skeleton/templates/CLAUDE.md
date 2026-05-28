@@ -67,27 +67,7 @@ gh label list --search "<prefix>/"
 
 Before bulk-applying labels or relabeling issues, ask the user to confirm the convention — don't assume.
 
-**Operational recipes** (substitute `<prefix>` and `<value>` for your project's actual labels):
-
-```bash
-# Group: tally open issues by <prefix>/* label
-gh issue list --state open --limit 500 --json number,title,labels --jq \
-  'group_by([.labels[].name | select(startswith("<prefix>/"))]) | .[] | "\(.[0].labels[] | select(.name | startswith("<prefix>/")).name): \(length)"'
-
-# Edit: change a label on a single issue
-gh issue edit <N> --remove-label <prefix>/<old> --add-label <prefix>/<new>
-
-# Audit: find open issues with no <prefix>/* label
-gh issue list --state open --limit 500 --json number,title,labels \
-  --jq '.[] | select([.labels[].name] | any(startswith("<prefix>/")) | not) | "#\(.number) \(.title)"'
-
-# Bulk-move: relabel all open <prefix>/<old> issues to <prefix>/<new>
-for n in $(gh issue list --state open --limit 500 --label <prefix>/<old> --json number --jq '.[].number'); do
-  gh issue edit "$n" --remove-label <prefix>/<old> --add-label <prefix>/<new>
-done
-```
-
-When in doubt, run `gh label list` — it is the source of truth for what your project uses.
+For operational recipes (group / edit / audit / bulk-move), see `codev/roles/architect.md` — they live with the architect role since they're architect-specific bulk ops.
 
 ## Quick Start
 

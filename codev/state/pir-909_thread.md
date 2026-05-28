@@ -106,3 +106,20 @@ All verification checks still green:
 - grep -rE "area/(...)" codev-skeleton/ → no leaks
 - grep "--assignee @me" across all 6 doc files → no hits
 - npm run build → ✓ (in progress: tests)
+
+## 2026-05-28 — dedup: split content across files by audience
+
+Reviewer flagged the duplication: same content (table + policy + recipes) appearing in all three files. Split by audience instead:
+
+- **CLAUDE.md / AGENTS.md** (auto-loaded for every session — builders, ad-hoc, architects): vocabulary table + policy.
+- **codev/roles/architect.md** (loaded only when architect spawns via `afx`): operational recipes (group / edit / audit / bulk-move) + a one-line pointer back to CLAUDE.md for the vocabulary/policy.
+
+Same split applied to the skeleton files (framework-neutral version). Net effect: each piece of content has one canonical home.
+
+Implications for shannon issue #1872:
+- shannon's CLAUDE.md/AGENTS.md gets the vocabulary table + policy (via `codev update` auto-merge)
+- shannon's `codev/roles/architect.md` gets recipes-only (manual edit; codev update can't reach tier-2 overrides)
+
+This is also better for shannon's update path: future label-set additions in shannon flow through the standard `.codev-new` sidecar merge into CLAUDE.md; the architect.md override doesn't need to be touched for vocabulary changes.
+
+All 6 doc files updated. Build green. Tests in progress.

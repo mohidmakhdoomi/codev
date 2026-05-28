@@ -148,28 +148,7 @@ Key locations:
 - **No `type:*` labels.** Codev classifies issues by area only.
 - `area/` uses **slash**. Other label families (if ever introduced) would keep colons.
 
-**Operational recipes:**
-
-```bash
-# Confirm the current label vocabulary (use before any label op to catch drift)
-gh label list --search area/
-
-# Group: tally open issues by area
-gh issue list --state open --limit 500 --json number,title,labels --jq \
-  'group_by([.labels[].name | select(startswith("area/"))]) | .[] | "\(.[0].labels[] | select(.name | startswith("area/")).name): \(length)"'
-
-# Edit: change area on a single issue
-gh issue edit <N> --remove-label area/old --add-label area/new
-
-# Audit: find open issues with no area label
-gh issue list --state open --limit 500 --json number,title,labels \
-  --jq '.[] | select([.labels[].name] | any(startswith("area/")) | not) | "#\(.number) \(.title)"'
-
-# Bulk-move: relabel all open `area/<old>` issues to `area/<new>`
-for n in $(gh issue list --state open --limit 500 --label area/old --json number --jq '.[].number'); do
-  gh issue edit "$n" --remove-label area/old --add-label area/new
-done
-```
+For operational recipes (group / edit / audit / bulk-move), see `codev/roles/architect.md` — they live with the architect role since they're architect-specific bulk ops.
 
 **🚨 CRITICAL: Two human approval gates exist:**
 - **conceived → specified**: AI creates spec, but ONLY the human can approve it

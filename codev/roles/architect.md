@@ -258,32 +258,7 @@ Update status as projects progress:
 
 ## Working with Area Labels
 
-`area/*` is the **primary axis** for organizing GitHub Issues in this repo. When users ask to group, edit, audit, or bulk-move issues, treat `area/*` as the grouping dimension first — not `type:*` (we don't use them), not milestones, not assignees.
-
-**Labels**:
-
-| Label | Scope |
-|---|---|
-| `area/docs` | Documentation — CLAUDE/AGENTS, role files, `codev/resources/` |
-| `area/vscode` | VSCode extension — sidebar views, panel-area views, commands, keybindings |
-| `area/dashboard` | Tower web dashboard — the `@cluesmith/codev-dashboard` React/Vite package, served by Tower and opened in a browser (distinct from any VSCode UI) |
-| `area/consult` | `consult` CLI and consultation tooling |
-| `area/tower` | Tower server + `afx` / agent-farm CLI. **No separate `area/agent-farm`** — afx work goes here. |
-| `area/cross-cutting` | Multi-area work — used **alone**, never alongside another `area/*` |
-| `area/porch` | Porch state machine / protocol orchestration |
-| `area/protocols` | Protocol definitions (`codev/protocols/`, `codev-skeleton/protocols/`) — distinct from `area/porch` (orchestration) |
-| `area/config` | `.codev/config.json` and workspace setup |
-| `area/terminal` | Terminal-specific — PTY, VSCode terminal pane |
-| `area/scaffold` | Install path — `codev init` / `adopt` / `update` / `doctor`, `codev-skeleton/`, the four-tier resolver |
-| `area/release` | Release tooling — version bumps, release protocol artifacts, release scripts |
-| `area/web` | Marketing site / web content — the `marketing/` directory |
-| `area/core` | Shared core library / forge abstraction (`packages/core`, `packages/codev/src/lib`, `packages/types`) |
-
-**Policy:**
-
-- **Exactly one** `area/*` per issue. Multi-area work uses `area/cross-cutting` *alone* — never two `area/*` labels.
-- **No `type:*` labels.** Codev classifies issues by area only.
-- `area/` uses **slash**.
+The label vocabulary (the 14 `area/*` labels and their scope hints) and the per-issue policy live in `CLAUDE.md` / `AGENTS.md`, which load automatically into every session. The recipes below are the architect-specific bulk operations.
 
 **Operational recipes:**
 

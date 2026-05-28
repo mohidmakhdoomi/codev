@@ -259,29 +259,14 @@ Update status as projects progress:
 
 ## Working with Project Labels
 
-If your project uses GitHub labels with a structured prefix (e.g. `area/*`, `team/*`, `priority/*`) to organize issues, treat them as the primary axis when users ask about grouping, editing, or auditing. Run `gh label list` to discover what your project uses, infer the convention from how existing issues are labeled, and ask the user to confirm before applying broad changes.
+The vocabulary your project uses (if any) and the per-issue policy live in `CLAUDE.md` / `AGENTS.md`, which load automatically into every session. The recipes below are the architect-specific bulk operations — substitute `<prefix>` and `<value>` for your project's actual labels (or skip this section if your project doesn't use prefix-structured labels).
 
-**Discover the convention:**
+**Operational recipes:**
 
 ```bash
-# List all labels (skim for structured prefixes)
-gh label list
-
-# Filter to a specific prefix family
+# Confirm the current label vocabulary (use before any label op to catch drift)
 gh label list --search "<prefix>/"
-```
 
-**Inferring policy:** conventions vary across projects. Common patterns:
-
-- **One label per axis.** Many projects allow only one `<prefix>/*` label per issue, with a dedicated multi-axis fallback (e.g. `<prefix>/cross-cutting`).
-- **Layered families.** Some projects use multiple prefixes together (`area/*` + `team/*` + `priority/*`).
-- **Separator style.** `<family>/<value>` and `<family>:<value>` both exist in the wild — respect whatever convention the project already uses.
-
-Before bulk-applying labels or relabeling issues, ask the user to confirm the convention — don't assume.
-
-**Operational recipes** (substitute `<prefix>` and `<value>` for your project's actual labels):
-
-```bash
 # Group: tally open issues by <prefix>/* label
 gh issue list --state open --limit 500 --json number,title,labels --jq \
   'group_by([.labels[].name | select(startswith("<prefix>/"))]) | .[] | "\(.[0].labels[] | select(.name | startswith("<prefix>/")).name): \(length)"'
@@ -298,8 +283,6 @@ for n in $(gh issue list --state open --limit 500 --label <prefix>/<old> --json 
   gh issue edit "$n" --remove-label <prefix>/<old> --add-label <prefix>/<new>
 done
 ```
-
-When in doubt, run `gh label list` — it is the source of truth for what your project uses.
 
 ## Handling Blocked Builders
 
