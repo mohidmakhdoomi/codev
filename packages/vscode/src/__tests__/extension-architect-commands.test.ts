@@ -79,9 +79,15 @@ describe('Spec 786 Phase 6 — extension.ts architect commands', () => {
     // targets main, regardless of how many sibling architects exist. The
     // signature default (`architectName: string = 'main'`) makes the no-arg
     // call route to main.
+    //
+    // Post-#808 the injection text comes from buildArchitectReferenceInjection
+    // (so the call is `injectArchitectText(buildArchitectReferenceInjection(...))`
+    // instead of an inline template literal). The assertion now anchors on the
+    // helper call rather than the literal `#${issueId} ` template — the
+    // architect-name default behaviour is still the point of this test.
     const refBlock = EXT_SRC.split("registerCommand('codev.referenceIssueInArchitect'")[1] ?? '';
     // The injection call passes only the text — no architect name.
-    expect(refBlock).toMatch(/injectArchitectText\(`#\$\{issueId\} `\)/);
+    expect(refBlock).toMatch(/injectArchitectText\(buildArchitectReferenceInjection\(/);
   });
 
   it('workspaceProvider is held in a const so commands can call .refresh()', () => {

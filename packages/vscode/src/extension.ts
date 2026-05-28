@@ -41,6 +41,7 @@ import { BuilderDiffCache } from './views/builder-diff-cache.js';
 import { BuilderFileDecorationProvider } from './views/builder-file-decoration.js';
 import { BacklogGroupTreeItem, BacklogTreeItem } from './views/backlog-tree-item.js';
 import { persistAreaGroupExpansion } from './views/area-group-expansion.js';
+import { buildArchitectReferenceInjection } from './architect-reference-injection.js';
 
 let connectionManager: ConnectionManager | null = null;
 let terminalManager: TerminalManager | null = null;
@@ -71,6 +72,21 @@ function extractBuilderId(arg: vscode.TreeItem | string | undefined): string | u
 function extractIssueId(arg: vscode.TreeItem | string | undefined): string | undefined {
 	if (typeof arg === 'string') { return arg; }
 	if (arg instanceof BacklogTreeItem) { return arg.issueId; }
+	return undefined;
+}
+
+/**
+ * Resolve an issue title from a command argument.
+ *
+ * Only `BacklogTreeItem` carries the title; string args (used by row-click
+ * which only passes the id) and undefined return undefined so callers can
+ * fall back. An empty title is normalised to undefined so the fallback
+ * branch handles it identically to a missing title.
+ */
+function extractIssueTitle(arg: vscode.TreeItem | string | undefined): string | undefined {
+	if (arg instanceof BacklogTreeItem) {
+		return arg.issueTitle || undefined;
+	}
 	return undefined;
 }
 
@@ -554,12 +570,15 @@ export async function activate(context: vscode.ExtensionContext) {
 			viewBacklogIssue(connectionManager!, extractIssueId(arg))),
 		vscode.commands.registerCommand('codev.referenceIssueInArchitect', async (arg: vscode.TreeItem | string | undefined) => {
 			// Inline-button action on a backlog row: open + focus the architect
-			// terminal, then type `#<id> ` into its prompt without submitting,
-			// so the user can keep typing their context before hitting Enter.
+			// terminal, then type `#<id> "<title>" ` into its prompt without
+			// submitting, so the user can keep typing their context before
+			// hitting Enter. Falls back to `#<id> ` when the title isn't
+			// available (e.g. row-click path that passes only the id string).
 			const issueId = extractIssueId(arg);
 			if (!issueId) { return; }
+			const title = extractIssueTitle(arg);
 			await vscode.commands.executeCommand('codev.openArchitectTerminal');
-			const ok = terminalManager?.injectArchitectText(`#${issueId} `);
+			const ok = terminalManager?.injectArchitectText(buildArchitectReferenceInjection(issueId, title));
 			if (!ok) {
 				vscode.window.showWarningMessage('Codev: Architect terminal not available');
 			}

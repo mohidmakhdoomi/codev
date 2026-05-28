@@ -102,7 +102,7 @@ export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     const me = data.currentUser?.toLowerCase();
     const assigned = !!me && !!item.assignees?.some(a => a.toLowerCase() === me);
     const author = item.author ? ` @${item.author}` : '';
-    const ti = new BacklogTreeItem(item.id, item.url, `#${item.id} ${item.title}${author}`);
+    const ti = new BacklogTreeItem(item.id, item.url, item.title, `#${item.id} ${item.title}${author}`);
     ti.tooltip = item.url;
     ti.contextValue = 'backlog-item';
     ti.iconPath = new vscode.ThemeIcon(assigned ? 'account' : 'issues');

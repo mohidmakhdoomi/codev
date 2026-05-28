@@ -18,6 +18,7 @@ export class BacklogTreeItem extends vscode.TreeItem {
   constructor(
     public readonly issueId: string,
     public readonly issueUrl: string,
+    public readonly issueTitle: string,
     label: string,
   ) {
     super(label);
