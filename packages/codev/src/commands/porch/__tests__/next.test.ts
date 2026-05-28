@@ -28,6 +28,14 @@ vi.mock('../../../lib/config.js', async (importOriginal) => {
   };
 });
 
+// Mock fetchIssue so buildPhasePrompt → getProjectSummary doesn't shell out to
+// `gh issue view` for every test that hits the build path. Without this, each
+// such test pays a ~900ms gh+network round-trip locally and can spike past
+// vitest's 5s per-test default on CI — the flake fixed in #894.
+vi.mock('../../../lib/github.js', () => ({
+  fetchIssue: vi.fn().mockResolvedValue(null),
+}));
+
 // ============================================================================
 // Test Fixtures
 // ============================================================================
