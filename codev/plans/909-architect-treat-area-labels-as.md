@@ -4,25 +4,43 @@
 
 Issue #909 asks for standing architect documentation on the `area/*` label convention so that any fresh session — in this repo or in an adopter's repo — can group, edit, audit, and bulk-move issues without re-discovering (or mis-applying) the convention. Today the rules live only in the labels themselves, in existing issue bodies, and in per-session memory; a new chat window has none of that context.
 
-The work is *two coordinated doc updates*:
+The work spans two distinct propagation paths into other repos, so the file split has to honor both:
 
-1. **codev's own `CLAUDE.md` + `AGENTS.md`** — concrete label vocabulary, policy rules, and `gh` recipes. Must stay byte-identical (per the existing sync rule).
-2. **`codev-skeleton/templates/CLAUDE.md` + `templates/AGENTS.md` + `roles/architect.md`** — *framework-neutral* version. No mention of codev's specific area names; teaches the pattern, not the vocabulary (per the `framework-neutral-on-label-semantics` discipline).
+**Path 1 — physically copied to user disk** at `codev init` / `codev adopt` / `codev update` (verified at `packages/codev/src/lib/scaffold.ts:159-194` and `commands/{init,adopt,update}.ts`):
+- `codev-skeleton/templates/CLAUDE.md` → `<user-project>/CLAUDE.md`
+- `codev-skeleton/templates/AGENTS.md` → `<user-project>/AGENTS.md`
+
+**Path 2 — resolved at runtime from the installed npm package** (tier-4 of the four-tier resolver; never on the user's disk, but their agents read it):
+- `codev-skeleton/roles/architect.md`
+- (and other framework files we're not touching — protocols, agents, consult-types, …)
+
+**Path 3 — codev's self-hosted instance** (never reaches other repos):
+- `CLAUDE.md` (repo root) — codev's own project instructions, auto-loaded at session start in *this* repo
+- `AGENTS.md` (repo root) — byte-identical sibling per the existing sync rule
+- `codev/roles/architect.md` — tier-2 override in this repo; shadows the skeleton role file for codev's own architect sessions
+
+The work is *three coordinated doc updates*:
+
+1. **codev's own `CLAUDE.md` + `AGENTS.md` + `codev/roles/architect.md`** — concrete label vocabulary, policy rules, and `gh` recipes. CLAUDE.md/AGENTS.md stay byte-identical (per the existing sync rule). The role file gets the same codev-specific section so the architect knows the area policy whether the policy reaches it via auto-loaded CLAUDE.md or via its spawn-time role file. Belt-and-suspenders, and symmetric with how the skeleton role file gets the framework-neutral version.
+2. **`codev-skeleton/templates/CLAUDE.md` + `templates/AGENTS.md`** — *framework-neutral* version (no codev area names). These get copied to user disks at install/update time.
+3. **`codev-skeleton/roles/architect.md`** — *framework-neutral* version. Resolved at runtime by adopters' agents (tier-4 fallback) unless they've overridden it locally.
+
+Across paths 2 and 3, no mention of codev's specific area names; teaches the pattern, not the vocabulary (per the `framework-neutral-on-label-semantics` discipline).
 
 Live label inventory (confirmed via `gh label list --search area/` on 2026-05-28):
 
-| Label | Scope |
+| Label | Scope (with common synonyms) |
 |---|---|
-| `area/docs` | Documentation (this repo, CLAUDE/AGENTS, role files, resources) |
-| `area/vscode` | VSCode extension (sidebar views, commands, keybindings) |
-| `area/panel` | Codev panel/dashboard webview |
-| `area/consult` | Consult CLI and consultation tooling |
-| `area/tower` | Tower server + `afx`/agent-farm CLI (no separate `area/agent-farm`) |
-| `area/cross-cutting` | Multi-area work (used alone, never alongside another `area/*`) |
+| `area/docs` | Documentation — this repo, CLAUDE/AGENTS, role files, `codev/resources/` |
+| `area/vscode` | VSCode extension — sidebar views, commands, keybindings |
+| `area/panel` | The **dashboard** webview (the "codev panel" tab inside the VSCode extension). Synonym alert: users say "dashboard"; the label is `area/panel`. |
+| `area/consult` | `consult` CLI and consultation tooling |
+| `area/tower` | Tower server + `afx` / agent-farm CLI. **No separate `area/agent-farm`** — afx work goes here. |
+| `area/cross-cutting` | Multi-area work — used **alone**, never alongside another `area/*` |
 | `area/porch` | Porch state machine / protocol orchestration |
 | `area/config` | `.codev/config.json` and workspace setup |
-| `area/terminal` | Terminal-specific (PTY, vscode terminal pane) |
-| `area/core` | Shared core library / forge abstraction (`packages/core`, `packages/codev/src/lib`) |
+| `area/terminal` | Terminal-specific — PTY, VSCode terminal pane |
+| `area/core` | Shared core library / forge abstraction (`packages/core`, `packages/codev/src/lib`); also currently the catch-all for install/scaffold (`codev init`/`adopt`/`update`) and release tooling until those get dedicated labels |
 
 Policy rules already in personal memory but undocumented in repo:
 
@@ -35,9 +53,10 @@ Policy rules already in personal memory but undocumented in repo:
 
 Add a new section titled **"Area Labels — the organizing axis for issues"** to:
 
-1. `CLAUDE.md` and `AGENTS.md` (codev root)
-2. `codev-skeleton/templates/CLAUDE.md` and `codev-skeleton/templates/AGENTS.md`
-3. `codev-skeleton/roles/architect.md`
+1. `CLAUDE.md` and `AGENTS.md` (codev root) — codev-specific vocabulary
+2. `codev/roles/architect.md` — codev-specific vocabulary (this repo's self-instance role file)
+3. `codev-skeleton/templates/CLAUDE.md` and `codev-skeleton/templates/AGENTS.md` — framework-neutral
+4. `codev-skeleton/roles/architect.md` — framework-neutral
 
 ### Design decisions (these are the calls that want plan-approval)
 
@@ -76,7 +95,9 @@ milestones, not assignees.
 | `area/porch` | Porch state machine / protocol orchestration |
 | `area/config` | `.codev/config.json` and workspace setup |
 | `area/terminal` | Terminal-specific (PTY, VSCode terminal pane) |
-| `area/core` | Shared core library / forge abstraction |
+| `area/core` | Shared core library / forge abstraction; current catch-all for install/scaffold and release tooling |
+
+**Synonym alert:** users often say "dashboard" — that's `area/panel`. Users may also say "web" or "mobile" — codev has neither today, so don't invent area labels for them. If the live `gh label list` disagrees with this table (rare, but possible after a deliberate addition), trust the live list.
 
 **Policy:**
 
@@ -122,11 +143,12 @@ Followed by:
 
 ## Files to Change
 
-- `CLAUDE.md` — insert new `### Area Labels — the organizing axis for issues` subsection after the `### Project Tracking` block ending around line 130 (before the "🚨 CRITICAL: Two human approval gates" block).
+- `CLAUDE.md` — insert new `### Area Labels — the organizing axis for issues` subsection after the `### Project Tracking` block ending around line 130 (before the "🚨 CRITICAL: Two human approval gates" block). Codev-specific vocabulary.
 - `AGENTS.md` — apply the **byte-identical** insertion. Verify with `diff CLAUDE.md AGENTS.md` (must be empty after the edit).
-- `codev-skeleton/templates/CLAUDE.md` — insert framework-neutral subsection. Current file is short (122 lines, ends with "For More Info"); best placement is after the existing `## Key Locations` section (line 41) and before `## Quick Start`, or as a new top-level `## Working with Project Labels` section before `## Git Workflow` (note: the skeleton template doesn't have a `## Git Workflow` heading — final placement TBD at implement time, anchored to whatever puts it adjacent to project-tracking-style content).
-- `codev-skeleton/templates/AGENTS.md` — byte-identical insertion. Verify diff is empty (except for the existing header / "AGENTS.md standard" preamble difference).
-- `codev-skeleton/roles/architect.md` — new `## Working with project labels` section after `## Project Tracking` (currently line 247), before `## Handling Blocked Builders` (line 262).
+- `codev/roles/architect.md` — new `## Working with area labels` section after the existing `## Project Tracking` section (currently around line 256, before `## Handling Blocked Builders`). Codev-specific vocabulary, same table as in `CLAUDE.md`. Note this repo's role file is the tier-2 override that shadows the skeleton's role file for codev's own architect sessions; placing the section here ensures the architect carries the policy even if a session reads only the role file.
+- `codev-skeleton/templates/CLAUDE.md` — insert framework-neutral subsection. Current file is short (122 lines, ends with "For More Info"); best placement is after the existing `## Key Locations` section (line 41) and before `## Quick Start`, or as a new top-level `## Working with Project Labels` section. Final placement TBD at implement time, anchored to whatever puts it adjacent to project-tracking-style content. **Reaches user repos via disk copy at `codev init` / `adopt` / `update`** (verified at `packages/codev/src/lib/scaffold.ts:159-194`).
+- `codev-skeleton/templates/AGENTS.md` — byte-identical insertion. Verify diff is empty (except for the existing 4-line preamble difference).
+- `codev-skeleton/roles/architect.md` — new `## Working with project labels` section after `## Project Tracking` (currently line 247), before `## Handling Blocked Builders` (line 262). Framework-neutral phrasing. **Reaches user repos via runtime resolution from the installed npm package** (tier-4 of the four-tier resolver); never on user disk but their agents load it.
 
 No code, no tests, no protocol-spec changes. Pure documentation.
 
@@ -146,6 +168,22 @@ No code, no tests, no protocol-spec changes. Pure documentation.
 
 **Alternative considered: a separate `codev/resources/area-labels.md` reference doc with `CLAUDE.md` linking to it.** Rejected — the issue explicitly asks for it to land *in* `CLAUDE.md` and `AGENTS.md` so it loads into the agent's context automatically. A separate file would defeat the no-memory-dependence acceptance criterion (the agent would have to know to read it).
 
+## Areas Not Currently Labeled (Follow-up Candidates)
+
+The live label set covers 100% of currently-labeled issues, but there are categories of work where issues default to `area/core` as a catch-all rather than having a dedicated label:
+
+- **Release tooling** — `codev/protocols/release/`, release scripts, version bumps. Currently routed via `area/core` or `area/docs`.
+- **Scaffold / install** — `codev init` / `codev adopt` / `codev update`, the `codev-skeleton/` shipping mechanism, the four-tier file resolver. Currently `area/core`.
+
+The all-time issue-count distribution skews VSCode-heavy (39 `area/vscode`, 12 `area/tower`, 4 `area/core`) which suggests these categories haven't generated enough volume to justify their own labels yet. The issue body explicitly puts new-label decisions out of scope for this PR, so the plan records only the existing 10. If volume picks up for either, a follow-up issue can split them out. The skeleton variant is unaffected by this — it teaches the *pattern*, not codev's specific vocabulary, so adopters making different choices stay coherent.
+
+Categories the user might suggest that are **not** missing:
+
+- **dashboard** → already covered as `area/panel` (label name differs from colloquial term — flagged in the scope hint and synonym-alert).
+- **web** → codev has no web component (no marketing site, no separate web app). Nothing to label.
+- **mobile** → codev has no mobile component. Nothing to label.
+- **agent-farm / afx** → already covered as `area/tower` (the label intentionally bundles Tower + agent-farm to avoid a near-duplicate `area/agent-farm`).
+
 ## Test Plan
 
 This is a doc-only change, so the test plan is **review-driven** rather than build-driven. At the `dev-approval` gate the reviewer should:
@@ -156,14 +194,12 @@ This is a doc-only change, so the test plan is **review-driven** rather than bui
    diff codev-skeleton/templates/CLAUDE.md codev-skeleton/templates/AGENTS.md  # only the 4-line preamble
    ```
 
-2. **Vocabulary leak check** — confirm the skeleton files contain **zero** instances of codev's actual area names:
+2. **Vocabulary leak check** — confirm **no file anywhere under `codev-skeleton/`** contains codev's concrete area names. Strongly defensive: catches accidental leaks anywhere in the skeleton, not just the three files this PR edits.
    ```bash
-   grep -E "area/(docs|vscode|panel|consult|tower|cross-cutting|porch|config|terminal|core)" \
-     codev-skeleton/templates/CLAUDE.md \
-     codev-skeleton/templates/AGENTS.md \
-     codev-skeleton/roles/architect.md
+   grep -rE "area/(docs|vscode|panel|consult|tower|cross-cutting|porch|config|terminal|core)" codev-skeleton/
    # Expected: no output
    ```
+   (Pre-PR baseline already returns no output, so this stays green unless the PR introduces a leak.)
 
 3. **`gh` recipe smoke test** — run each recipe against the live repo and confirm output is reasonable:
    - Group: produces a tally per area.
