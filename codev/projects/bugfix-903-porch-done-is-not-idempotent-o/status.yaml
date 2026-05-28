@@ -1,7 +1,7 @@
 id: bugfix-903
 title: porch-done-is-not-idempotent-o
 protocol: bugfix
-phase: fix
+phase: pr
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -11,7 +11,7 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-28T02:09:33.028Z'
-updated_at: '2026-05-28T02:18:15.420Z'
+updated_at: '2026-05-28T02:23:23.245Z'
 pr_history:
   - phase: fix
     pr_number: 904
