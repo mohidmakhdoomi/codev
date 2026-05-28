@@ -66,7 +66,6 @@ gh label list --search "<prefix>/"
 - **One label per axis.** Many projects allow only one `<prefix>/*` label per issue, with a dedicated multi-axis fallback (e.g. `<prefix>/cross-cutting`).
 - **Layered families.** Some projects use multiple prefixes together (`area/*` + `team/*` + `priority/*`).
 - **Separator style.** `<family>/<value>` and `<family>:<value>` both exist in the wild — respect whatever convention the project already uses.
-- **Issue assignment.** Some projects require `--assignee @me` on `gh issue create` so issues land in the user's assigned list; check the existing issues to confirm.
 
 Before bulk-applying labels or relabeling issues, ask the user to confirm the convention — don't assume.
 

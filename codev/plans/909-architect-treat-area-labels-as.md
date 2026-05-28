@@ -168,21 +168,31 @@ No code, no tests, no protocol-spec changes. Pure documentation.
 
 **Alternative considered: a separate `codev/resources/area-labels.md` reference doc with `CLAUDE.md` linking to it.** Rejected — the issue explicitly asks for it to land *in* `CLAUDE.md` and `AGENTS.md` so it loads into the agent's context automatically. A separate file would defeat the no-memory-dependence acceptance criterion (the agent would have to know to read it).
 
-## Areas Not Currently Labeled (Follow-up Candidates)
+## Scope Expansion (2026-05-28, post plan-approval)
 
-The live label set covers 100% of currently-labeled issues, but there are categories of work where issues default to `area/core` as a catch-all rather than having a dedicated label:
+During the implement phase, the reviewer's audit surfaced gaps the original plan missed and overrode the issue body's "no label changes" out-of-scope clause. The label set was restructured:
 
-- **Release tooling** — `codev/protocols/release/`, release scripts, version bumps. Currently routed via `area/core` or `area/docs`.
-- **Scaffold / install** — `codev init` / `codev adopt` / `codev update`, the `codev-skeleton/` shipping mechanism, the four-tier file resolver. Currently `area/core`.
+**Labels added** (5):
 
-The all-time issue-count distribution skews VSCode-heavy (39 `area/vscode`, 12 `area/tower`, 4 `area/core`) which suggests these categories haven't generated enough volume to justify their own labels yet. The issue body explicitly puts new-label decisions out of scope for this PR, so the plan records only the existing 10. If volume picks up for either, a follow-up issue can split them out. The skeleton variant is unaffected by this — it teaches the *pattern*, not codev's specific vocabulary, so adopters making different choices stay coherent.
+- `area/dashboard` — the `@cluesmith/codev-dashboard` React/Vite package (Tower's web dashboard, opened in a browser). Previously unlabeled.
+- `area/web` — `marketing/` directory (markdown, slides, logos). Previously unlabeled.
+- `area/release` — release tooling, version bumps, release protocol. Previously catch-all under `area/core`.
+- `area/scaffold` — `codev init` / `adopt` / `update` / `doctor`, `codev-skeleton/`, four-tier resolver. Previously catch-all under `area/core`.
+- `area/protocols` — protocol *definitions* in `codev/protocols/` and `codev-skeleton/protocols/`. Previously straddled `area/docs` and `area/porch`.
 
-Categories the user might suggest that are **not** missing:
+**Labels removed** (1):
 
-- **dashboard** → already covered as `area/panel` (label name differs from colloquial term — flagged in the scope hint and synonym-alert).
-- **web** → codev has no web component (no marketing site, no separate web app). Nothing to label.
-- **mobile** → codev has no mobile component. Nothing to label.
-- **agent-farm / afx** → already covered as `area/tower` (the label intentionally bundles Tower + agent-farm to avoid a near-duplicate `area/agent-farm`).
+- `area/panel` — was generically named and covered VSCode bottom-panel-area work (NOT the dashboard package, despite my initial misreading). The 4 existing `area/panel` issues (#812, #813, #814, #815) were relabeled to `area/vscode` since they're all "vscode: migrate ... view ..." work. The `area/panel` label was then deleted.
+
+**Final label set: 14 area labels.** The doc table in `CLAUDE.md`, `AGENTS.md`, and `codev/roles/architect.md` was rewritten to match.
+
+**Policy bullets touched:**
+
+- Removed: "All `gh issue create` invocations include `--assignee @me`." User correction: reporting an issue ≠ committing to do it. Self-assignment is appropriate only when the user is taking the work on, not by default. (Memory file [feedback-assign-issues-to-user] updated to match.)
+- Removed: "(Kubernetes/Terraform convention)" parenthetical on the slash-separator rule. Irrelevant to the architect's reading.
+- Removed: synonym-alert paragraph + per-row inline synonym alerts. Speculative, not useful.
+
+The skeleton files (`codev-skeleton/templates/{CLAUDE,AGENTS}.md`, `codev-skeleton/roles/architect.md`) are unaffected by the label additions (they're framework-neutral by design). They received the same `--assignee @me` bullet removal and the same Kubernetes-style parenthetical removal.
 
 ## Test Plan
 

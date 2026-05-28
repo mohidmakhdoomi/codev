@@ -125,25 +125,28 @@ Key locations:
 
 **Live vocabulary** (run `gh label list --search area/` to confirm):
 
-| Label | Scope (with common synonyms) |
+| Label | Scope |
 |---|---|
 | `area/docs` | Documentation — this repo, CLAUDE/AGENTS, role files, `codev/resources/` |
-| `area/vscode` | VSCode extension — sidebar views, commands, keybindings |
-| `area/panel` | The "codev panel" tab inside the VSCode extension. |
+| `area/vscode` | VSCode extension — sidebar views, panel-area views, commands, keybindings |
+| `area/dashboard` | Tower web dashboard — the `@cluesmith/codev-dashboard` React/Vite package, served by Tower and opened in a browser (distinct from any VSCode UI) |
 | `area/consult` | `consult` CLI and consultation tooling |
 | `area/tower` | Tower server + `afx` / agent-farm CLI. **No separate `area/agent-farm`** — afx work goes here. |
 | `area/cross-cutting` | Multi-area work — used **alone**, never alongside another `area/*` |
 | `area/porch` | Porch state machine / protocol orchestration |
+| `area/protocols` | Protocol definitions (`codev/protocols/`, `codev-skeleton/protocols/`) — distinct from `area/porch` (orchestration) |
 | `area/config` | `.codev/config.json` and workspace setup |
 | `area/terminal` | Terminal-specific — PTY, VSCode terminal pane |
-| `area/core` | Shared core library / forge abstraction (`packages/core`, `packages/codev/src/lib`); also the current catch-all for install/scaffold (`codev init`/`adopt`/`update`) and release tooling until those get dedicated labels |
+| `area/scaffold` | Install path — `codev init` / `adopt` / `update` / `doctor`, `codev-skeleton/`, the four-tier resolver |
+| `area/release` | Release tooling — version bumps, release protocol artifacts, release scripts |
+| `area/web` | Marketing site / web content — the `marketing/` directory |
+| `area/core` | Shared core library / forge abstraction (`packages/core`, `packages/codev/src/lib`, `packages/types`) |
 
 **Policy:**
 
 - **Exactly one** `area/*` per issue. Multi-area work uses `area/cross-cutting` *alone* — never two `area/*` labels.
 - **No `type:*` labels.** Codev classifies issues by area only.
 - `area/` uses **slash**. Other label families (if ever introduced) would keep colons.
-- All `gh issue create` invocations include `--assignee @me` so issues land in the user's assigned list.
 
 **Operational recipes:**
 
