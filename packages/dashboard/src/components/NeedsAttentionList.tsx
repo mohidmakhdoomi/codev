@@ -24,7 +24,7 @@ function gateKindClass(blocked: string): string {
   switch (blocked) {
     case 'spec review': return 'attention-kind--spec';
     case 'plan review': return 'attention-kind--plan';
-    case 'code review': return 'attention-kind--code-review';
+    case 'dev review': return 'attention-kind--dev';
     case 'PR review': return 'attention-kind--pr';
     case 'verify review': return 'attention-kind--verify';
     default: return 'attention-kind--plan';

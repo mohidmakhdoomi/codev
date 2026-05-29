@@ -1386,12 +1386,15 @@ a.attention-row {
   color: var(--status-error);
 }
 
-.attention-kind--code-review {
-  color: var(--status-waiting);
+/* dev-approval — pre-PR human gate (PIR, #931). The human reviews the running
+   worktree before the PR exists, so it's grouped with the urgent pre-PR error
+   gates (spec/plan) rather than the review-style PR/verify waits. */
+.attention-kind--dev {
+  color: var(--status-error);
 }
 
 /* verify-approval — post-merge human gate (#927). Review-style wait, grouped
-   visually with PR / code review rather than the urgent pre-PR error gates. */
+   visually with the PR review row rather than the urgent pre-PR error gates. */
 .attention-kind--verify {
   color: var(--status-waiting);
 }
