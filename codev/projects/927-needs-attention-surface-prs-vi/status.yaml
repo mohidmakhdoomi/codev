@@ -8,11 +8,11 @@ plan_phases:
     status: complete
   - id: dashboard-surfacing
     title: PR-rows-only Needs Attention + verify styling (dashboard)
-    status: in_progress
+    status: complete
   - id: remove-dead-projection
     title: Delete recentlyMergedIssueIds end-to-end (retain fetchRecentMergedPRs)
-    status: pending
-current_plan_phase: dashboard-surfacing
+    status: in_progress
+current_plan_phase: remove-dead-projection
 gates:
   spec-approval:
     status: approved
@@ -26,8 +26,8 @@ gates:
     status: pending
   verify-approval:
     status: pending
-iteration: 2
-build_complete: true
+iteration: 1
+build_complete: false
 history:
   - iteration: 1
     plan_phase: dashboard-surfacing
@@ -46,4 +46,4 @@ history:
         file: >-
           /Users/mwk/Development/cluesmith/codev/.builders/spir-927/codev/projects/927-needs-attention-surface-prs-vi/927-dashboard-surfacing-iter1-claude.txt
 started_at: '2026-05-29T16:47:35.190Z'
-updated_at: '2026-05-29T17:55:26.236Z'
+updated_at: '2026-05-29T17:57:50.206Z'
