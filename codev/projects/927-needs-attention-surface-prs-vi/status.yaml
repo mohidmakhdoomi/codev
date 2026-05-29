@@ -1,9 +1,18 @@
 id: '927'
 title: needs-attention-surface-prs-vi
 protocol: spir
-phase: plan
-plan_phases: []
-current_plan_phase: null
+phase: implement
+plan_phases:
+  - id: server-derivation
+    title: Gate-authoritative pr signal + verify-approval label (overview server + types)
+    status: in_progress
+  - id: dashboard-surfacing
+    title: PR-rows-only Needs Attention + verify styling (dashboard)
+    status: pending
+  - id: remove-dead-projection
+    title: Delete recentlyMergedIssueIds end-to-end (retain fetchRecentMergedPRs)
+    status: pending
+current_plan_phase: server-derivation
 gates:
   spec-approval:
     status: approved
@@ -18,7 +27,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-05-29T16:47:35.190Z'
-updated_at: '2026-05-29T17:27:03.980Z'
+updated_at: '2026-05-29T17:28:18.116Z'
