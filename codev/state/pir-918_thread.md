@@ -12,4 +12,17 @@ Investigated the backlog view stack:
 
 Plan written to `codev/plans/918-vscode-quick-pick-command-for-.md`. Design: new vscode-free `views/backlog-search.ts` (orderForSearch + toQuickPickItems, testable), thin `commands/search-backlog.ts` wrapper, register in extension.ts, add command to package.json, unit tests. Search is over FULL backlog (not mine-only), snapshot at invoke, mine-first ordering, delegates open to existing `codev.viewBacklogIssue`.
 
-Awaiting `plan-approval` gate.
+Plan approved.
+
+## Implement phase (2026-05-30)
+
+Implemented per plan:
+- `views/backlog-search.ts` (vscode-free) — `orderForSearch` (full spawnable, mine-first, NO mine-only filter), `toQuickPickItems` (label `#id title`, desc `area · Nd ago [· @assignee]`, injected `now`), private `relativeAge`. `detail` omitted (no body in cache, as planned).
+- `commands/search-backlog.ts` — snapshot `overviewCache`, empty-guard, `showQuickPick` (matchOnDescription/Detail), delegate open to `codev.viewBacklogIssue`.
+- `extension.ts` — register `codev.searchBacklog`.
+- `package.json` — command `Codev: Search Backlog...` ($search icon), no commandPalette suppressor (palette-visible), no keybinding.
+- `__tests__/backlog-search.test.ts` — 7 unit tests.
+
+Worktree had no node_modules; ran `pnpm install --frozen-lockfile` + built core/types (their `.d.ts` are required for vscode check-types). Then: check-types ✓, lint ✓, vitest 120 passed (incl. 4 new files / 7 new tests).
+
+Awaiting `dev-approval` gate.
