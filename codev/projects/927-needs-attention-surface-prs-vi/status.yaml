@@ -23,8 +23,9 @@ gates:
     requested_at: '2026-05-29T17:17:05.611Z'
     approved_at: '2026-05-29T17:27:03.979Z'
   pr:
-    status: pending
+    status: approved
     requested_at: '2026-05-29T18:13:40.170Z'
+    approved_at: '2026-05-29T22:22:11.644Z'
   verify-approval:
     status: pending
 iteration: 1
@@ -47,5 +48,5 @@ history:
         file: >-
           /Users/mwk/Development/cluesmith/codev/.builders/spir-927/codev/projects/927-needs-attention-surface-prs-vi/927-dashboard-surfacing-iter1-claude.txt
 started_at: '2026-05-29T16:47:35.190Z'
-updated_at: '2026-05-29T18:13:40.170Z'
-pr_ready_for_human: true
+updated_at: '2026-05-29T22:22:11.645Z'
+pr_ready_for_human: false
