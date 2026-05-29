@@ -93,15 +93,13 @@ export interface BuilderOverview {
    */
   area: string;
   /**
-   * Canonical "PR is waiting on a human reviewer" signal (Issue #872). True the
-   * moment porch transitions out of the CMAP-emitting state for the PR-creating
-   * phase, for ALL bundled protocols. Computed from `pr_ready_for_human` in
-   * status.yaml when present; otherwise falls back to the v3.1.3 derived logic
-   * (`blocked === 'PR review'` || BUGFIX `phase === 'verified'`) so in-flight
-   * projects from before this field shipped continue to surface correctly.
-   *
-   * Consumers (dashboard NeedsAttentionList, VSCode tree) gate on this flag
-   * instead of deriving from the protocol-specific gate shape themselves.
+   * Canonical "PR is waiting on a human reviewer" signal. Gate-authoritative
+   * (#927): true exactly when the builder's `pr` gate is genuinely pending
+   * (`status: pending` + `requested_at`), which porch sets after the PR phase /
+   * CMAP for EVERY bundled PR-producing protocol (BUGFIX, AIR, SPIR, ASPIR,
+   * PIR). See `derivePrReady`. Consumers (dashboard NeedsAttentionList, VSCode
+   * tree) gate on this flag instead of re-deriving from the protocol-specific
+   * gate shape.
    */
   prReady: boolean;
 }
@@ -432,6 +430,12 @@ const GATE_LABELS: Record<string, string> = {
   'plan-approval': 'plan review',
   'dev-approval': 'dev review',
   'pr': 'PR review',
+  // Post-merge human gate on SPIR/ASPIR's `verify` phase (#927). A pending
+  // verify-approval genuinely needs human action, so it surfaces wherever
+  // `detectBlocked` is consumed (dashboard gate rows, VSCode tree/toast/status
+  // bar). The `pr` gate stays mapped here too (VSCode depends on it); the
+  // dashboard alone excludes `pr` from its gate rows since it renders PR rows.
+  'verify-approval': 'verify review',
 };
 
 export function detectBlocked(parsed: ParsedStatus): string | null {
@@ -461,11 +465,12 @@ export function detectBlockedGate(parsed: ParsedStatus): string | null {
  * Detect when the current blocked gate was first requested.
  * Returns the ISO timestamp string or null if not blocked.
  *
- * Keep this list in sync with `detectBlocked`'s `gateLabels` keys.
+ * Iterates `GATE_LABELS` so the gate set lives in exactly one place — sibling
+ * to `detectBlocked` / `detectBlockedGate` (#927 removed this function's
+ * previously-separate hardcoded array, which was a silent drift hazard).
  */
 export function detectBlockedSince(parsed: ParsedStatus): string | null {
-  const gateNames = ['spec-approval', 'plan-approval', 'dev-approval', 'pr'];
-  for (const gate of gateNames) {
+  for (const gate of Object.keys(GATE_LABELS)) {
     if (parsed.gates[gate] === 'pending' && parsed.gateRequestedAt[gate]) {
       return parsed.gateRequestedAt[gate];
     }
@@ -474,30 +479,28 @@ export function detectBlockedSince(parsed: ParsedStatus): string | null {
 }
 
 /**
- * Compute the canonical "PR ready for human review" signal for a builder
- * (Issue #872). Prefers porch's explicit `pr_ready_for_human` field in
- * status.yaml when present; otherwise falls back to the v3.1.3 derivation so
- * builders whose state.yaml pre-dates the field continue to surface.
+ * Compute the canonical "PR ready for human review" signal for a builder.
  *
- * Fallback derivation:
- *   - `blocked === 'PR review'` — protocols with a `pr` gate (AIR/SPIR/ASPIR/PIR)
- *     that reached the human-bottleneck state under v3.1.3 logic.
- *   - BUGFIX `phase === 'verified'` — the v3.1.3 gap this canonical signal
- *     closes. BUGFIX has no `pr` gate, so its post-CMAP state is `verified`
- *     with no gate-pending signal; the fallback adds this case so in-flight
- *     BUGFIX builders aren't dropped from Needs Attention.
+ * Gate-authoritative (#927): a PR is waiting on a human exactly when its
+ * builder's `pr` gate is genuinely pending — `status: pending` AND a
+ * `requested_at` timestamp is present. Porch requests the `pr` gate (writing
+ * `requested_at`) after the PR phase / CMAP completes, for EVERY bundled
+ * PR-producing protocol (BUGFIX, AIR, SPIR, ASPIR, PIR — #887 gave BUGFIX a
+ * `pr` gate). The `pr` gate going pending is therefore the uniform,
+ * post-CMAP "ready for human" signal across all protocols.
  *
- * Once porch has written `pr_ready_for_human` to status.yaml the fallback no
- * longer fires for that project — the explicit field is authoritative.
+ * The `requested_at` conjunct is load-bearing: porch initializes every gate to
+ * `status: pending` with NO `requested_at` at project creation, so a bare
+ * `=== 'pending'` check would mark freshly-initialized projects PR-ready.
+ *
+ * This deliberately no longer consults `pr_ready_for_human` (coincident with
+ * the gate by construction; reading the gate directly removes the sticky-`false`
+ * rollback hazard from #919) nor the old `bugfix && phase === 'verified'`
+ * fallback (a crutch for a gateless BUGFIX variant — gateless PR-producing
+ * protocols do not surface PR rows, by design).
  */
 export function derivePrReady(parsed: ParsedStatus): boolean {
-  if (parsed.prReadyForHuman !== null) return parsed.prReadyForHuman;
-  // Fallback: v3.1.3 logic + BUGFIX case.
-  const prGatePending =
-    parsed.gates['pr'] === 'pending' && !!parsed.gateRequestedAt['pr'];
-  if (prGatePending) return true;
-  if (parsed.protocol === 'bugfix' && parsed.phase === 'verified') return true;
-  return false;
+  return parsed.gates['pr'] === 'pending' && !!parsed.gateRequestedAt['pr'];
 }
 
 /**

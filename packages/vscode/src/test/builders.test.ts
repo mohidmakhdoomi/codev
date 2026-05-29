@@ -10,6 +10,8 @@ function builder(
   id: string,
   opts: {
     blocked?: boolean;
+    /** Explicit `blocked` label (e.g. 'verify review', 'PR review'); implies blocked. */
+    blockedLabel?: string;
     blockedSince?: string;
     phase?: string;
     lastDataAt?: string | null;
@@ -17,7 +19,7 @@ function builder(
 ): OverviewBuilder {
   return {
     id,
-    blocked: opts.blocked ? 'gate-x' : null,
+    blocked: opts.blockedLabel ?? (opts.blocked ? 'gate-x' : null),
     blockedSince: opts.blockedSince ?? null,
     phase: opts.phase ?? 'implement',
     lastDataAt: opts.lastDataAt === undefined ? null : opts.lastDataAt,
@@ -105,6 +107,34 @@ suite('orderForDisplay', () => {
 			builder('d', { phase: 'complete', lastDataAt: iso(NOW - 10 * 60_000) }),
 		];
 		assert.strictEqual(orderForDisplay(bs, NOW).length, bs.length);
+	});
+});
+
+// #927 — shared GATE_LABELS blast radius. The dashboard surfaces the `pr` gate
+// as a PR row, but VSCode is builder-centric and surfaces every pending human
+// gate (including the newly-added `verify-approval`) as a blocked builder in
+// the tree. orderForDisplay is label-agnostic — it must place ANY blocked
+// builder in the blocked bucket regardless of which gate it is blocked on.
+suite('orderForDisplay — #927 gate blast radius', () => {
+	test('a verify-approval-blocked builder lands in the blocked bucket', () => {
+		const verify = builder('verify', { blockedLabel: 'verify review', blockedSince: iso(NOW - 60_000) });
+		const active = builder('active', { lastDataAt: iso(NOW - 1000) });
+		const out = orderForDisplay([active, verify], NOW);
+		assert.deepStrictEqual(out.map(x => x.id), ['verify', 'active']);
+	});
+
+	test('a PR-review-blocked builder still lands in the blocked bucket (unchanged)', () => {
+		const pr = builder('pr', { blockedLabel: 'PR review', blockedSince: iso(NOW - 60_000) });
+		const active = builder('active', { lastDataAt: iso(NOW - 1000) });
+		const out = orderForDisplay([active, pr], NOW);
+		assert.deepStrictEqual(out.map(x => x.id), ['pr', 'active']);
+	});
+
+	test('verify-review and PR-review blocked builders sort together by blockedSince (longest-waiting first)', () => {
+		const pr = builder('pr', { blockedLabel: 'PR review', blockedSince: iso(NOW - 60_000) });
+		const verify = builder('verify', { blockedLabel: 'verify review', blockedSince: iso(NOW - 3600_000) });
+		const out = orderForDisplay([pr, verify], NOW);
+		assert.deepStrictEqual(out.map(x => x.id), ['verify', 'pr']);
 	});
 });
 

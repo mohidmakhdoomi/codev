@@ -117,3 +117,39 @@ Two architect/Amr decisions teed up at plan-approval: (1) VSCode verify-approval
 GATE_ACTIONS "Verify" action?); (2) include the dev-review styling drive-by or not (default: no).
 
 Next: write plan rebuttal → commit → `porch done` → expect plan-approval gate (STOP, notify architect + note Amr).
+
+## 2026-05-29 — plan-approval APPROVED → Implement
+
+Architect approved plan-approval. Confirmed decisions:
+- (2) dev-review gateKindClass drive-by → **OUT of scope** (file separately if ever).
+- Amr has NOT weighed in on verify-approval VSCode UX → proceed with plan **DEFAULT**: surface verify-approval
+  as a blocked builder in VSCode tree/toast/status-bar via the gate-toast **generic fallback**. A dedicated
+  'Verify' GATE_ACTION is a **non-blocking additive follow-up** — do NOT block implementation on it.
+- Sequence **Phase 1 first** (shared overview infra + the VSCode blast-radius tests it owns), keep EVERY phase
+  commit green in BOTH packages, and **render-verify the dashboard** (esp. new `--verify` styling) before PR.
+- Next gate = **pr gate at the PR** (human's call). No autonomous per-phase PRs.
+
+Starting Phase 1 implementation.
+
+## 2026-05-29 — Phase 1 (server-derivation) implemented
+
+Edits:
+- `overview.ts`: `derivePrReady` → gate-authoritative (`gates['pr']==='pending' && requested_at`), dropped
+  field dependency + bugfix branch; `GATE_LABELS` += `'verify-approval':'verify review'`; `detectBlockedSince`
+  now iterates `Object.keys(GATE_LABELS)` (no more separate hardcoded array); `OverviewBuilder.prReady` comment.
+- `packages/types/src/api.ts`: `prReady` doc comment → gate-authoritative.
+- `overview.test.ts`: rewrote derivePrReady block (universal-gate true; requested_at-guard false;
+  approved false; ignores pr_ready_for_human; no bugfix-verified fallback); added verify-approval cases to
+  detectBlocked + detectBlockedSince.
+- `packages/vscode/src/test/builders.test.ts`: added `orderForDisplay — #927 gate blast radius` suite
+  (verify-review-blocked → blocked bucket; PR-review unchanged; sort together by blockedSince). Extended
+  `builder()` helper with `blockedLabel`.
+
+**Worktree-setup gotcha (cohort note):** this self-hosted codev repo has **no `worktree.postSpawn`** in
+`.codev/config.json`, so the worktree spawned WITHOUT `node_modules` (root missing; vitest unresolvable).
+Builders here must `pnpm install --frozen-lockfile` from the worktree root before any build/test/porch-check.
+Running that now.
+
+porch checks (from protocol.json): `build` = root `npm run build` (core + codev, incl. dashboard; NOT vscode);
+`tests` = `pnpm --filter @cluesmith/codev test` (codev vitest only — NOT vscode, NOT dashboard). So Phase 1's
+overview.test.ts IS gated by porch; the vscode test is verified separately (porch won't run it).
