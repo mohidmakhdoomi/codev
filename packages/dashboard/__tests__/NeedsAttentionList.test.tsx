@@ -266,6 +266,36 @@ describe('NeedsAttentionList buildItems — PR gating (issue #844)', () => {
     expect(row!.waitingSince).toBe(blockedSince);
   });
 
+  it('surfaces a dev-approval-pending builder as a gate row with --dev styling (#931, PIR)', () => {
+    // PIR's pre-PR human gate. The overview server's GATE_LABELS maps
+    // dev-approval → "dev review"; gateKindClass must map that label to
+    // attention-kind--dev so the row renders with its own color. Before #931
+    // there was no `case 'dev review'`, so it fell through to the default
+    // attention-kind--plan (the plan gate's color) — this guards against that.
+    const prs: OverviewPR[] = [];
+    const blockedSince = new Date('2026-01-06T08:00:00Z').toISOString();
+    const builders = [
+      makeBuilder({
+        id: 'pir-88',
+        issueId: '88',
+        protocol: 'pir',
+        phase: 'implement',
+        blocked: 'dev review',
+        blockedGate: 'dev-approval',
+        blockedSince,
+        prReady: false,
+      }),
+    ];
+
+    const items = buildItems(prs, builders);
+    const row = items.find(i => i.key === 'gate-pir-88');
+
+    expect(row).toBeDefined();
+    expect(row!.kind).toBe('dev review');
+    expect(row!.kindClass).toBe('attention-kind--dev');
+    expect(row!.waitingSince).toBe(blockedSince);
+  });
+
   it('does NOT double-emit when both the PR and the builder are present', () => {
     // Regression guard for the dedupe invariant after the missing-PR fallback
     // was added: when the PR IS emitted, the builder loop must skip.
