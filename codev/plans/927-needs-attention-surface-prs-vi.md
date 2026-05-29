@@ -43,14 +43,18 @@ Sequenced into **three phases** so every commit type-checks and tests green in b
 
 #### Objectives
 - Make the overview server emit a **gate-authoritative**, `requested_at`-aware `prReady` signal and surface `verify-approval` as a blocked gate — the shared-infrastructure change that all consumers (dashboard **and** VSCode) read.
+- **Own the VSCode blast-radius validation here** (not as a downstream note): this phase concretely covers the VSCode consumers of the changed shared infra, with their own acceptance criteria and tests. See *Cross-Cutting: VSCode blast radius* for the consumer map and the Amr coordination flag.
 
 #### Files to modify
 - `packages/codev/src/agent-farm/servers/overview.ts`
   - **`derivePrReady`**: reduce to gate-authoritative — return `parsed.gates['pr'] === 'pending' && !!parsed.gateRequestedAt['pr']`. Delete the `bugfix && phase === 'verified'` branch **and** the `pr_ready_for_human` field dependency (`if (parsed.prReadyForHuman !== null) return …`). Update the doc comment to state the universal-`pr`-gate contract and the `requested_at` invariant.
+  - **`OverviewBuilder.prReady` doc comment** (the server-side interface, ~L106 region): update the mirrored comment that currently describes the `pr_ready_for_human` + v3.1.3 derivation.
   - **`GATE_LABELS`**: add `'verify-approval': 'verify review'`. Keep `'pr': 'PR review'` (VSCode depends on it; the dashboard excludes it locally in Phase 2).
   - **`detectBlockedSince`**: replace the hardcoded `['spec-approval','plan-approval','dev-approval','pr']` array with iteration over `Object.keys(GATE_LABELS)` so the gate set lives in one place and `verify-approval` automatically gets a `blockedSince`. (`detectBlocked` / `detectBlockedGate` already iterate `GATE_LABELS`.)
-  - Leave `parseStatusYaml`'s `prReadyForHuman` parse in place (harmless; field still written by porch). Do **not** touch `recentlyMergedIssueIds` here.
+  - Leave `parseStatusYaml`'s `prReadyForHuman` parse in place (harmless; field still written by porch). Do **not** touch `recentlyMergedIssueIds` here (Phase 3).
+- `packages/types/src/api.ts` — update the `OverviewBuilder.prReady` doc comment (L183–194) which still describes the old `pr_ready_for_human` + v3.1.3 fallback derivation; rewrite it to the gate-authoritative contract. (This is the "+ types" work the title promises. The `recentlyMergedIssueIds` field at L250–259 is **not** touched here — it is removed in Phase 3.)
 - `packages/codev/src/agent-farm/__tests__/overview.test.ts` — update/extend (see Test Plan).
+- `packages/vscode/src/test/builders.test.ts` — extend with VSCode-side coverage of the shared-infra change (see Test Plan / Acceptance Criteria). Touch other VSCode consumers only if a regression surfaces (none expected — `pr` unchanged; verify-approval flows the gate-toast generic fallback).
 
 #### Implementation Details
 - The `requested_at` guard is the correctness crux: porch initializes **every** gate to `status: pending` with no `requested_at`; a bare `=== 'pending'` check would mark freshly-initialized projects PR-ready. Keep the `&& !!parsed.gateRequestedAt['pr']` conjunct.
@@ -60,10 +64,13 @@ Sequenced into **three phases** so every commit type-checks and tests green in b
 - [ ] `derivePrReady` true ⇔ `pr` gate `pending` **and** `requested_at` present; false for bugfix-verified-without-pr-gate and for freshly-initialized projects.
 - [ ] `detectBlocked`/`detectBlockedSince` return `'verify review'` + timestamp for a verify-approval-pending builder; unchanged for spec/plan/dev/pr.
 - [ ] `packages/codev` builds; all overview tests pass.
+- [ ] **VSCode (blast-radius ownership):** `packages/vscode` builds and its tests pass; a `verify-approval`-pending builder surfaces in the Builders tree as blocked with `blockedSince` (bell/sort), the gate-toast generic fallback (`{ label: 'Review', command: 'codev.openBuilderById' }`) handles `verify-approval` without error, and **`pr`-gate VSCode behavior is unchanged** (regression-guarded by a test).
 
 #### Test Plan
 - **Unit (`overview.test.ts`)**: gate-authoritative `derivePrReady` (pr pending+requested ⇒ true; pr pending no-requested ⇒ false; bugfix `verified` no pr gate ⇒ false; field present but pr gate not pending ⇒ false — proves field no longer load-bearing); `detectBlockedSince` returns verify-approval timestamp; `GATE_LABELS` maps verify-approval.
-- **Manual**: n/a (pure derivation).
+- **Unit (`packages/vscode/src/test/builders.test.ts`)**: a `verify-approval`-pending builder is treated as blocked (appears in the attention/blocked grouping with `blockedSince`); a `pr`-gate-pending builder's tree treatment is unchanged from today (regression guard).
+- **Build**: `pnpm --filter @cluesmith/codev build` and the VSCode package build both green.
+- **Manual**: n/a (pure derivation; VSCode UI render-verify deferred to Amr's area review at plan-approval).
 
 #### Rollback Strategy
 Revert the phase commit; `derivePrReady`/`GATE_LABELS`/`detectBlockedSince` return to prior behavior. No data migration involved.
@@ -85,6 +92,7 @@ Revert the phase commit; `derivePrReady`/`GATE_LABELS`/`detectBlockedSince` retu
   - **`buildItems`**: delete the builder-emit branch (the `if (b.prReady) { … emit gate-${b.id} … }` block and its `emittedPrReadyIssueIds`/`mergedIssueIdSet` bookkeeping). Replace the builder loop's PR-handling with a single early **`if (b.prReady) continue;`** so PR-ready builders surface *only* via the PR loop (and never fall through to the gate-row catch-all). Keep the PR loop (PR rows for `prReady` linked builders + unaffiliated `REVIEW_REQUIRED`) and the gate-row emission for `b.blocked && b.blockedSince` (now naturally covers verify).
   - Remove the `recentlyMergedIssueIds` parameter/prop usage from `buildItems` and `NeedsAttentionList` (stop consuming it; prop becomes unused → drop from the interface).
   - **`gateKindClass`**: add `case 'verify review': return 'attention-kind--verify';`.
+  - **Optional drive-by (flagged — pre-existing, not in spec scope)**: `GATE_LABELS['dev-approval'] = 'dev review'` but `gateKindClass` has a `'code review'` case (matching no current label) and no `'dev review'` case, so dev-approval gate rows already fall back to `--plan` styling. Since this is the exact function being edited, a one-line `case 'dev review': return 'attention-kind--dev';` (+ CSS) would fix it. **Default: do NOT include** (out of #927 scope) unless the architect okays it at plan-approval — see Approval / open question.
 - `packages/dashboard/src/index.css` — add a `.attention-kind--verify { … }` rule (mirror `.attention-kind--spec/--plan`; pick a distinct accent).
 - `packages/dashboard/src/components/WorkView.tsx` — stop passing `recentlyMergedIssueIds={…}` to `NeedsAttentionList`.
 - `packages/dashboard/__tests__/NeedsAttentionList.test.tsx` — invert/remove + add (see Test Plan).
@@ -163,9 +171,10 @@ The Phase 1 change to **shared** `overview.ts` infra (`derivePrReady`, `GATE_LAB
 1. `pr` **stays** in `GATE_LABELS` → VSCode pr-gate behavior is **unchanged** (no regression by construction).
 2. `verify-approval` is **newly** present → a pending verify-approval gate now surfaces as a blocked builder (tree bell + toast + status count). This is arguably a *fix* (a pending human gate genuinely needs attention) but is a behavior change. `GATE_ACTIONS`/`approve.ts` have no `verify-approval` entry → generic fallback ("Review" → open builder terminal), which is acceptable.
 
-**Test coverage to add/verify (in Phase 1, or a VSCode-scoped addition):**
-- [ ] A VSCode-side test (or extend `builders.test.ts`) asserting a `verify-approval`-pending builder appears in the Builders tree as blocked with `blockedSince`, and that `pr`-gate behavior is unchanged.
-- [ ] Confirm `gate-toast.ts` generic-fallback path handles `verify-approval` without error (no `GATE_ACTIONS` entry required).
+**Test coverage — OWNED BY PHASE 1** (these are Phase 1 acceptance criteria + test-plan items, not loose coordination notes):
+- [ ] VSCode-side test in `packages/vscode/src/test/builders.test.ts`: a `verify-approval`-pending builder appears in the Builders tree as blocked with `blockedSince`; a `pr`-gate-pending builder's treatment is **unchanged** (regression guard).
+- [ ] `gate-toast.ts` generic-fallback path handles `verify-approval` without error (no `GATE_ACTIONS` entry required — verified at `gate-toast.ts:123`).
+- [ ] `packages/vscode` builds.
 
 **🚩 Flag for Amr (needs area/vscode eyes at plan-approval):**
 - Is surfacing **verify-approval** as a blocked builder in the VSCode tree/toast/status-bar the desired UX, or should VSCode (like the dashboard for `pr`) treat verify-approval specially? Default in this plan: surface it (consistent with "every genuine human gate needs attention"). If Amr wants a `GATE_ACTIONS` entry for verify-approval (e.g. a "Verify" action), that is an additive follow-up, not a blocker for #927.
@@ -198,14 +207,23 @@ Phase 1 (server-derivation) ──→ Phase 2 (dashboard-surfacing) ──→ Ph
 - [ ] Reconcile #919 (descope its Needs-Attention / `derivePrReady` parts) and #902 (recentlyMergedIssueIds removed) — note in the PR/review.
 
 ## Expert Review
-**Date**: (pending — porch runs 3-way after this draft)
-**Models**: Gemini, Codex, Claude
-**Key Feedback**: (to be filled)
-**Plan Adjustments**: (to be filled)
+**Date**: 2026-05-29
+**Models**: Gemini (APPROVE), Codex (REQUEST_CHANGES), Claude (APPROVE) — 3-way, HIGH confidence.
+
+**Key Feedback**:
+- **Codex (REQUEST_CHANGES)**: (1) the VSCode blast radius was *discussed* but not *concretely owned* in a phase — Phase 1 should own the VSCode test/build work via explicit file edits + acceptance criteria + tests; (2) Phase 1's title says "+ types" but its file list omitted the shared type contract/docs (`packages/types/src/api.ts`) that still describe the old `prReady` derivation.
+- **Claude (APPROVE)**: verified every file/line claim against disk (all accurate). Non-blocking: (a) VSCode test-scope was ambiguous between "Phase 1 acceptance criteria" and "coordination note"; (b) pre-existing `'dev review'` → `gateKindClass` styling gap (drive-by opportunity in the function being edited).
+- **Gemini (APPROVE)**: no issues.
+
+**Plan Adjustments**:
+- Phase 1 now **owns** the VSCode blast-radius validation: added `packages/types/src/api.ts` (the `prReady` doc-comment rewrite) and `packages/vscode/src/test/builders.test.ts` to its file list; added concrete VSCode acceptance criteria (build green; verify-approval surfaces as blocked in the Builders tree; gate-toast generic fallback handles verify-approval; `pr` behavior regression-guarded) and matching test-plan items. (Resolves Codex #1+#2 and Claude obs-a.)
+- The cross-cutting section's VSCode test checkboxes are now explicitly labeled "OWNED BY PHASE 1," removing the ambiguity.
+- Added the pre-existing `'dev review'` styling gap to Phase 2 as a **flagged optional drive-by**, defaulting to *not* included (out of #927 scope) pending architect okay. (Claude obs-b.)
 
 ## Approval
 - [ ] Technical Lead Review (architect — `plan-approval` gate)
-- [ ] area/vscode review (Amr) — VSCode blast radius
+- [ ] area/vscode review (Amr) — VSCode blast radius. **Open question for Amr**: is surfacing `verify-approval` as a blocked builder in the VSCode tree/toast/status-bar the desired UX, and does VSCode want a dedicated `GATE_ACTIONS`/approve "Verify" action (additive follow-up, not a #927 blocker)?
+- [ ] **Architect decision (plan-approval)**: include the optional `'dev review'` `gateKindClass` drive-by fix, or leave out of scope? (Default: out of scope.)
 - [ ] Expert AI Consultation Complete (3-way)
 
 ## Change Log

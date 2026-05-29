@@ -99,3 +99,21 @@ by construction. New: verify-approval surfaces as a blocked builder in VSCode (i
 plan-approval — open Q: does VSCode want a GATE_ACTIONS "Verify" entry? additive follow-up, not a blocker).
 
 Next: commit plan draft → `porch done` → 3-way consult.
+
+## 2026-05-29 — Plan 3-way consult done
+
+**Gemini APPROVE, Claude APPROVE, Codex REQUEST_CHANGES** (all HIGH). Codex's REQUEST_CHANGES was about
+strengthening the plan as an execution guide, not a design problem:
+- (#1) VSCode blast radius was *discussed* not *owned* → moved concrete VSCode work INTO Phase 1
+  (files: `packages/types/src/api.ts` prReady-comment rewrite + `packages/vscode/src/test/builders.test.ts`;
+  added VSCode acceptance criteria + test-plan items; `pr` regression-guarded).
+- (#2) Phase 1 title says "+ types" but omitted api.ts → added api.ts (prReady doc comment, L183-194 describes
+  the old derivation).
+Claude obs-a (VSCode test-scope ambiguity) → resolved by labeling the checkboxes "OWNED BY PHASE 1".
+Claude obs-b (pre-existing `dev review` gateKindClass styling gap) → added as a **flagged optional drive-by** in
+Phase 2, default OUT of scope pending architect okay.
+
+Two architect/Amr decisions teed up at plan-approval: (1) VSCode verify-approval UX (surface as blocked? want a
+GATE_ACTIONS "Verify" action?); (2) include the dev-review styling drive-by or not (default: no).
+
+Next: write plan rebuttal → commit → `porch done` → expect plan-approval gate (STOP, notify architect + note Amr).
