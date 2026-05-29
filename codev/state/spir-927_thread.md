@@ -153,3 +153,12 @@ Running that now.
 porch checks (from protocol.json): `build` = root `npm run build` (core + codev, incl. dashboard; NOT vscode);
 `tests` = `pnpm --filter @cluesmith/codev test` (codev vitest only — NOT vscode, NOT dashboard). So Phase 1's
 overview.test.ts IS gated by porch; the vscode test is verified separately (porch won't run it).
+
+**Phase 1 verification + 3-way:** porch `build` ✓ (5s) + `tests` ✓ (20s). vscode `compile-tests` (tsc) ✓
+(builders.test.ts is a vscode-test/Electron mocha test — vitest doesn't glob `src/test/`; full Electron run
+is area/vscode CI). 3-way impl consult: **Gemini APPROVE, Codex APPROVE, Claude APPROVE** (all HIGH, no
+issues). Note: Gemini's FIRST run errored on a consult infra flake ("Tool run_shell_command not found", no
+verdict/file) — retried, clean APPROVE. Phase 1 unanimous, no rebuttal needed. Committed a4941322.
+
+Next: `porch done`/`next` → advance to Phase 2 (dashboard-surfacing). Per porch's reminder, /compact before
+the new phase if context is heavy.
