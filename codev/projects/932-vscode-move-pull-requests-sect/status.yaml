@@ -1,0 +1,18 @@
+id: '932'
+title: vscode-move-pull-requests-sect
+protocol: pir
+phase: plan
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: pending
+  dev-approval:
+    status: pending
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-05-29T23:15:39.691Z'
+updated_at: '2026-05-29T23:15:39.691Z'
