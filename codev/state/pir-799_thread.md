@@ -70,3 +70,11 @@ Verification (correct pnpm commands — porch's generic `npm run build`/`npm tes
 - `pnpm --filter codev-vscode test` → **105 passing**, incl. all #799 regression tests ✓
 
 Pausing at `dev-approval`. Reviewer's killer move: run the Extension Dev Host with the Git extension enabled and confirm builder file rows are stably colored (no flash-then-grey); the disable-Git-extension test on the OLD build confirms Git was the overrider.
+
+### dev-approval APPROVED → review phase → PR #942 → pr gate pending
+
+- Wrote `codev/reviews/799-vscode-builder-changed-file-ro.md` (retrospective: Summary/Files/Commits/Tests/Architecture Updates [none]/Lessons Learned/Things to Look At/How to Test).
+- Added 2 lessons to `codev/resources/lessons-learned.md` (UI/UX: Git decorator matches by path + weight:10; Debugging: a plausible unverified fix can mask root cause).
+- PR #942 opened with review as body (`Fixes #799`), recorded with porch.
+- 3-way consultation (single advisory pass): **gemini=APPROVE (HIGH), codex=APPROVE (MEDIUM), claude=APPROVE (HIGH)** — no REQUEST_CHANGES, no KEY_ISSUES.
+- Architect notified. **Waiting at `pr` gate** — merge is gated by porch state (`porch approve 799 pr --a-human-explicitly-approved-this`), not pane prose. After approval: verify gate, `gh pr merge --merge`, `porch done --merged 942`, final cleanup notification.
