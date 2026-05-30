@@ -18,14 +18,9 @@ import type { ChangeEntry, ChangeStatus, ResourcePlan } from '../commands/view-d
  */
 
 /**
- * Scheme for builder changed-file `resourceUri`s. Deliberately NOT `file:`
- * so VSCode's built-in Git FileDecorationProvider — which fires for every
- * `file:` URI rendered in the editor — does not also decorate these rows.
- * With a `file:` URI, Git sees the gitignored `.builders/<id>/…` path and
- * tints the label with `gitDecoration.ignoredResourceForeground` (grey),
- * winning the color merge over our SCM-style status colors (#799). The
- * file-type icon still resolves because `IFileIconTheme` keys off
- * basename, not scheme.
+ * Scheme for builder changed-file `resourceUri`s. Deliberately NOT `file:`,
+ * though — as #799 proved — the scheme alone is not what keeps VSCode's
+ * built-in Git decorator off these rows. See `builderFileResourceUri`.
  *
  * No TextDocumentContentProvider is registered for this scheme — these
  * URIs are markers for the tree row only; the diff is opened via
@@ -39,9 +34,35 @@ export const BUILDER_FILE_SCHEME = 'codev-builder-diff';
  * `BuilderDiffCache` (when firing decoration-change events) so the two
  * URIs match exactly — VSCode keys decoration cache entries by URI, so a
  * mismatch would leave stale decorations on screen.
+ *
+ * The path is **synthetic** (`/` + the worktree-relative path), NOT the real
+ * worktree fs path. This is the crux of the #799 fix: VSCode's built-in Git
+ * decorators (`GitDecorationProvider`, `GitIgnoreDecorationProvider`) do NOT
+ * gate on `uri.scheme` — they resolve a repository by *path* and run
+ * `git check-ignore` on it. With the real `.builders/<id>/…` path, Git
+ * resolves the repo (main repo → path is gitignored; or the worktree's own
+ * repo → tracked) and contributes a decoration that competes with ours. At
+ * equal weight (the extension API exposes no weight; VSCode pins every
+ * extension decoration to `weight: 10`), the color merge winner is
+ * non-deterministic, and Git's grey `ignoredResourceForeground` — resolved
+ * on a ~500ms debounce, after our synchronous decoration paints — overrides
+ * our SCM color (the "correct color flashes, then grey" symptom; cf.
+ * microsoft/vscode#187756). A path that resolves into *no* open repository
+ * makes `getRepository(uri)` return undefined, so Git never fires and our
+ * decoration is the sole (winning) color.
+ *
+ * The real worktree path rides in the query so our own provider / handlers
+ * can recover it, and it keeps `uri.toString()` distinct per builder (two
+ * builders can share the same relative path) so the decoration cache — keyed
+ * by `uri.toString()` — doesn't collide. The file-type icon still resolves
+ * because `IFileIconTheme` keys off the basename at the path tail.
  */
 export function builderFileResourceUri(worktreePath: string, rel: string): vscode.Uri {
-  return vscode.Uri.file(path.join(worktreePath, rel)).with({ scheme: BUILDER_FILE_SCHEME });
+  return vscode.Uri.from({
+    scheme: BUILDER_FILE_SCHEME,
+    path: '/' + rel,
+    query: `wt=${encodeURIComponent(worktreePath)}`,
+  });
 }
 
 const STATUS_LABEL: Record<ChangeStatus, string> = {
@@ -73,8 +94,8 @@ export class BuilderFileTreeItem extends vscode.TreeItem {
         : dirLabel;
 
     // resourceUri → native file-type icon + our decoration-provider badge.
-    // Custom scheme keeps the built-in Git decorator from firing on the
-    // gitignored worktree path and tinting the label grey (#799).
+    // Synthetic path (see builderFileResourceUri) keeps the built-in Git
+    // decorator from path-resolving these rows and tinting the label grey (#799).
     this.resourceUri = builderFileResourceUri(worktreePath, rel);
     this.tooltip = `${STATUS_LABEL[change.status] ?? 'Changed'} · ${rel}`;
     this.contextValue = 'builder-file';

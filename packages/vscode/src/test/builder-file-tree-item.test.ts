@@ -6,6 +6,7 @@ import {
   builderFileResourceUri,
 } from '../views/builder-file-tree-item.js';
 import { BuilderDiffCache, type BuilderFileChange } from '../views/builder-diff-cache.js';
+import { BuilderFileDecorationProvider } from '../views/builder-file-decoration.js';
 import {
   planResources,
   type ChangeEntry,
@@ -15,12 +16,18 @@ import {
 
 /**
  * Regression tests for #799: the changed-file rows under each builder in
- * the Builders view were rendering with grey filenames because VSCode's
- * built-in Git FileDecorationProvider was firing on the `file:` URIs
- * (which point into gitignored `.builders/<id>/…`) and tinting the label
- * with `gitDecoration.ignoredResourceForeground`, winning the color merge
- * over our `BuilderFileDecorationProvider`. The fix is to use a custom
- * scheme on `resourceUri` so the built-in Git decorator skips these rows.
+ * the Builders view rendered with grey filenames because VSCode's built-in
+ * Git FileDecorationProvider was also firing on these rows and winning the
+ * color merge with `gitDecoration.ignoredResourceForeground`.
+ *
+ * The first shipped attempt (v3.1.4) only changed the URI *scheme*, on the
+ * theory that Git gates on `scheme === 'file'`. It does not: Git's
+ * decorators resolve a repository by *path* and `git check-ignore` the path,
+ * scheme-agnostically — so a custom-scheme URI whose path was still the real
+ * gitignored `.builders/<id>/…` path kept getting Git's grey decoration. The
+ * real fix is a **synthetic path** that resolves into no open repository, so
+ * `getRepository(uri)` returns undefined and Git never fires. These tests
+ * assert that path-shape property, which the scheme-only tests missed.
  */
 
 const WT = '/repo/.builders/0042';
@@ -32,17 +39,38 @@ function makeFileChange(path: string, status: ChangeStatus = 'M'): BuilderFileCh
 }
 
 suite('builderFileResourceUri', () => {
-  test('returns a non-file scheme so the built-in Git decorator skips it', () => {
+  test('uses the custom scheme, not file:', () => {
     const uri = builderFileResourceUri(WT, 'src/a.ts');
-    // The whole point of the fix — Git only decorates `file:` URIs.
     assert.notStrictEqual(uri.scheme, 'file');
     assert.strictEqual(uri.scheme, BUILDER_FILE_SCHEME);
   });
 
-  test('preserves the worktree-relative fs path (so the file-type icon resolves by basename)', () => {
+  test('path is synthetic — does NOT contain the worktree fs path (so Git cannot resolve a repo for it)', () => {
+    // The crux of the fix. If the path were the real worktree path, the
+    // built-in Git decorators would path-resolve it (main repo → gitignored,
+    // or the worktree's own repo) and win the color merge with grey (#799).
+    const uri = builderFileResourceUri(WT, 'src/a.ts');
+    assert.ok(!uri.path.includes(WT), `path must not contain the worktree fs path; got ${uri.path}`);
+    assert.strictEqual(uri.path, '/src/a.ts');
+  });
+
+  test('preserves the basename at the path tail (so the file-type icon resolves)', () => {
     const uri = builderFileResourceUri(WT, 'src/components/Foo.tsx');
-    // basename drives the icon — it must come through unchanged.
-    assert.ok(uri.path.endsWith('/src/components/Foo.tsx'), `path = ${uri.path}`);
+    // IFileIconTheme keys off the basename — it must come through unchanged.
+    assert.strictEqual(uri.path.split('/').pop(), 'Foo.tsx');
+  });
+
+  test('carries the worktree path in the query so it stays recoverable', () => {
+    const uri = builderFileResourceUri(WT, 'src/a.ts');
+    assert.strictEqual(new URLSearchParams(uri.query).get('wt'), WT);
+  });
+
+  test('is unique per builder for the same relative path (decoration cache keys by uri.toString())', () => {
+    // Two builders can have the same changed file; without the worktree in
+    // the query their URIs would collide in the global decoration map.
+    const a = builderFileResourceUri('/repo/.builders/0042', 'src/a.ts');
+    const b = builderFileResourceUri('/repo/.builders/0099', 'src/a.ts');
+    assert.notStrictEqual(a.toString(), b.toString());
   });
 });
 
@@ -109,6 +137,39 @@ suite('BuilderDiffCache decorations (#799)', () => {
       } finally {
         sub.dispose();
       }
+    } finally {
+      cache.dispose();
+    }
+  });
+});
+
+suite('BuilderFileDecorationProvider (#799)', () => {
+  test('returns a defined color + status badge per status (guards against a future color drop)', () => {
+    const cache = new BuilderDiffCache();
+    try {
+      const statuses: ChangeStatus[] = ['A', 'M', 'D'];
+      (cache as unknown as { syncDecorations: (id: string, wt: string, r: { baseRef: string; files: BuilderFileChange[] }) => void })
+        .syncDecorations('0042', WT, { baseRef: 'main', files: statuses.map(s => makeFileChange(`src/${s}.ts`, s)) });
+
+      const provider = new BuilderFileDecorationProvider(cache);
+      for (const s of statuses) {
+        const deco = provider.provideFileDecoration(builderFileResourceUri(WT, `src/${s}.ts`));
+        assert.ok(deco, `expected a decoration for status ${s}`);
+        assert.strictEqual(deco!.badge, s, `badge for ${s}`);
+        // The bug was a missing/overridden *color*, not a missing badge — so
+        // assert the color is present, the thing the scheme-only tests ignored.
+        assert.ok(deco!.color, `expected a color for status ${s}`);
+      }
+    } finally {
+      cache.dispose();
+    }
+  });
+
+  test('returns undefined for an untracked URI', () => {
+    const cache = new BuilderDiffCache();
+    try {
+      const provider = new BuilderFileDecorationProvider(cache);
+      assert.strictEqual(provider.provideFileDecoration(builderFileResourceUri(WT, 'not/tracked.ts')), undefined);
     } finally {
       cache.dispose();
     }
