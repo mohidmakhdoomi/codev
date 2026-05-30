@@ -294,6 +294,7 @@ Generalizable wisdom extracted from review documents, ordered by impact. Updated
 - [From 0099] Differentiate error types in CLI commands. CLI commands that call APIs must distinguish connection-level failures (server not running) from application-level errors (server returned an error) and show different user-facing messages.
 - [From 0126] Building the overview endpoint to work in degraded mode (showing builders but empty PR/backlog sections with error messages when `gh` is unavailable) is a good default pattern for features that depend on external services.
 - [From 0364] Use `onPointerDown` with `preventDefault()` and `tabIndex={-1}` to prevent focus stealing from terminal widgets -- this pattern translates directly to any floating controls rendered alongside interactive widgets.
+- [From 799] VSCode's built-in Git `FileDecorationProvider` matches resources by repository **path**, not by URI scheme, and every extension-provided decoration shares a fixed `weight: 10` — so an extension cannot outrank Git in the decoration color merge. To stop Git from tinting a custom TreeView row's label (e.g. grey "ignored" on gitignored worktree paths), the row's `resourceUri` must use a **synthetic path that resolves into no open repository**; a non-`file` scheme alone is insufficient because Git never checks the scheme. The file-type icon still resolves off the basename at the path tail.
 
 ## Documentation
 
@@ -378,6 +379,8 @@ Generalizable wisdom extracted from review documents, ordered by impact. Updated
 - [From 627] When multiple bugfix patches compete over the same state, consolidate them into a single owner (e.g., a state machine) rather than adding more guards. Three scroll mechanisms fighting each other created more bugs than they fixed.
 - [From 627] Lifecycle phases (initial-load → buffer-replay → interactive) eliminate magic thresholds. Instead of asking "is this scroll event real?", ask "what phase am I in?" to determine behavior.
 - [From 627] Always add a `reset()` method to state machines that persist across reconnections. The ScrollController's phase transitions were one-way until reconnection revealed the need to return to initial-load.
+
+- [From 799] A plausible fix that ships without live verification can mask the real root cause for a full release. The first #799 attempt (custom URI scheme) was logically appealing, passed unit tests, and shipped — but the tests only asserted URI *shape*, never rendering, and the scheme was the wrong layer entirely. Two things broke the deadlock: the precise user symptom ("correct color flashes, then goes grey" — a *late override*, not a static wrong value) and reading the actual VSCode source rather than trusting the API docs' implied behavior. For rendering/theme bugs, assert behavior at the layer that actually fails, and treat a one-line repro symptom as gold.
 
 ---
 
