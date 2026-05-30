@@ -65,6 +65,7 @@ Generalizable wisdom extracted from review documents, ordered by impact. Updated
 
 ## Architecture
 
+- [From 810] The builder-overview shape is defined twice — the `OverviewBuilder` wire type (`packages/types`) and a structurally-identical local `BuilderOverview` interface in `overview.ts`, kept in sync by hand. Adding a field to only the wire type compiles for clients (vscode/dashboard) but breaks the codev build at the server-side `builders.push({...})` sites. Compounding footgun: the codev package has no `check-types` script, so the mismatch is invisible until a full `pnpm build` runs `tsc` over `codev/src` — vscode/dashboard type-checks pass meanwhile. When touching the overview projection, build the codev package, not just the client type-check.
 - [From 0395] Prompt-based instructions beat programmatic file manipulation for flexible document generation — the Builder already has context and can write natural responses, while code would need fragile parsing and placeholder logic
 - [From 0395] Keep specs and plans clean as forward-looking documents — append review history (consultation feedback, lessons learned) to review files, not to the documents being reviewed
 - [From 0031] SQLite with WAL mode handles concurrency better than JSON files for shared state
