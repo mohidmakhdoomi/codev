@@ -41,8 +41,15 @@ A tier-1/2 protocol override that lacks a `pr` gate silently loses PR surfacing.
 - Env note: fresh worktree needed `pnpm install` + core build + `pnpm copy-skeleton` before
   update.test.ts/doctor could resolve the skeleton dir.
 
+## PR
+- PR #944 open: https://github.com/cluesmith/codev/pull/944
+- Review embedded in PR body (AIR convention — no separate review file).
+- Implementation ~166 LOC (pr-gate-audit 127 + doctor 22 + update 17); tests ~245 LOC.
+- Porch implement checks passed (build ✓, tests ✓). Advancing through PR phase → `pr` gate.
+
 ## Status
 - [x] Investigation complete
 - [x] Implementation
 - [x] Tests
-- [ ] PR
+- [x] PR #944 open
+- [ ] `pr` gate (awaiting human approval)
