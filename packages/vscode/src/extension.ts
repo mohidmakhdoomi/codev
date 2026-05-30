@@ -17,6 +17,7 @@ import { openWorktreeFolder } from './commands/open-worktree-folder.js';
 import { runWorktreeSetup } from './commands/run-worktree-setup.js';
 import { viewPlanFile, viewSpecFile, viewReviewFile } from './commands/view-artifact.js';
 import { activateIssueView, viewBacklogIssue } from './commands/view-issue.js';
+import { searchBacklog } from './commands/search-backlog.js';
 import { connectTunnel, disconnectTunnel } from './commands/tunnel.js';
 import { listCronTasks } from './commands/cron.js';
 import { addReviewComment } from './commands/review.js';
@@ -600,6 +601,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 		vscode.commands.registerCommand('codev.viewBacklogIssue', (arg: vscode.TreeItem | string | undefined) =>
 			viewBacklogIssue(connectionManager!, extractIssueId(arg))),
+			vscode.commands.registerCommand('codev.searchBacklog', () => searchBacklog(overviewCache)),
 		vscode.commands.registerCommand('codev.referenceIssueInArchitect', async (arg: vscode.TreeItem | string | undefined) => {
 			// Inline-button action on a backlog row: open + focus the architect
 			// terminal, then type `#<id> "<title>" ` into its prompt without

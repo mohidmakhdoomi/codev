@@ -120,6 +120,11 @@
         "icon": "$(eye-closed)"
       },
       {
+        "command": "codev.searchBacklog",
+        "title": "Codev: Search Backlog...",
+        "icon": "$(search)"
+      },
+      {
         "command": "codev.refreshTeam",
         "title": "Codev: Refresh Team",
         "icon": "$(refresh)"
