@@ -53,7 +53,7 @@ describe('builderRowLabel', () => {
       issueTitle: 'refactor extract',
       protocolPhase: 'implement',
     });
-    expect(builderRowLabel(b, false, NOW)).toBe('#882 [implement] refactor extract');
+    expect(builderRowLabel(b, false, NOW)).toBe('[implement] #882 refactor extract');
   });
 
   it('renders the coarse protocolPhase, NOT the collapsed sub-phase id in `phase`', () => {
@@ -65,7 +65,7 @@ describe('builderRowLabel', () => {
       phase: 'phase_0_rebase_onto_ci',
       protocolPhase: 'implement',
     });
-    expect(builderRowLabel(b, false, NOW)).toBe('#1190 [implement] Audit and unify');
+    expect(builderRowLabel(b, false, NOW)).toBe('[implement] #1190 Audit and unify');
   });
 
   it('blocked builder: phase prefix + trailing "blocked on <label> [<elapsed>]"', () => {
@@ -78,7 +78,7 @@ describe('builderRowLabel', () => {
     });
     // isIdle is false: blocked takes precedence (caller computes !isBlocked && ...).
     expect(builderRowLabel(b, false, NOW)).toBe(
-      '#791 [plan] Startup preflight blocked on plan review [12m]',
+      '[plan] #791 Startup preflight blocked on plan review [12m]',
     );
   });
 
@@ -91,7 +91,7 @@ describe('builderRowLabel', () => {
       lastDataAt: SIX_MIN_AGO,
     });
     expect(builderRowLabel(b, true, NOW)).toBe(
-      '#794 [implement] Notification refactor waiting on input [6m silent]',
+      '[implement] #794 Notification refactor waiting on input [6m silent]',
     );
   });
 
@@ -102,7 +102,7 @@ describe('builderRowLabel', () => {
 
   it('falls back to id when issueId/issueTitle are null', () => {
     const b = builder({ id: 'pir-999', issueId: null, issueTitle: null, protocolPhase: 'plan' });
-    expect(builderRowLabel(b, false, NOW)).toBe('#pir-999 [plan] ');
+    expect(builderRowLabel(b, false, NOW)).toBe('[plan] #pir-999 ');
   });
 });
 

@@ -53,3 +53,11 @@ Considered a vscode-only heuristic (map `b.phase` → `implement` if it's a `pla
 - vscode `check-types` ✓, `lint` ✓, `esbuild` ✓; `test:unit` ✓ 123 passed (10 in builder-row).
 - dashboard `tsc -b --force` ✓; `pnpm test` 314 passed, **1 pre-existing failure** in `scrollController.test.ts` (Issue #630, console.warn spy) — **proven unrelated**: fails identically with my entire diff stashed on a clean tree. Out of scope per PIR flaky-test guidance; noted here + for the review file. (Porch's `tests` check runs the codev package only, not dashboard, so it's green.)
 - codev-types + codev-core rebuilt (fresh-worktree `pnpm install` had left them without `dist/`).
+
+## Dev-approval feedback #2: phase prefix moved before the issue id
+
+Reviewer asked for `[<phase>] #<id> <title>` (phase first, right after the icon) instead of `#<id> [<phase>] <title>`. Agreed — strongest reason is **column alignment**: issue ids vary in width, so an id-first order makes the phase bracket jiggle row-to-row; phase-first pins it to a fixed offset after the icon, so the phase column scans straight down. (Noted the "icon represents phase" premise is only strictly true for blocked rows — active/idle icons are generic — but the alignment win holds regardless.) This diverges from the issue's written "immediately after the issue number" spec; reviewer's call.
+
+- `builder-row.ts` — label is now `${phasePrefix}#${id} ${title}${state}`; doc comment updated.
+- `builder-row.test.ts` — all label assertions flipped to phase-first order.
+- vscode `test:unit` ✓ 123, `lint` ✓, `esbuild` ✓.

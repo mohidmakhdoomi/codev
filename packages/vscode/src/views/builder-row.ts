@@ -52,10 +52,13 @@ export function timeSince(isoDate: string, now: number): string {
 }
 
 /**
- * The builder row's label. The phase is a LEADING prefix immediately after the
- * issue number (`#<id> [<phase>] <title>`) so it survives end-truncation in a
- * narrow sidebar and shows across all three states — not the old trailing
- * `[<phase>]` suffix that only active rows carried and long titles clipped.
+ * The builder row's label. The phase leads the label, before the issue number
+ * (`[<phase>] #<id> <title>`), so it sits at a FIXED offset right after the
+ * row's icon — letting the eye scan the phase column straight down the tree
+ * (issue ids vary in width, so an id-first order would make the phase bracket
+ * jiggle row-to-row). It also survives end-truncation in a narrow sidebar and
+ * shows across all three states — unlike the old trailing `[<phase>]` suffix
+ * that only active rows carried and long titles clipped.
  *
  * The state-dispatched suffix is preserved for blocked/idle duration:
  *  - blocked: ` blocked on <label> [<elapsed>]`
@@ -83,5 +86,5 @@ export function builderRowLabel(b: OverviewBuilder, isIdle: boolean, now: number
     ? ` waiting on input${idleTime}`
     : '';
   const phasePrefix = b.protocolPhase ? `[${b.protocolPhase}] ` : '';
-  return `#${b.issueId ?? b.id} ${phasePrefix}${b.issueTitle ?? ''}${stateLabel}`;
+  return `${phasePrefix}#${b.issueId ?? b.id} ${b.issueTitle ?? ''}${stateLabel}`;
 }
