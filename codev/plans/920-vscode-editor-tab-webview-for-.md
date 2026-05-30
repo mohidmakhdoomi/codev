@@ -32,13 +32,11 @@ Concretely:
 
 **Filtering runs host-side, not per-keystroke server-side.** The endpoint is hit **once when the panel opens** (and on manual refresh / `OverviewCache.onDidChange`), returning the in-scope dataset (with body); the actual substring + scope + sort filtering happens in the extension host via pure vitest-tested helpers, so live typing is instant with no network per keystroke. (A fresh `gh` fetch on every debounced keystroke would add ~1 s latency — unacceptable for live search.) Body crosses to the host but **never to the webview** — the host posts back only display rows (`#`, title, area, assignee, age).
 
-### Decision 2 — Status: Open / Closed / All  **(PENDING your answer)**
+### Decision 2 — Status: Open / Closed / All  **(DECIDED: functional)**
 
-Option B makes a **functional** Status dropdown nearly free (the endpoint can take a `state` param → `gh issue list --state open|closed|all`). Choice:
-- **(a)** Functional Open / Closed / All (endpoint `state` param). Widens v1 slightly past the issue's stated scope.
-- **(b)** Open only — omit the dropdown; add Status later. Honors the issue's "closed search out of scope."
-
-*(This section updated once you decide.)*
+The query row carries a **functional `Status: Open / Closed / All` dropdown**, defaulting to **Open**. The `/api/backlog-search` endpoint takes a `state` param (`open` | `closed` | `all`) that maps to `gh issue list --state <state>`. Notes:
+- **Open** (default) reproduces the sidebar's set: open issues with no active PR. **Closed / All** lift that PR-exclusion filter (a closed issue typically *has* a merged PR — excluding them would make Closed near-empty), so for `closed`/`all` the endpoint returns the raw issue set for that state, projected the same way (minus the `prLinkedIssues`/builder exclusions that only make sense for "available work").
+- Changing Status re-hits the endpoint (it's the one criterion that changes the server-side fetch, vs. the host-side text/scope/sort filters). The other controls stay host-side and instant.
 
 ### Decision 3 — Command name (collision with #918)
 
@@ -58,7 +56,7 @@ Option B makes a **functional** Status dropdown nearly free (the endpoint can ta
 ### Architecture
 
 1. **Dedicated search endpoint supplies body** (per Decision 1, Option B). `GET /api/backlog-search` does its own fresh issue fetch (with `body`, bypassing the 30 s overview cache), projects the open backlog via `deriveBacklog` + `body`, returns `BacklogSearchItem[]`. `/api/overview` and `OverviewBacklogItem` are untouched. The panel calls it via `TowerClient.searchBacklog(...)`.
-2. **Filtering runs host-side in pure, vitest-tested helpers** in `backlog-filter.ts` — matches the issue's stated test plan. The endpoint is hit once on panel open (and on refresh / `OverviewCache.onDidChange`) to fetch the body-enriched dataset; the host then filters/sorts in-memory per the current criteria. The webview is a thin view: it renders controls + table, **debounces (~150 ms) and posts the current criteria** to the extension host, and renders the rows the host posts back. Body never ships to the webview — only matched display rows cross the boundary.
+2. **Filtering runs host-side in pure, vitest-tested helpers** in `backlog-filter.ts` — matches the issue's stated test plan. The endpoint is hit to fetch the body-enriched dataset on panel open, on refresh / `OverviewCache.onDidChange`, **and whenever the Status dropdown changes** (`state` is the one criterion the server resolves — see Decision 2). The host then filters/sorts the fetched dataset in-memory per the text/Area/Assignee/Author/sort criteria. The webview is a thin view: it renders controls + table, **debounces (~150 ms) and posts the current criteria** to the extension host, and renders the rows the host posts back. Body never ships to the webview — only matched display rows cross the boundary.
 3. **Singleton `WebviewPanel`** owned by a `BacklogSearchPanel` class. `createOrShow` focuses the existing panel if open, else creates one in `ViewColumn.Beside` with `enableScripts` + a strict CSP (nonce'd inline script, `localResourceRoots` scoped). HTML/CSS/JS **inlined as a template string** (no runtime file read → no esbuild copy-asset step). CSS variables only (`--vscode-*`).
 4. **Message protocol** (typed): webview→host `{type:'search', criteria}` and `{type:'open', id}`; host→webview `{type:'results', rows, footer}`. `open` runs `vscode.commands.executeCommand('codev.viewBacklogIssue', id)` — identical to a sidebar row click.
 5. **Live data:** the panel subscribes to `OverviewCache.onDidChange` and re-runs the current criteria so results stay fresh while open; disposes the subscription with the panel.
@@ -110,7 +108,7 @@ Empty query + scopes → all in-scope matches. Empty query + empty scopes → ev
 1. Search icon visible in Backlog title bar; click opens a **`Search Backlog`** tab to the side of the active editor.
 2. Tab shows the three scope dropdowns, the query row, the sortable results table, and the match-count footer.
 3. Typing filters live (~150 ms debounce); Search button also submits. Column-header clicks sort with an arrow indicator on the active column.
-4. Empty query + a scope → scoped matches; empty query + no scope → all (≤200, Load-more present if applicable).
+4. Empty query + a scope → scoped matches; empty query + no scope → all (≤200, Load-more present if applicable). Switching **Status** Open→Closed→All re-fetches and the result set changes accordingly.
 5. Click a result row → the issue opens via `codev.viewBacklogIssue` (same as a sidebar click).
 6. Re-invoke the command while open → focuses the existing panel (no duplicate tab).
 7. **Theme sweep:** dark, light, high-contrast all render cleanly — no hand-coded colors.

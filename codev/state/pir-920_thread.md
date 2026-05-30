@@ -14,3 +14,6 @@ Plan written to `codev/plans/920-vscode-editor-tab-webview-for-.md`. Central gat
 
 ### Gate feedback round 1 (2026-05-30)
 Reviewer chose **Option B** for body source — a dedicated `GET /api/backlog-search` endpoint (fresh fetch, full body, no overview caching/truncation). `/api/overview` + `OverviewBacklogItem` untouched; filtering still host-side (endpoint hit once on open/refresh, not per keystroke). Decisions 3/4/5 confirmed as-recommended. Plan revised accordingly. **Decision 2 (Status: functional Open/Closed/All vs Open-only) still open** — Option B makes a functional Status dropdown cheap; awaiting reviewer's a/b pick. Gate still pending.
+
+### Gate feedback round 2 (2026-05-30)
+Reviewer chose **(a)**: functional Status dropdown (Open/Closed/All), default Open. `/api/backlog-search` takes a `state` param → `gh issue list --state`. Note: Closed/All lift the PR-exclusion filter (closed issues usually have a merged PR). Status is the one criterion that re-hits the endpoint; all other filters stay host-side/instant. All five decisions now resolved. Plan finalized. Gate still pending approval.
