@@ -293,6 +293,11 @@ describe('NeedsAttentionList buildItems — PR gating (issue #844)', () => {
     expect(row).toBeDefined();
     expect(row!.kind).toBe('dev review');
     expect(row!.kindClass).toBe('attention-kind--dev');
+    // The user-visible symptom of #931 was dev rows being indistinguishable
+    // from plan rows. Guard that dev maps to its OWN class, never the plan
+    // class (the old default fallthrough). The class carries a distinct color
+    // (--status-implementing vs plan's --status-error) defined in index.css.
+    expect(row!.kindClass).not.toBe('attention-kind--plan');
     expect(row!.waitingSince).toBe(blockedSince);
   });
 
