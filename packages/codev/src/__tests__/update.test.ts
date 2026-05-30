@@ -119,6 +119,44 @@ describe('update command', () => {
     });
   });
 
+  describe('PR-gate audit surfacing (#943)', () => {
+    it('surfaces a gateless PR-producing override after the update summary', async () => {
+      const projectDir = path.join(testBaseDir, 'prgate-warn');
+      const bugfixDir = path.join(projectDir, 'codev', 'protocols', 'bugfix');
+      fs.mkdirSync(bugfixDir, { recursive: true });
+      fs.writeFileSync(path.join(bugfixDir, 'protocol.json'), JSON.stringify({
+        name: 'bugfix',
+        phases: [{ id: 'fix' }, { id: 'pr', steps: ['create_pr'] }],
+      }));
+
+      process.chdir(projectDir);
+
+      const { update } = await import('../commands/update.js');
+      const result = await update({ dryRun: true });
+
+      expect(result.prGateWarnings).toBeDefined();
+      expect(result.prGateWarnings!.some(w =>
+        w.includes('Protocol `bugfix`') && w.includes('no `pr` gate'))).toBe(true);
+    });
+
+    it('reports no PR-gate warnings when overrides are correctly gated', async () => {
+      const projectDir = path.join(testBaseDir, 'prgate-clean');
+      const bugfixDir = path.join(projectDir, 'codev', 'protocols', 'bugfix');
+      fs.mkdirSync(bugfixDir, { recursive: true });
+      fs.writeFileSync(path.join(bugfixDir, 'protocol.json'), JSON.stringify({
+        name: 'bugfix',
+        phases: [{ id: 'fix' }, { id: 'pr', gate: 'pr', steps: ['create_pr'] }],
+      }));
+
+      process.chdir(projectDir);
+
+      const { update } = await import('../commands/update.js');
+      const result = await update({ dryRun: true });
+
+      expect(result.prGateWarnings).toEqual([]);
+    });
+  });
+
   describe('agent mode', () => {
     it('should return result without throwing when codev dir missing', async () => {
       const projectDir = path.join(testBaseDir, 'agent-no-codev');

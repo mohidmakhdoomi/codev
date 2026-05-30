@@ -30,6 +30,7 @@ import {
   backfillGitignore,
   CODEV_GITIGNORE_ENTRIES,
 } from '../lib/gitignore.js';
+import { auditPrGates, formatPrGateWarning } from '../lib/pr-gate-audit.js';
 
 export interface UpdateOptions {
   dryRun?: boolean;
@@ -54,6 +55,8 @@ export interface UpdateResult {
   preservedFiles?: string[];
   gitignoreAdded?: string[];
   gitignoreSkipped?: boolean;
+  /** Loud warnings for PR-producing protocol overrides missing a `pr` gate (#943). */
+  prGateWarnings?: string[];
   error?: string;
 }
 
@@ -293,6 +296,20 @@ export async function update(options: UpdateOptions = {}): Promise<UpdateResult>
       (!result.gitignoreAdded || result.gitignoreAdded.length === 0)
     ) {
       log(chalk.dim('  Already up to date!'));
+    }
+
+    // PR-gate audit (#943): warn loudly if any PR-producing protocol override
+    // lost its `pr` gate. `codev update` preserves user-modified files as local
+    // overrides, so it neither fixes nor flags this without an explicit check —
+    // surfacing it here turns a silent post-#927 breakage into a migration prompt.
+    const prGateWarnings = auditPrGates(targetDir);
+    result.prGateWarnings = prGateWarnings.map(formatPrGateWarning);
+    if (prGateWarnings.length > 0) {
+      log('');
+      log(chalk.bold('Protocol PR-gate warnings:'));
+      for (const w of prGateWarnings) {
+        log(`  ${chalk.yellow('⚠')} ${formatPrGateWarning(w)}`);
+      }
     }
 
     if (dryRun) {
