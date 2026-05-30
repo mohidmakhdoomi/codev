@@ -1,7 +1,7 @@
 id: '932'
 title: vscode-move-pull-requests-sect
 protocol: pir
-phase: plan
+phase: implement
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -17,4 +17,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-29T23:15:39.691Z'
-updated_at: '2026-05-30T00:30:09.454Z'
+updated_at: '2026-05-30T01:31:21.968Z'
