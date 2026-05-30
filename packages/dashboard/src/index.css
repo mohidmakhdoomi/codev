@@ -1386,12 +1386,19 @@ a.attention-row {
   color: var(--status-error);
 }
 
-.attention-kind--code-review {
-  color: var(--status-waiting);
+/* dev-approval — PIR's human gate at the END of the implement phase, where the
+   human reviews the running worktree before the PR exists (#931). Uses the
+   orange "implementing" color so dev-review rows are visually DISTINCT from the
+   red spec/plan design gates and the yellow PR/verify review waits — a 3-tier
+   design → implement → review progression. (Reusing plan's --status-error would
+   leave dev rows indistinguishable from plan rows, which is the very symptom
+   #931 reports.) */
+.attention-kind--dev {
+  color: var(--status-implementing);
 }
 
 /* verify-approval — post-merge human gate (#927). Review-style wait, grouped
-   visually with PR / code review rather than the urgent pre-PR error gates. */
+   visually with the PR review row rather than the urgent pre-PR error gates. */
 .attention-kind--verify {
   color: var(--status-waiting);
 }
