@@ -589,6 +589,80 @@ describe('doctor command', () => {
     });
   });
 
+  describe('protocol PR-gate audit (#943)', () => {
+    const testBaseDir = path.join(tmpdir(), `codev-doctor-prgate-${Date.now()}`);
+    let originalCwd: string;
+
+    beforeEach(() => {
+      originalCwd = process.cwd();
+      fs.mkdirSync(path.join(testBaseDir, 'codev'), { recursive: true });
+    });
+
+    afterEach(() => {
+      process.chdir(originalCwd);
+      if (fs.existsSync(testBaseDir)) {
+        fs.rmSync(testBaseDir, { recursive: true });
+      }
+    });
+
+    function mockDepsPresent() {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd.includes('which')) return Buffer.from('/usr/bin/command');
+        if (cmd.includes('gh auth status')) return Buffer.from('Logged in');
+        return Buffer.from('');
+      });
+      vi.mocked(spawnSync).mockImplementation((cmd: string) => {
+        const responses: Record<string, string> = {
+          node: 'v20.0.0', git: 'git version 2.40.0', claude: '1.0.0',
+        };
+        return {
+          status: 0, stdout: responses[cmd] || 'working', stderr: '',
+          signal: null, output: [null, responses[cmd] || 'working', ''], pid: 0,
+        } as never;
+      });
+    }
+
+    it('warns when a PR-producing override lacks a pr gate', async () => {
+      const bugfixDir = path.join(testBaseDir, 'codev', 'protocols', 'bugfix');
+      fs.mkdirSync(bugfixDir, { recursive: true });
+      fs.writeFileSync(path.join(bugfixDir, 'protocol.json'), JSON.stringify({
+        name: 'bugfix',
+        phases: [{ id: 'fix' }, { id: 'pr', steps: ['create_pr'] }],
+      }));
+
+      process.chdir(testBaseDir);
+      mockDepsPresent();
+      vi.resetModules();
+
+      const logOutput: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...args) => { logOutput.push(args.join(' ')); });
+
+      const { doctor } = await import('../commands/doctor.js');
+      await doctor();
+
+      const hasWarning = logOutput.some(line =>
+        line.includes('Protocol `bugfix`') && line.includes('no `pr` gate'));
+      expect(hasWarning).toBe(true);
+    });
+
+    it('shows clean when no PR-producing override is gateless', async () => {
+      // codev/ exists but no protocol overrides — bundled protocols resolve from
+      // the always-gated skeleton (or not at all), so the section is clean.
+      process.chdir(testBaseDir);
+      mockDepsPresent();
+      vi.resetModules();
+
+      const logOutput: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...args) => { logOutput.push(args.join(' ')); });
+
+      const { doctor } = await import('../commands/doctor.js');
+      await doctor();
+
+      const hasClean = logOutput.some(line => line.includes('All PR-producing protocols are pr-gated'));
+      expect(hasClean).toBe(true);
+    });
+  });
+
   describe('AI model verification (Issue #128)', () => {
     const testBaseDir = path.join(tmpdir(), `codev-doctor-ai-test-${Date.now()}`);
     let originalCwd: string;

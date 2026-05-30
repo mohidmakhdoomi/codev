@@ -12,6 +12,7 @@ import chalk from 'chalk';
 import { query as claudeQuery } from '@anthropic-ai/claude-agent-sdk';
 import { executeForgeCommandSync, loadForgeConfig, validateForgeConfig, resolveAllConcepts, type ConceptResolution } from '../lib/forge.js';
 import { detectHarnessFromCommand } from '../agent-farm/utils/harness.js';
+import { auditPrGates, formatPrGateWarning } from '../lib/pr-gate-audit.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -639,6 +640,27 @@ export async function doctor(): Promise<number> {
         warningDetails.push({
           name: 'Project structure',
           issue: warning,
+        });
+      }
+    }
+    console.log('');
+
+    // Protocol PR-gate audit (#943): a PR-producing protocol whose resolved
+    // definition (local override included) lost its `pr` gate will silently
+    // stop surfacing PRs in Needs Attention (post-#927). Warn loudly; non-fatal.
+    console.log(chalk.bold('Protocol PR Gates') + ' (Needs Attention surfacing)');
+    console.log('');
+    const prGateWarnings = auditPrGates(workspaceRoot);
+    if (prGateWarnings.length === 0) {
+      console.log(`  ${chalk.green('✓')} All PR-producing protocols are pr-gated`);
+    } else {
+      for (const w of prGateWarnings) {
+        console.log(`  ${chalk.yellow('⚠')} ${formatPrGateWarning(w)}`);
+        warnings++;
+        warningDetails.push({
+          name: `Protocol ${w.protocol}`,
+          issue: 'no `pr` gate on PR-creating phase — PRs will not surface in Needs Attention',
+          recommendation: 'Add "gate": "pr" to its PR-creating phase, or remove the local override',
         });
       }
     }
