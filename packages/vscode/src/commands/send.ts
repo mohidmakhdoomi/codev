@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { ConnectionManager } from '../connection-manager.js';
+import { buildBuilderPickRows } from '../builder-pick-rows.js';
 
 /**
  * Codev: Send Message — pick builder, type message, send via TowerClient.
@@ -12,17 +13,19 @@ export async function sendMessage(connectionManager: ConnectionManager): Promise
     return;
   }
 
-  const state = await client.getWorkspaceState(workspacePath);
-  const builders = state?.builders?.filter(b => b.terminalId) ?? [];
-  if (builders.length === 0) {
+  const [overview, state] = await Promise.all([
+    client.getOverview(workspacePath),
+    client.getWorkspaceState(workspacePath),
+  ]);
+  const rows = buildBuilderPickRows(overview?.builders ?? [], state?.builders ?? []);
+  if (rows.length === 0) {
     vscode.window.showWarningMessage('Codev: No active builders');
     return;
   }
 
-  const picked = await vscode.window.showQuickPick(
-    builders.map(b => ({ label: b.name, id: b.id })),
-    { placeHolder: 'Select builder to send message to' },
-  );
+  const picked = await vscode.window.showQuickPick(rows, {
+    placeHolder: 'Select builder to send message to',
+  });
   if (!picked) { return; }
 
   const message = await vscode.window.showInputBox({

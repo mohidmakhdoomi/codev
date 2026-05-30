@@ -26,6 +26,7 @@ import { activateReviewComments } from './comments/plan-review.js';
 import { BuilderSpawnHandler } from './builder-spawn-handler.js';
 import { BuilderTerminalLinkProvider } from './terminal-link-provider.js';
 import { computeBuildersToClose, roleIdsFromBuilders } from './prune-builder-terminals.js';
+import { buildBuilderPickRows } from './builder-pick-rows.js';
 import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
 import { BuildersProvider } from './views/builders.js';
 import { BuilderGroupTreeItem } from './views/builder-tree-item.js';
@@ -530,18 +531,18 @@ export async function activate(context: vscode.ExtensionContext) {
 				return;
 			}
 			try {
-				const state = await client.getWorkspaceState(workspacePath);
-				const builders = state?.builders?.filter(b => b.terminalId) ?? [];
-				if (builders.length === 0) {
+				const [overview, state] = await Promise.all([
+					client.getOverview(workspacePath),
+					client.getWorkspaceState(workspacePath),
+				]);
+				const rows = buildBuilderPickRows(overview?.builders ?? [], state?.builders ?? []);
+				if (rows.length === 0) {
 					vscode.window.showWarningMessage('Codev: No builder terminals available');
 					return;
 				}
-				const picked = await vscode.window.showQuickPick(
-					builders.map(b => ({ label: b.name, id: b.id, terminalId: b.terminalId! })),
-					{ placeHolder: 'Select a builder' },
-				);
+				const picked = await vscode.window.showQuickPick(rows, { placeHolder: 'Select a builder' });
 				if (picked) {
-					await terminalManager?.openBuilder(picked.terminalId, picked.id, `Codev: ${picked.label}`, true);
+					await terminalManager?.openBuilder(picked.terminalId!, picked.id, `Codev: ${picked.name}`, true);
 				}
 			} catch {
 				vscode.window.showErrorMessage('Codev: Failed to get builders');
