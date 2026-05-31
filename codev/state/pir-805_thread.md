@@ -27,3 +27,13 @@ produces a directory symlink, while file entries keep current behaviour and the
 
 Plan written to `codev/plans/805-allow-directory-entries-in-wor.md`. Awaiting
 `plan-approval` gate.
+
+### Plan revision 1 (reviewer Q: "what if a folder already exists at the destination?")
+
+Surfaced a real gap: `existsSync(target)` follows symlinks, so a **dangling**
+dir-symlink reads as absent → a `afx setup` re-run would call `symlinkSync` again and
+throw `EEXIST`. Since dangling links are a supported case AND `afx setup` is
+idempotent-by-design, this path is real. Fix: added a `pathOccupied(target)` helper
+(`existsSync` OR `lstatSync` succeeds) so any occupied destination — real dir,
+resolvable link, or dangling link — is skipped. Never overwrites/merges. Added
+`lstatSync` to imports + test mock, plus a dedicated idempotency-on-dangling-link test.

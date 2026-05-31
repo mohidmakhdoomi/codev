@@ -76,6 +76,33 @@ This is correct on POSIX (type ignored) and correct on Windows for the common ca
 (source exists at spawn). A dangling Windows dir-symlink (source absent at spawn) is
 best-effort — documented, not engineered, matching the existing POSIX-leaning code.
 
+### Destination already occupied / idempotency
+
+If anything already occupies the destination we **skip** it — never overwrite or merge:
+
+- A tracked path materialised by `git worktree add`, or a dir created by a `postSpawn`
+  step → left untouched, builder uses it as-is.
+- A previously-created, resolvable symlink → skipped (idempotent re-spawn / `afx setup`).
+
+`existsSync` alone is insufficient because it **follows** symlinks: a *dangling*
+directory symlink (a first-class supported case here — source created by runtime
+tooling after spawn) reads as "absent", so a setup re-run would call `symlinkSync`
+again and throw `EEXIST`. `afx setup` / "Run Worktree Setup" is explicitly idempotent,
+so this path is real. Guard with an `lstatSync`-based check that detects the link
+itself:
+
+```ts
+function pathOccupied(p: string): boolean {
+  if (existsSync(p)) return true;     // real file/dir, or a resolvable symlink
+  try { lstatSync(p); return true; }  // a dangling symlink still occupies the path
+  catch { return false; }
+}
+```
+
+The existing file-symlink branch is unaffected (globbed file sources always exist, so
+those links are never dangling), but for symmetry and safety the directory branch uses
+`pathOccupied`.
+
 ### Sketch
 
 ```ts
@@ -84,7 +111,7 @@ for (const rawPattern of getWorktreeConfig(config.workspaceRoot).symlinks) {
     const rel = rawPattern.slice(0, -1);
     if (!rel) continue;                       // guard bare "/"
     const target = resolve(worktreePath, rel);
-    if (existsSync(target)) continue;         // idempotent
+    if (pathOccupied(target)) continue;       // idempotent + dangling-link safe
     const srcAbs = resolve(config.workspaceRoot, rel);
     mkdirSync(dirname(target), { recursive: true });
     const isDir = existsSync(srcAbs) && statSync(srcAbs).isDirectory();
@@ -105,13 +132,13 @@ for (const rawPattern of getWorktreeConfig(config.workspaceRoot).symlinks) {
 ## Files to Change
 
 - `packages/codev/src/agent-farm/commands/spawn-worktree.ts:83-91` — branch the
-  symlinks loop on trailing slash (per sketch above). Add `statSync` to the existing
-  `node:fs` import on line 12.
+  symlinks loop on trailing slash (per sketch above); add a small `pathOccupied`
+  helper. Add `statSync` and `lstatSync` to the existing `node:fs` import on line 12.
 - `packages/codev/src/agent-farm/types.ts:202-208` — extend the `symlinks` field
   JSDoc to document the trailing-slash directory opt-in and the footgun rationale.
 - `packages/codev/src/agent-farm/__tests__/spawn-worktree.test.ts` — add `statSync`
-  to the `node:fs` mock (line ~22-34, currently inherits the real one via `...actual`);
-  add new `symlinkConfigFiles` test cases (see Test Plan).
+  and `lstatSync` to the `node:fs` mock (line ~22-34, currently inherits the real ones
+  via `...actual`); add new `symlinkConfigFiles` test cases (see Test Plan).
 - `CLAUDE.md` and `AGENTS.md` — in the "Config: the `worktree` block" section, note
   that a trailing slash on a `symlinks` entry opts a directory in (one sentence, kept
   in sync between the two files per their header contract).
@@ -127,8 +154,12 @@ Out of scope (per issue): `git check-ignore` auto-detection; shannon's own
   directory entry produces no symlink.
 - **Risk — `statSync` on a missing source throws.** Mitigation: short-circuit with
   `existsSync(srcAbs) &&` before `statSync`, so a dangling-link case never calls
-  `statSync`. The `node:fs` test mock gains `statSync` so unit tests don't hit the
-  real fs for fake paths.
+  `statSync`. The `node:fs` test mock gains `statSync`/`lstatSync` so unit tests don't
+  hit the real fs for fake paths.
+- **Risk — `EEXIST` on setup re-run over a dangling dir-symlink.** `existsSync` follows
+  links, so a dangling link reads as absent and `symlinkSync` would throw on re-run.
+  Mitigation: the `pathOccupied` helper uses `lstatSync` to detect the link itself, so
+  a re-run skips cleanly. (Never overwrites/merges an occupied destination either way.)
 - **Risk — glob metacharacters in a trailing-slash entry.** A `*` would be taken
   literally and could create a `*`-named link. Mitigation: log a warning when a
   trailing-slash entry contains glob metacharacters; documented as a known limitation.
@@ -149,10 +180,14 @@ existing mocked-fs style — no real filesystem):
 2. **Dangling link when source absent** — `symlinks: ['.local-user-data/']`,
    `existsSync(srcAbs) → false` → `symlinkSync(srcAbs, target, undefined)` still called
    (link created), no throw.
-3. **Idempotency** — target already exists in worktree → `symlinkSync` not called.
-4. **Non-slash directory entry stays filtered** — `symlinks: ['apps/auth']`, `globSync`
+3. **Idempotency, real dir** — target dir already exists in worktree (`existsSync →
+   true`) → `symlinkSync` not called.
+4. **Idempotency, dangling link** — `existsSync(target) → false` but `lstatSync(target)`
+   succeeds (link already present, source still absent) → `symlinkSync` not called (no
+   `EEXIST`).
+5. **Non-slash directory entry stays filtered** — `symlinks: ['apps/auth']`, `globSync`
    (nodir:true) returns `[]` → `symlinkSync` not called (footgun guard intact).
-5. **File entries unaffected** — existing file-glob tests continue to pass unchanged.
+6. **File entries unaffected** — existing file-glob tests continue to pass unchanged.
 
 **Build / typecheck**: `pnpm --filter @cluesmith/codev build` and the unit suite green.
 
