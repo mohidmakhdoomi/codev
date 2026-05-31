@@ -8,6 +8,10 @@ What's changed in the Codev VS Code extension, version by version, written for t
 
 - **`[new]` prefix on freshly-created backlog rows.** Backlog items created in the last 24 hours now lead with a `[new]` prefix right after the issue number (e.g. `#930 [new] vscode: mark recently-created...`). The prefix drops off automatically as items age past 24h — no per-user "mark as seen" state, no manual dismissal.
 
+### Bug fixes
+
+- **`Open Builder Terminal` and `Send Message` Quick Picks show issue # + title.** Both palette commands used to label rows with the internal builder name (e.g. `pir-1333`), while the seven other builder pickers in the extension already showed `#909 architect: treat area/*...`. The two outliers now match the established format.
+
 ## [3.1.6] - 2026-05-31
 
 ### What's new
