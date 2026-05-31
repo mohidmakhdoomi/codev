@@ -37,3 +37,23 @@ idempotent-by-design, this path is real. Fix: added a `pathOccupied(target)` hel
 (`existsSync` OR `lstatSync` succeeds) so any occupied destination — real dir,
 resolvable link, or dangling link — is skipped. Never overwrites/merges. Added
 `lstatSync` to imports + test mock, plus a dedicated idempotency-on-dangling-link test.
+
+## Implement phase
+
+Applied the approved plan:
+- `spawn-worktree.ts`: added `pathOccupied()` helper (existsSync || lstatSync), branched
+  the symlinks loop on trailing slash, literal-path + `'dir'` type for dir entries,
+  warn+skip for glob-metachar dir entries. Imports gained `statSync`, `lstatSync`.
+- `types.ts`: JSDoc on `symlinks` documents the dir opt-in + footgun rationale.
+- `spawn-worktree.test.ts`: added `statSync`/`lstatSync` to the `node:fs` mock + 6 new
+  cases (symlink-dir-with-type, dangling-link, idempotency real dir, idempotency
+  dangling link, non-slash dir still filtered, glob-metachar warn+skip).
+- `CLAUDE.md` + `AGENTS.md`: one-sentence note on the trailing-slash opt-in.
+
+**Worktree setup note**: this worktree had no `node_modules` — node resolution was
+walking up to the main checkout, which broke vitest's config loader and the
+`@cluesmith/codev-core` subpath import. Ran `pnpm install --frozen-lockfile` +
+`pnpm --filter @cluesmith/codev-core build` to get a self-contained worktree.
+
+**Tests**: `pnpm build` ✓, spawn-worktree suite 77 passed (6 new). Awaiting full-suite
+run via `porch done` checks, then `dev-approval` gate.
