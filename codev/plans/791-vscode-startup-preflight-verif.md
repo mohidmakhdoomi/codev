@@ -78,6 +78,7 @@ A **single** command `codev.recheckCli` is the canonical re-verify action. It cl
 ### 4. `packages/vscode/package.json` — walkthrough contribution
 
 - Add `contributes.walkthroughs[0]` with `id: "codevGettingStarted"`, `title: "Codev: Getting Started"`, and three steps (Detect / Install / Verify), each with a `markdown` media file under `walkthroughs/`.
+- Per VSCode's standard behavior, a contributed walkthrough is listed on the Welcome/Get Started page and is featured once per install/update (`workbench.welcomePage.walkthroughs.openOnInstall`, default on). Our explicit once-per-workspace `openWalkthrough` call on the `missing` path is additive to this default.
 - Add the `walkthroughs/` dir to the packaged files (esbuild copies static assets; confirm `.vscodeignore` doesn't exclude it).
 
 ### 5. Install docs URL constant
