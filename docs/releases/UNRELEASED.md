@@ -47,6 +47,8 @@ Non-vscode work that ships in the npm release goes here. Same bullet shape
 as Polish above.
 -->
 
+- **Directory entries in `worktree.symlinks` via trailing-slash opt-in** (#805, PR #947). `worktree.symlinks` previously dropped directory matches silently — the `nodir: true` glob flag intentionally kept a footgun guard against a pattern like `"apps/auth"` symlinking the worktree's source over the parent's. A new trailing-slash form (`".local-user-data/"`) is treated as a literal-path directory symlink; entries without a trailing slash keep their existing file-only behavior (footgun guard intact). Use case: sharing per-worktree runtime state directories (gitignored, intentionally not branch-isolated) so builders boot against the parent's existing state instead of bootstrapping from scratch. Windows handled via `symlinkSync(src, dest, 'dir')`; glob metacharacters inside a trailing-slash entry emit a warning rather than silently mis-expanding.
+
 ## Breaking changes
 
 None.
