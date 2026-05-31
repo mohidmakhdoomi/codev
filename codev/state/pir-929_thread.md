@@ -28,3 +28,17 @@ Revised after a 2-way consult + architect verification:
 5. **Builder override caveat documented**: `--builder-cmd`/env vs config-only `getBuilderHarness` is the exact analog of the architect `TOWER_ARCHITECT_CMD` trap — added to Risks alongside it.
 
 Re-signalled, awaiting architect re-review.
+
+### 2026-05-31 — Implement phase
+
+Plan approved. Implemented all six tasks:
+
+1. **harness.ts**: added `buildResume?` (bundled discovery + Node-argv + escaped script fragment) and `getArchitectFiles?` to `HarnessProvider`. `CLAUDE_HARNESS.buildResume` delegates to `findLatestSessionId`; `GEMINI_HARNESS.getArchitectFiles` writes `.gemini/settings.json` → AGENTS.md. codex/gemini/opencode leave `buildResume` undefined.
+2. **tower-instances.ts**: architect resume now gated on `getArchitectHarness(...).buildResume?.()` (preserving the `safeToResume` sibling guard); writes `getArchitectFiles?()` if-missing on launch.
+3. **spawn.ts / spawn-worktree.ts**: `discoverResumeSession` takes the builder harness and returns the bundled object; `startBuilderSession`'s `resumeSessionId?: string` → `resume?: { sessionId, scriptFragment }`, script emits `${baseCmd} ${resume.scriptFragment}`.
+4. **doctor.ts / arch.md**: codex/gemini architect affirmation + "resume is Claude-main-only" docs.
+5. **Tests**: `discover-resume-session.test.ts` (harness arg + codex/gemini null-return guards), `tower-instances.test.ts` (architect resume-skip for codex/gemini + stale jsonl; claude still resumes; gemini `.gemini/settings.json` write-if-missing + no-clobber), `spawn-worktree.test.ts` (resume script uses escaped fragment, no prompt/role injection; fresh path has no `--resume`).
+
+**Test-infra notes**: worktree had no `node_modules` — ran `pnpm install` + built `@cluesmith/codev-core` (vitest loads source which imports the core package's subpath exports). Two mock gaps surfaced and were fixed in the test files: `tower-instances.test.ts` db mock needed `getDb`/`closeDb` (state.getArchitects uses `getDb()`, not the already-mocked `getGlobalDb` — without it the `safeToResume` guard threw and silently skipped the claude resume); `spawn-worktree.test.ts` needed a `../lib/tower-client.js` mock (getTowerClient stub) so `startBuilderSession`→`createPtySession` runs without a live Tower.
+
+The three affected files: 143 passed. Full suite running. Build green.

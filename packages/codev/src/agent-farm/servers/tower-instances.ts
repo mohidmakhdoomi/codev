@@ -13,7 +13,7 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { encodeWorkspacePath } from '../lib/tower-client.js';
-import { findLatestSessionId } from '../utils/claude-session-discovery.js';
+import { getArchitectHarness } from '../utils/config.js';
 import { loadConfig } from '../../lib/config.js';
 
 const execAsync = promisify(exec);
@@ -466,10 +466,18 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         const cmdParts = architectCmd.split(/\s+/);
         const cmd = cmdParts[0];
 
-        // Issue #830 (main architect only): if a prior Claude session exists
-        // for this workspace cwd, resume it instead of starting fresh. Role
-        // injection is skipped on the resume path — the saved conversation
-        // already contains the role/system prompt.
+        // Issue #830 (main architect only): if the configured harness exposes a
+        // resumable prior session for this workspace cwd, resume it instead of
+        // starting fresh. Role injection is skipped on the resume path — the
+        // saved conversation already contains the role/system prompt.
+        //
+        // Issue #929: resume is gated on the harness (via buildResume), not the
+        // Claude session store directly. Only the Claude harness implements
+        // buildResume (its sessions live at ~/.claude/projects/<cwd>/*.jsonl);
+        // codex/gemini return null → fresh, role-injected launch. Previously
+        // this read findLatestSessionId() unconditionally, so a codex/gemini
+        // architect with any stale Claude jsonl built `codex --resume <uuid>`
+        // and shellper restart-looped to death.
         //
         // Lookup is unconditional here (unlike builders, where spawn.ts gates
         // discovery behind `options.resume`). The asymmetry is intentional:
@@ -505,16 +513,31 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
           // an unrelated jsonl.
           safeToResume = false;
         }
-        const resumeSessionId = safeToResume ? findLatestSessionId(workspacePath) : null;
+        const architectHarness = getArchitectHarness(workspacePath);
+        const resume = safeToResume ? (architectHarness.buildResume?.(workspacePath) ?? null) : null;
         if (!safeToResume) {
           _deps.log('WARN', `Skipping main architect conversation resume for ${workspacePath}: persisted sibling architects detected (or state.db unreadable); cannot disambiguate jsonl by cwd. See #832.`);
         }
+
+        // Write any harness-specific architect-context files (e.g., Gemini's
+        // .gemini/settings.json → AGENTS.md), only if absent — never clobber a
+        // user's existing file. (Issue #929.)
+        if (architectHarness.getArchitectFiles) {
+          for (const file of architectHarness.getArchitectFiles(workspacePath)) {
+            const targetPath = path.join(workspacePath, file.relativePath);
+            if (!fs.existsSync(targetPath)) {
+              fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+              fs.writeFileSync(targetPath, file.content);
+            }
+          }
+        }
+
         let cmdArgs: string[];
         let harnessEnv: Record<string, string>;
-        if (resumeSessionId) {
-          cmdArgs = [...cmdParts.slice(1), '--resume', resumeSessionId];
+        if (resume) {
+          cmdArgs = [...cmdParts.slice(1), ...resume.args];
           harnessEnv = {};
-          _deps.log('INFO', `Resuming main architect Claude session ${resumeSessionId.slice(0, 8)}… for ${workspacePath}`);
+          _deps.log('INFO', `Resuming main architect session ${resume.sessionId.slice(0, 8)}… for ${workspacePath}`);
         } else {
           const built = buildArchitectArgs(cmdParts.slice(1), workspacePath);
           cmdArgs = built.args;

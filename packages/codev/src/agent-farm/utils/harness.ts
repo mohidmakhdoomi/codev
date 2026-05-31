@@ -12,6 +12,8 @@
  * @see codev/specs/591-af-workspace-failure-with-code.md
  */
 
+import { findLatestSessionId } from './claude-session-discovery.js';
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -45,6 +47,34 @@ export interface HarnessProvider {
     relativePath: string;
     content: string;
   }>;
+
+  /**
+   * Optional: discover a resumable prior session for the given working dir and
+   * return how to resume it — in BOTH forms, mirroring buildRoleInjection /
+   * buildScriptRoleInjection:
+   *   - args:           Node argv for spawn() call sites (architect launch)
+   *   - scriptFragment: shell-escaped fragment for bash script generation (builder)
+   * Returns null when no resumable session exists or this harness has no
+   * cwd-keyed session store → callers fall back to a fresh launch. Only Claude
+   * implements it (store: ~/.claude/projects/<encoded-cwd>/<uuid>.jsonl).
+   */
+  buildResume?(absolutePath: string, opts?: { homeDir?: string }): {
+    sessionId: string;
+    args: string[];
+    scriptFragment: string;
+  } | null;
+
+  /**
+   * Optional: files to write in the workspace (architect cwd) before launching
+   * the architect, written only if absent so a user's existing file is never
+   * clobbered. Used by harnesses that need a project-context manifest the role
+   * injection alone doesn't provide (e.g., Gemini reads .gemini/settings.json's
+   * context.fileName to locate AGENTS.md).
+   */
+  getArchitectFiles?(workspacePath: string): Array<{
+    relativePath: string;
+    content: string;
+  }>;
 }
 
 /** Custom harness definition from .codev/config.json */
@@ -68,6 +98,15 @@ export const CLAUDE_HARNESS: HarnessProvider = {
     fragment: `--append-system-prompt "$(cat '${shellEscapeSingleQuote(filePath)}')"`,
     env: {},
   }),
+  buildResume: (absolutePath, opts) => {
+    const sessionId = findLatestSessionId(absolutePath, opts);
+    if (!sessionId) return null;
+    return {
+      sessionId,
+      args: ['--resume', sessionId],
+      scriptFragment: `--resume '${shellEscapeSingleQuote(sessionId)}'`,
+    };
+  },
 };
 
 export const CODEX_HARNESS: HarnessProvider = {
@@ -90,6 +129,13 @@ export const GEMINI_HARNESS: HarnessProvider = {
     fragment: '',
     env: { GEMINI_SYSTEM_MD: filePath },
   }),
+  // Gemini reads project context from .gemini/settings.json's context.fileName.
+  // Codex reads AGENTS.md natively; point Gemini at the same manifest so it
+  // launches with project context, not just the injected role.
+  getArchitectFiles: () => ([{
+    relativePath: '.gemini/settings.json',
+    content: JSON.stringify({ context: { fileName: 'AGENTS.md' } }, null, 2) + '\n',
+  }]),
 };
 
 export const OPENCODE_HARNESS: HarnessProvider = {

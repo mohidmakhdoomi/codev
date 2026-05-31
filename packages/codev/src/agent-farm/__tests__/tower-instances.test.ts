@@ -24,6 +24,7 @@ import {
   waitForTerminalExit,
   type InstanceDeps,
 } from '../servers/tower-instances.js';
+import { encodeClaudeProjectDir } from '../utils/claude-session-discovery.js';
 
 // ---------------------------------------------------------------------------
 // Mocks (vi.hoisted ensures these exist before vi.mock factories run)
@@ -48,6 +49,11 @@ const {
 
 vi.mock('../db/index.js', () => ({
   getGlobalDb: () => ({ prepare: mockDbPrepare }),
+  // state.getArchitects() (used by launchInstance's safeToResume guard) calls
+  // getDb(), not getGlobalDb — mock it too so the guard doesn't throw and
+  // default to skip-resume. (Issue #929 resume regression tests depend on it.)
+  getDb: () => ({ prepare: mockDbPrepare }),
+  closeDb: () => {},
 }));
 
 vi.mock('../servers/tower-utils.js', async () => {
@@ -591,6 +597,152 @@ describe('tower-instances', () => {
         fs.rmSync(tmpDir, { recursive: true });
       }
     });
+  });
+
+  // =========================================================================
+  // Issue #929 — architect resume is gated on the configured harness
+  //
+  // Regression guard for the crash-loop: a codex/gemini architect with a stale
+  // Claude jsonl in ~/.claude/projects/<encoded-cwd>/ must NOT launch
+  // `<cmd> --resume <claude-uuid>`. Only the Claude harness implements
+  // buildResume, so codex/gemini relaunch fresh (role-injected) instead.
+  // =========================================================================
+
+  describe('Issue #929 — architect resume gated on harness', () => {
+    function writeStaleClaudeSession(fakeHome: string, cwd: string, uuid: string): void {
+      const dir = path.join(fakeHome, '.claude', 'projects', encodeClaudeProjectDir(cwd));
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, `${uuid}.jsonl`), `{"sessionId":"${uuid}"}\n`);
+    }
+
+    function makeCapturingDeps(): { deps: InstanceDeps; createSession: ReturnType<typeof vi.fn> } {
+      const createSession = vi.fn().mockResolvedValue({ id: 'test-session', pid: 1234 });
+      const deps = makeDeps({
+        getTerminalManager: vi.fn().mockReturnValue({
+          getSession: vi.fn(),
+          killSession: vi.fn(),
+          createSession,
+          createSessionRaw: vi.fn(),
+          listSessions: vi.fn().mockReturnValue([]),
+        }) as any,
+      });
+      return { deps, createSession };
+    }
+
+    // Pin HOME so the stale-jsonl lookup (os.homedir() inside
+    // findLatestSessionId) reads our fake store, not the real user's.
+    function withSetup(
+      configJson: Record<string, unknown> | null,
+      fn: (tmpDir: string, fakeHome: string, uuid: string) => Promise<void>,
+    ): () => Promise<void> {
+      return async () => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tower-929-'));
+        const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tower-929-home-'));
+        const originalHome = process.env.HOME;
+        const uuid = 'stale-claude-uuid-1234';
+        try {
+          fs.mkdirSync(path.join(tmpDir, 'codev'));
+          if (configJson) {
+            fs.mkdirSync(path.join(tmpDir, '.codev'), { recursive: true });
+            fs.writeFileSync(
+              path.join(tmpDir, '.codev', 'config.json'),
+              JSON.stringify(configJson),
+            );
+          }
+          writeStaleClaudeSession(fakeHome, tmpDir, uuid);
+          process.env.HOME = fakeHome;
+          await fn(tmpDir, fakeHome, uuid);
+        } finally {
+          if (originalHome === undefined) delete process.env.HOME;
+          else process.env.HOME = originalHome;
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+          fs.rmSync(fakeHome, { recursive: true, force: true });
+        }
+      };
+    }
+
+    it('codex architect + stale Claude jsonl → launches fresh, no --resume', withSetup(
+      { shell: { architect: 'codex' } },
+      async (tmpDir, _fakeHome, uuid) => {
+        const { deps, createSession } = makeCapturingDeps();
+        initInstances(deps);
+
+        const result = await launchInstance(tmpDir);
+        expect(result.success).toBe(true);
+        expect(createSession).toHaveBeenCalled();
+
+        const callStr = JSON.stringify(createSession.mock.calls[0]);
+        expect(callStr).not.toContain('--resume');
+        expect(callStr).not.toContain(uuid);
+      },
+    ));
+
+    it('gemini architect + stale Claude jsonl → launches fresh, no --resume', withSetup(
+      { shell: { architect: 'gemini' } },
+      async (tmpDir, _fakeHome, uuid) => {
+        const { deps, createSession } = makeCapturingDeps();
+        initInstances(deps);
+
+        const result = await launchInstance(tmpDir);
+        expect(result.success).toBe(true);
+        expect(createSession).toHaveBeenCalled();
+
+        const callStr = JSON.stringify(createSession.mock.calls[0]);
+        expect(callStr).not.toContain('--resume');
+        expect(callStr).not.toContain(uuid);
+      },
+    ));
+
+    it('claude architect (default) + stale Claude jsonl → resumes with --resume <uuid>', withSetup(
+      null,
+      async (tmpDir, _fakeHome, uuid) => {
+        const { deps, createSession } = makeCapturingDeps();
+        initInstances(deps);
+
+        const result = await launchInstance(tmpDir);
+        expect(result.success).toBe(true);
+        expect(createSession).toHaveBeenCalled();
+
+        const callStr = JSON.stringify(createSession.mock.calls[0]);
+        expect(callStr).toContain('--resume');
+        expect(callStr).toContain(uuid);
+      },
+    ));
+
+    it('gemini architect → writes .gemini/settings.json pointing at AGENTS.md', withSetup(
+      { shell: { architect: 'gemini' } },
+      async (tmpDir) => {
+        const { deps } = makeCapturingDeps();
+        initInstances(deps);
+
+        const result = await launchInstance(tmpDir);
+        expect(result.success).toBe(true);
+
+        const settingsPath = path.join(tmpDir, '.gemini', 'settings.json');
+        expect(fs.existsSync(settingsPath)).toBe(true);
+        const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+        expect(parsed.context.fileName).toBe('AGENTS.md');
+      },
+    ));
+
+    it('gemini architect → does not clobber a pre-existing .gemini/settings.json', withSetup(
+      { shell: { architect: 'gemini' } },
+      async (tmpDir) => {
+        const geminiDir = path.join(tmpDir, '.gemini');
+        fs.mkdirSync(geminiDir, { recursive: true });
+        const settingsPath = path.join(geminiDir, 'settings.json');
+        const userContent = JSON.stringify({ context: { fileName: 'MY_OWN.md' } });
+        fs.writeFileSync(settingsPath, userContent);
+
+        const { deps } = makeCapturingDeps();
+        initInstances(deps);
+
+        const result = await launchInstance(tmpDir);
+        expect(result.success).toBe(true);
+
+        expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(userContent);
+      },
+    ));
   });
 
   // =========================================================================

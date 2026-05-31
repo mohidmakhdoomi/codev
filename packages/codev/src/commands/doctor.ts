@@ -682,8 +682,9 @@ export async function doctor(): Promise<number> {
       const architectCmd = Array.isArray(shell?.architect)
         ? (shell.architect as string[]).join(' ')
         : (shell?.architect as string ?? '');
-      const isOpencode = architectHarness === 'opencode' ||
-        (architectCmd && detectHarnessFromCommand(architectCmd) === 'opencode');
+      const resolvedHarness = architectHarness ||
+        (architectCmd ? detectHarnessFromCommand(architectCmd) : undefined);
+      const isOpencode = resolvedHarness === 'opencode';
       if (isOpencode) {
         console.log('');
         console.log(chalk.yellow('  ⚠') + ' OpenCode is configured as architect shell — this is unsupported.');
@@ -695,6 +696,12 @@ export async function doctor(): Promise<number> {
           issue: 'OpenCode configured as architect shell (unsupported)',
           recommendation: 'Set shell.architect to "claude --dangerously-skip-permissions" in .codev/config.json',
         });
+      } else if (resolvedHarness === 'codex' || resolvedHarness === 'gemini') {
+        // Issue #929: codex/gemini are supported architects (config-driven).
+        console.log('');
+        console.log(chalk.green('  ✓') + ` ${resolvedHarness} is configured as architect shell — supported.`);
+        console.log(chalk.gray('    ') + 'Conversation resume is Claude-main-only; codex/gemini architects relaunch fresh with role injection.');
+        console.log(chalk.gray('    ') + 'Select the architect harness via .codev/config.json (shell.architect / shell.architectHarness).');
       }
     }
   } catch {

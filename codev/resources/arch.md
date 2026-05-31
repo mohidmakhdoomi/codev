@@ -251,7 +251,7 @@ All architect sessions (at all 3 creation points) receive a role prompt injected
 
 1. Loads the architect role from `codev/roles/architect.md` (local) or `skeleton/roles/architect.md` (bundled fallback) via `loadRolePrompt()`
 2. Writes the role content to `.architect-role.md` in the project directory
-3. Appends `--append-system-prompt <content>` to the architect command args
+3. Delegates the CLI-specific injection to the configured `HarnessProvider` (`agent-farm/utils/harness.ts`, Spec 591): claude `--append-system-prompt`, codex `-c model_instructions_file=`, gemini `GEMINI_SYSTEM_MD` env var
 
 **Three architect creation points** where role injection is applied:
 - `tower-instances.ts` → `launchInstance()` (new project activation)
@@ -266,6 +266,12 @@ Framework files (protocol docs, templates) live in the package skeleton (resolve
 - **`{{> <codev-path>}}`** — a Handlebars-style include directive resolved by the shared `resolveCodevIncludes()` (`lib/skeleton.ts`): it pulls the referenced framework file fresh through the resolver (recursive, depth-guarded, unresolved includes drop to empty). It runs on two channels: at spawn (inside `protocol.md`, e.g. experiment/spike templates) and in porch's `loadPromptFile` (`commands/porch/prompts.ts`) for phase prompts (e.g. the spir/aspir plan template, which carries the machine-readable phases JSON the plan gate requires).
 
 A `codev doctor` audit (`lib/framework-ref-audit.ts`) flags shell-fetch of framework files in a project's local `codev/` overrides; the shipped skeleton is guarded by a CI unit test.
+
+#### Supported Architect Harnesses & Conversation Resume (#929)
+
+**Supported architect harnesses** (Issue #929): claude, codex, and gemini are all supported as architects, selected via `.codev/config.json` (`shell.architect` / `shell.architectHarness`) — the same config-driven mechanism builders use. `.codev/config.json` (not `TOWER_ARCHITECT_CMD` / `--architect-cmd`) is the supported selection mechanism; an env/CLI command override with no matching harness config still resolves the default (claude) harness flags. OpenCode remains builder-only (file-based injection needs an ephemeral worktree). Gemini additionally gets a `.gemini/settings.json` (`context.fileName` → `AGENTS.md`) written if-absent at launch via the harness's `getArchitectFiles`, so it reads project context the way codex reads `AGENTS.md` natively.
+
+**Conversation resume is Claude-main-only.** `launchInstance` resumes a prior session only when the configured harness implements `HarnessProvider.buildResume` — currently just claude (its sessions live at `~/.claude/projects/<encoded-cwd>/*.jsonl`). Codex/gemini architects (and resumed codex/gemini builders, via `spawn.ts` `discoverResumeSession`) return `null` from `buildResume` and relaunch fresh with role injection. This gating fixes a latent crash-loop where a non-Claude harness + a stale Claude `.jsonl` built an invalid `<cmd> --resume <claude-uuid>` invocation and shellper restart-looped to death.
 
 #### Multi-Architect Support (Spec 755 / Spec 786)
 
