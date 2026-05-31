@@ -55,5 +55,18 @@ walking up to the main checkout, which broke vitest's config loader and the
 `@cluesmith/codev-core` subpath import. Ran `pnpm install --frozen-lockfile` +
 `pnpm --filter @cluesmith/codev-core build` to get a self-contained worktree.
 
-**Tests**: `pnpm build` ✓, spawn-worktree suite 77 passed (6 new). Awaiting full-suite
-run via `porch done` checks, then `dev-approval` gate.
+**Tests**: `pnpm build` ✓, spawn-worktree suite 77 passed (6 new). Full-suite via
+`porch done` checks: build ✓ (6.1s), tests ✓ (20.5s). dev-approval gate approved.
+
+## Review phase
+
+Wrote `codev/reviews/805-allow-directory-entries-in-wor.md` (Summary / Files / Commits /
+Test Results / Architecture Updates [none — extends one helper] / Lessons Learned
+[recorded the `existsSync`-follows-symlinks gotcha in-review, not lessons-learned.md] /
+Things to Look At / How to Test). Opened **PR #947**, recorded with porch
+(`--pr 947`). Single-pass 3-way consultation: **gemini=APPROVE (HIGH), codex=APPROVE
+(MEDIUM), claude=APPROVE (HIGH)** — unanimous, no REQUEST_CHANGES. Gemini's first
+attempt failed on a Google API token-quota limit (transient infra, not a verdict);
+one retry succeeded. Notified architect. **`pr` gate pending** — waiting for human to
+review PR #947 on GitHub and approve the gate; only then do I merge (`gh pr merge
+--merge` + `porch done --merged 947`).
