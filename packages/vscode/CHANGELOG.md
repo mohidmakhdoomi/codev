@@ -2,6 +2,12 @@
 
 What's changed in the Codev VS Code extension, version by version, written for the developers who use it.
 
+## [Unreleased]
+
+### What's new
+
+- **`[new]` prefix on freshly-created backlog rows.** Backlog items created in the last 24 hours now lead with a `[new]` prefix right after the issue number (e.g. `#930 [new] vscode: mark recently-created...`). The prefix drops off automatically as items age past 24h — no per-user "mark as seen" state, no manual dismissal.
+
 ## [3.1.6] - 2026-05-31
 
 ### What's new

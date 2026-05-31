@@ -40,6 +40,8 @@ with PR/issue citations and slightly more context:
 Move out to its own ## section if the entry grows past ~3 sentences.
 -->
 
+- **`[new]` prefix on freshly-created backlog rows** (#930, PR #949). Backlog items whose `createdAt` is within the last 24 hours now lead with a `[new]` prefix right after the issue number — e.g. `#930 [new] vscode: mark recently-created...`. The threshold is re-evaluated on every tree render so items naturally lose the prefix as they age past 24h, no per-user state, no manual dismissal. The `OverviewBacklogItem.createdAt` field was already on the wire from earlier work, so this was a pure UI-layer change in `packages/vscode/src/views/backlog.ts` plus a new `backlog-recency.ts` pure helper with vitest coverage. Architect made an in-flight placement call at dev-approval (commit `5ff73ac4`) to lead the row with `[new]` rather than trail it; commit `16cb365c` reconciled the plan and review docs to match the shipped order.
+
 ## Other fixes (dashboard, porch, infrastructure)
 
 <!--
