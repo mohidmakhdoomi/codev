@@ -1,3 +1,8 @@
+---
+approved: 2026-05-31
+validated: [gemini, codex, claude]
+---
+
 # PIR Plan: Show issue # + title in the two outlier builder Quick Picks
 
 ## Understanding
