@@ -28,3 +28,11 @@ Implemented across server + vscode:
 - **Tests**: 20+ new vitest cases for searchBacklog (text/scopes/AND/sort/no-mutate) + formatAge thresholds.
 
 Green: types+core+codev build ✓, vscode check-types ✓ / lint ✓ / esbuild bundle ✓, vscode unit 135 ✓, codev github/overview/tower-routes 296 ✓. issue-list.sh exec bit preserved. Awaiting `dev-approval` — reviewer runs the worktree to verify the panel across themes/result-sizes/filter combos.
+
+### dev-approval feedback rounds (2026-05-31)
+Reviewer iterated on the implementation at the gate; addressed each:
+1. **Template extraction** — moved the ~200-line inline HTML/CSS/JS out of `backlog-search-panel.ts` into `webviews/backlog-search.template.ts` (`renderBacklogSearchHtml`, `/* html */` + `/* css */` tags). Panel is now lifecycle/messaging/host-filtering only. No build change.
+2. **Inline row action** — replicated the sidebar's hover "reference in architect" inline action: per-row `↪` button → posts `{id,title}` → reuses the existing `codev.referenceIssueInArchitect` command (opens architect terminal, injects `#id "title" ` unsubmitted). Widened shared `extractIssueId`/`extractIssueTitle` to accept an `{issueId, issueTitle}` object so the webview can carry the title.
+3. **Dropped the hacky `issue-list` parameterization** — reviewer flagged the `CODEV_ISSUE_STATE`/`CODEV_ISSUE_FIELDS` env-var bolt-ons on the shared concept (+ the non-github silent-state-ignore). Replaced with a **dedicated `issue-search` forge concept** (registered in `KNOWN_CONCEPTS`): 4 scripts — github verified empirically here; gitlab/gitea/linear mirrored from their `issue-list.sh` siblings + body + state, flagged `⚠️ UNVERIFIED` (no glab/tea/Linear creds in this env) for forge-owner smoke-test. `issue-list.sh` + `fetchIssueList` reverted to original; new `searchIssues(cwd, state)` routes to `issue-search`; `tower-routes` uses it. Forge w/o the script → null → panel shows "search unavailable" (honest degrade). **Plan deviation** (parameterized concept → dedicated concept) — to be recorded in the review.
+
+Green after all three: full codev suite 3192 passed / 13 pre-existing skips ✓; vscode check-types ✓ / lint ✓ / esbuild ✓ / 135 unit ✓.
