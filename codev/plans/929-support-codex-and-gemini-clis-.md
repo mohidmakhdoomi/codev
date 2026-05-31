@@ -28,93 +28,119 @@ Add an optional capability to the `HarnessProvider` interface that encapsulates 
 
 ### 1. New `HarnessProvider` capability (`packages/codev/src/agent-farm/utils/harness.ts`)
 
-Add two optional, paired methods to the interface (per the deep-dive analysis §4.1 recommendation — discovery and invocation both owned by the provider, so the Claude-specific `--resume` flag is never hard-coded at a call site):
+Add **one** optional method that bundles discovery + both invocation forms. This mirrors the convention the interface already uses for role injection — `buildRoleInjection()` returns Node argv for `spawn()` call sites (`harness.ts:24`) and `buildScriptRoleInjection()` returns a shell-**escaped** bash fragment (`harness.ts:34`). Bundling discovery and invocation into a single method means the call sites never see an independently-optional second method (no non-null assertion `!`), and the builder bash path gets a pre-escaped fragment instead of word-splitting a raw argv array:
 
 ```ts
 /**
- * Optional: discover a resumable prior session for the given working dir.
- * Returns the session id to pass to buildResumeInvocation(), or null when
- * none exists / this harness has no cwd-keyed session store. Harnesses that
- * leave this undefined are treated as "no resume" → fresh launch.
- * Only Claude implements it (store: ~/.claude/projects/<encoded-cwd>/<uuid>.jsonl).
+ * Optional: discover a resumable prior session for the given working dir and
+ * return how to resume it — in BOTH forms, mirroring buildRoleInjection /
+ * buildScriptRoleInjection:
+ *   - args:           Node argv for spawn() call sites (architect / tower-instances)
+ *   - scriptFragment: shell-escaped fragment for bash script generation (builder)
+ * Returns null when no resumable session exists or this harness has no
+ * cwd-keyed session store → callers fall back to a fresh launch. Only Claude
+ * implements it (store: ~/.claude/projects/<encoded-cwd>/<uuid>.jsonl).
  */
-discoverResumeSession?(absolutePath: string, opts?: { homeDir?: string }): string | null;
-
-/**
- * Optional: given a session id from discoverResumeSession(), return the CLI
- * args that resume it (e.g. claude → ['--resume', sessionId]). Only harnesses
- * that implement discoverResumeSession need this. Keeps the resume flag-shape
- * owned by the provider rather than the call sites.
- */
-buildResumeInvocation?(sessionId: string): { args: string[] };
+buildResume?(absolutePath: string, opts?: { homeDir?: string }): {
+  sessionId: string;
+  args: string[];
+  scriptFragment: string;
+} | null;
 ```
 
-- `CLAUDE_HARNESS` implements **both**: `discoverResumeSession` delegates to `findLatestSessionId(absolutePath, opts)`; `buildResumeInvocation` returns `{ args: ['--resume', sessionId] }`.
-- `CODEX_HARNESS`, `GEMINI_HARNESS`, `OPENCODE_HARNESS`, and custom harnesses leave **both** undefined → callers coerce discovery `?? null` → fresh launch; `buildResumeInvocation` is never reached for them.
+`CLAUDE_HARNESS` implements it:
 
-This is the "claude returns the resume invocation; codex/gemini return null" seam the issue and analysis both call for. The two call sites consume the pair: discover an id (null ⇒ fresh), and if non-null, splice in `harness.buildResumeInvocation!(id).args` instead of literal `['--resume', id]`.
+```ts
+buildResume: (absolutePath, opts) => {
+  const sessionId = findLatestSessionId(absolutePath, opts);
+  if (!sessionId) return null;
+  return {
+    sessionId,
+    args: ['--resume', sessionId],
+    scriptFragment: `--resume '${shellEscapeSingleQuote(sessionId)}'`,
+  };
+},
+```
+
+`CODEX_HARNESS`, `GEMINI_HARNESS`, `OPENCODE_HARNESS`, and custom harnesses leave `buildResume` **undefined** → callers do `harness.buildResume?.(path) ?? null` → fresh launch. This is the "claude returns the resume invocation; codex/gemini return null" seam the issue and analysis §4.1 call for, with the Node-vs-script split the existing role-injection methods already establish. (Session ids are bare UUIDs so escaping is belt-and-suspenders today, but it keeps the bash path correct-by-construction and consistent with `buildScriptRoleInjection`'s `:769`/`:858` escaping.)
 
 ### 2. Architect site (`tower-instances.ts:500-509`)
 
-Replace the unconditional `findLatestSessionId(workspacePath)` with the harness capability, preserving the existing `safeToResume` sibling-collision guard:
+Replace the unconditional `findLatestSessionId(workspacePath)` with the harness capability (Node-argv form), preserving the existing `safeToResume` sibling-collision guard:
 
 ```ts
 const architectHarness = getArchitectHarness(workspacePath);
-const resumeSessionId = safeToResume
-  ? (architectHarness.discoverResumeSession?.(workspacePath) ?? null)
-  : null;
+const resume = safeToResume ? (architectHarness.buildResume?.(workspacePath) ?? null) : null;
 ...
-if (resumeSessionId) {
-  cmdArgs = [...cmdParts.slice(1), ...architectHarness.buildResumeInvocation!(resumeSessionId).args];
-  ...
+if (resume) {
+  cmdArgs = [...cmdParts.slice(1), ...resume.args];
+  harnessEnv = {};
+  _deps.log('INFO', `Resuming main architect session ${resume.sessionId.slice(0, 8)}… for ${workspacePath}`);
+} else {
+  const built = buildArchitectArgs(cmdParts.slice(1), workspacePath);
+  cmdArgs = built.args; harnessEnv = built.env;
 }
 ```
 
 Update the now-inaccurate "if a prior **Claude** session exists" comment to note the harness gate. (`getArchitectHarness` already resolves from `.codev/config.json` `shell.architect`/`architectHarness`, identical to `buildArchitectArgs`, so a codex/gemini config yields `undefined` → fresh, role-injected launch.)
 
-### 3. Builder site (`spawn.ts:83`, callers `:459`/`:838`)
+### 3. Builder site (`spawn.ts:83`, callers `:459`/`:838`; consumed in `spawn-worktree.ts:739-751`)
 
-Thread the builder harness into `discoverResumeSession` and gate on it:
+Thread the builder harness into `discoverResumeSession`, gate on it, and return the bundled resume object (carrying the escaped `scriptFragment`) so the bash generator never re-derives the flag:
 
 ```ts
 export function discoverResumeSession(
   worktreePath: string,
   isResume: boolean | undefined,
   harness: HarnessProvider,
-): string | undefined {
+): { sessionId: string; args: string[]; scriptFragment: string } | undefined {
   if (!isResume) return undefined;
-  const found = harness.discoverResumeSession?.(worktreePath) ?? null;
-  if (found) { logger.kv('Session', `${found.slice(0, 8)}… (resuming conversation)`); return found; }
+  const resume = harness.buildResume?.(worktreePath) ?? null;
+  if (resume) { logger.kv('Session', `${resume.sessionId.slice(0, 8)}… (resuming conversation)`); return resume; }
   logger.info('No prior conversation found for this worktree; starting a fresh session.');
   return undefined;
 }
 ```
 
-Both callers pass `getBuilderHarness(config.workspaceRoot)`. When the harness returns null, `startBuilderSession` receives `undefined` and takes the fresh role-injection path — so `spawn-worktree.ts:739-751` (the `--resume` restart loop) is naturally never reached for codex/gemini. In the claude resume branch, `startBuilderSession` builds the resume line from `getBuilderHarness(config.workspaceRoot).buildResumeInvocation!(resumeSessionId).args` (joined into the bash script) rather than the literal `--resume "<id>"`, so the flag-shape stays provider-owned. `workspace-recover.ts` inherits the fix for free (it shells out to `afx spawn --resume`). The existing `buildResumeNotice` prompt still prepends for fresh-launched resumed builders (`spawn.ts:462`).
+Both callers pass `getBuilderHarness(config.workspaceRoot)` and forward the result into `startBuilderSession`, whose `resumeSessionId?: string` param becomes `resume?: { scriptFragment: string }`. In the resume branch (`spawn-worktree.ts:739-751`) the script line becomes `${baseCmd} ${resume.scriptFragment}` — a single pre-escaped fragment, **not** a `.join(' ')` of a raw argv array (which would word-split / comma-stringify). When the harness returns `undefined` (codex/gemini), `startBuilderSession` takes the fresh role-injection path and the `--resume` restart loop is never reached. `workspace-recover.ts` inherits the fix for free (it shells out to `afx spawn --resume`). The existing `buildResumeNotice` prompt still prepends for fresh-launched resumed builders (`spawn.ts:462`).
 
-### 4. Tests
+### 4. Tests — placed at the layer where each bug actually lives
 
-- **`packages/codev/src/agent-farm/__tests__/discover-resume-session.test.ts`** — update calls to pass a harness; add cases asserting `CODEX_HARNESS`/`GEMINI_HARNESS` return `undefined` even when a Claude jsonl exists (the regression guard), and that `CLAUDE_HARNESS` still returns the newest UUID.
-- **`packages/codev/src/agent-farm/__tests__/af-architect.test.ts`** (currently Claude-only) — add codex/gemini cases for `buildArchitectArgs` fresh-launch arg/env construction (codex `-c model_instructions_file=`, gemini `GEMINI_SYSTEM_MD`), and a resume-skip assertion: with a codex/gemini architect harness, `discoverResumeSession?.()` is undefined ⇒ resume is skipped even with a stale jsonl present.
-- Run the existing reconnect/sibling tests to confirm no regression (they already route through `buildArchitectArgs`).
+The two crash-loops live in **Tower launch** (`tower-instances.ts`) and **builder script generation** (`spawn-worktree.ts`), so the regression guards must sit there. `af-architect.test.ts` only exercises the no-Tower `afx architect` command (`spawn()` of the local session) — a resume-skip test there would **not** guard the real architect regression. Layering:
 
-### 5. `doctor` / docs
+- **`packages/codev/src/agent-farm/__tests__/discover-resume-session.test.ts`** (unit, keep — correctly placed) — update calls to pass a harness; add cases asserting `CODEX_HARNESS`/`GEMINI_HARNESS` return `undefined` even when a stale Claude jsonl exists (`buildResume` undefined), and that `CLAUDE_HARNESS` returns `{ sessionId, args:['--resume',id], scriptFragment }` for the newest UUID.
+- **`packages/codev/src/agent-farm/__tests__/tower-instances.test.ts`** (exists) — **architect regression guard**: stale Claude jsonl present + codex/gemini architect harness → asserts the launched command is the fresh `buildArchitectArgs` form (role-injected, harness env set) with **no `--resume`** in `cmdArgs`. Claude + stale jsonl → asserts `--resume <id>` is present (resume still works).
+- **`packages/codev/src/agent-farm/__tests__/spawn-worktree.test.ts`** (exists) — **builder script-shape guard**: a resumed builder's generated `.builder-start.sh` uses the harness-provided escaped `scriptFragment` (e.g. `--resume '<id>'`), not an unquoted or comma-joined argv; codex/gemini resumed builder → fresh role-injection script, no `--resume`.
+- **`packages/codev/src/agent-farm/__tests__/af-architect.test.ts`** — keep Claude-only as is; optionally add codex/gemini `buildArchitectArgs` fresh-launch arg/env construction (codex `-c model_instructions_file=`, gemini `GEMINI_SYSTEM_MD`) as plain coverage, with an explicit note that this file does **not** guard the resume regression (that's `tower-instances.test.ts`).
+- Run existing reconnect/sibling tests to confirm no regression (they already route through `buildArchitectArgs`).
+
+### 5. Gemini project-context manifest (promoted to MVP)
+
+A codex architect reads `AGENTS.md` natively for project context; a **gemini** architect ships no `GEMINI.md` (none exists in the repo, nor a `.gemini/` dir), so without help it launches with the injected *role* but no native project *manifesto*. The near-zero-effort fix is `.gemini/settings.json` with `context.fileName` → `AGENTS.md`, which points gemini's context loader at the manifest codex already uses. Promoting from nice-to-have to MVP so gemini doesn't ship context-blind:
+
+- Add an optional `getArchitectFiles?(workspacePath): Array<{ relativePath; content }>` to `HarnessProvider`, parallel to the existing `getWorktreeFiles?` (`harness.ts:44`). `GEMINI_HARNESS` returns `.gemini/settings.json` = `{ "context": { "fileName": "AGENTS.md" } }`. Others omit it.
+- The architect launch path (`buildArchitectArgs` in `tower-utils.ts`, or its caller in `tower-instances.ts`) writes these files **only if missing** — never clobbering a user's existing `.gemini/settings.json`. Idempotent and merge-safe.
+- Test in `tower-instances.test.ts` (or a small `harness.test.ts`): gemini architect with no `.gemini/settings.json` → file written with `context.fileName: "AGENTS.md"`; pre-existing file → left untouched.
+
+### 6. `doctor` / docs
 
 - No functional `doctor` change needed (`doctor.ts:594` already bars only OpenCode as architect; codex/gemini already pass). Add a short positive affirmation line that codex/gemini are supported architects.
-- Document in the relevant resource doc (and CLAUDE.md / AGENTS.md if the architect section warrants it): codex/gemini are supported architects selected via `.codev/config.json` `shell.architect`/`shell.architectHarness`; **conversation resume is Claude-main-only** (codex/gemini architects relaunch fresh with role injection); `.codev/config.json` — not `TOWER_ARCHITECT_CMD`/`--architect-cmd` — is the supported selection mechanism.
+- Document in the relevant resource doc (and CLAUDE.md / AGENTS.md if the architect section warrants it): codex/gemini are supported architects selected via `.codev/config.json` `shell.architect`/`shell.architectHarness`; **conversation resume is Claude-main-only** (codex/gemini architects relaunch fresh with role injection); `.codev/config.json` — not `TOWER_ARCHITECT_CMD`/`--architect-cmd`/`--builder-cmd` — is the supported harness-selection mechanism (see the two override-mismatch caveats in Risks).
 
-### 6. Submit-strategy hook (conditional — decided at the `dev-approval` gate)
+### 7. Submit-strategy hook (conditional — decided at the `dev-approval` gate)
 
 MVP item 3 (per-harness submit pacing / bracketed-paste in `message-write.ts`) is **conditional on empirical validation**. The current pacing (`message-write.ts:33` `writeMessageToSession`, tuned to Claude's TUI: single write + delayed Enter for ≤3 lines, line-by-line with 10ms gaps for >3) may or may not deliver cleanly on codex/gemini TUIs. If the human's `dev-approval` testing shows flaky multi-line/interrupt/streaming delivery, add an optional `getSubmitStrategy?()` to `HarnessProvider` and branch the writer on it. If delivery is clean, no change. The seam is designed but not implemented preemptively.
 
 ## Files to Change
 
-- `packages/codev/src/agent-farm/utils/harness.ts` — add `discoverResumeSession?` + `buildResumeInvocation?` to interface; implement both in `CLAUDE_HARNESS` (`discoverResumeSession` delegates to `findLatestSessionId`, `buildResumeInvocation` → `['--resume', id]`); import `findLatestSessionId` from `claude-session-discovery.ts`.
-- `packages/codev/src/agent-farm/servers/tower-instances.ts:500-509` — gate architect resume on `getArchitectHarness(...).discoverResumeSession?.()`; build args via `buildResumeInvocation`; update comment.
-- `packages/codev/src/agent-farm/commands/spawn.ts:83` — add `harness` param; gate on it. `:459`, `:838` — pass `getBuilderHarness(config.workspaceRoot)`.
-- `packages/codev/src/agent-farm/commands/spawn-worktree.ts:739-751` — in the claude resume branch, build the resume line from `getBuilderHarness(...).buildResumeInvocation!(id).args` instead of literal `--resume "<id>"`.
-- `packages/codev/src/agent-farm/__tests__/discover-resume-session.test.ts` — pass harness; add codex/gemini null-return regression cases.
-- `packages/codev/src/agent-farm/__tests__/af-architect.test.ts` — add codex/gemini arg-construction + resume-skip cases.
+- `packages/codev/src/agent-farm/utils/harness.ts` — add `buildResume?` (bundled discovery + Node-argv + escaped script fragment) and `getArchitectFiles?` to the interface; implement `buildResume` in `CLAUDE_HARNESS` (delegates to `findLatestSessionId`, returns `args` + escaped `scriptFragment`); implement `getArchitectFiles` in `GEMINI_HARNESS` (`.gemini/settings.json`); import `findLatestSessionId` from `claude-session-discovery.ts`.
+- `packages/codev/src/agent-farm/servers/tower-instances.ts:500-514` — gate architect resume on `getArchitectHarness(...).buildResume?.()` (Node-argv form); write `getArchitectFiles?()` if-missing on launch; update comment.
+- `packages/codev/src/agent-farm/commands/spawn.ts:83` — `discoverResumeSession` takes `harness`, returns the bundled resume object. `:459`, `:838` — pass `getBuilderHarness(config.workspaceRoot)`, forward object to `startBuilderSession`.
+- `packages/codev/src/agent-farm/commands/spawn-worktree.ts:724-751` — `startBuilderSession`'s `resumeSessionId?: string` → `resume?: {...scriptFragment}`; resume branch emits `${baseCmd} ${resume.scriptFragment}`.
+- `packages/codev/src/agent-farm/__tests__/discover-resume-session.test.ts` — pass harness; codex/gemini null-return + claude bundled-object cases.
+- `packages/codev/src/agent-farm/__tests__/tower-instances.test.ts` — architect resume-skip regression guard (codex/gemini + stale jsonl → no `--resume`); gemini `getArchitectFiles` write-if-missing.
+- `packages/codev/src/agent-farm/__tests__/spawn-worktree.test.ts` — builder resume script uses escaped `scriptFragment`; codex/gemini resumed builder → fresh script.
+- `packages/codev/src/agent-farm/__tests__/af-architect.test.ts` — (optional) codex/gemini fresh arg-construction coverage; note it does not guard the resume regression.
 - `packages/codev/src/commands/doctor.ts` — affirm codex/gemini architect support.
 - Docs: a resource doc (e.g. `codev/resources/arch.md` or commands ref) + CLAUDE.md/AGENTS.md note on resume-is-Claude-only + config-driven selection.
 - *(Conditional)* `packages/codev/src/agent-farm/servers/message-write.ts` + `harness.ts` — submit strategy, only if `dev-approval` validation reveals flakiness.
@@ -122,9 +148,11 @@ MVP item 3 (per-harness submit pacing / bracketed-paste in `message-write.ts`) i
 ## Risks & Alternatives Considered
 
 - **Risk: `harness.ts` importing `claude-session-discovery.ts`.** The latter imports only Node builtins — no circular dependency. Low risk.
-- **Risk: `TOWER_ARCHITECT_CMD`/`--architect-cmd` env/CLI override without matching `.codev/config.json`.** `getArchitectHarness` resolves the harness from config only, so an env-set `codex` with no config still resolves the claude harness → would still attempt resume. This is the issue's explicit **nice-to-have** ("command-aware harness resolution"); MVP fixes the config-driven path (which all acceptance criteria target) and **documents** the override caveat rather than expanding scope.
+- **Risk: `TOWER_ARCHITECT_CMD`/`--architect-cmd` architect-override without matching `.codev/config.json`.** `getArchitectHarness` resolves the harness from config only, so an env-set `codex` with no config still resolves the claude harness → would still attempt resume. This is the issue's explicit **nice-to-have** ("command-aware harness resolution"); MVP fixes the config-driven path (which all acceptance criteria target) and **documents** the override caveat rather than expanding scope.
+- **Risk: `--builder-cmd`/builder-env override without matching config — the exact builder analog.** The builder command comes from `getResolvedCommands()` (`spawn.ts:469`/`:840`, honors `--builder-cmd` and env), but the harness comes from `getBuilderHarness(config…)` (config only, `config.ts:267`). Set `--builder-cmd codex` with no `builderHarness`/`shell.builder` config and a resumed builder would still resolve the claude harness and attempt `codex --resume <claude-id>`. Same disposition as the architect override: documented, not fixed (config-driven `shell.builder`/`builderHarness` is the supported selection mechanism).
 - **Risk: empirical acceptance criteria can't be unit-tested here.** Launch-on-stale-jsonl, add-architect, `afx send` multiline/interrupt/streaming, reconnect, affinity, dashboard scrollback all need codex/gemini actually installed. These are validated by the human running the worktree at the `dev-approval` gate — the reason PIR (not AIR/BUGFIX) was chosen. The unit tests cover the deterministic core (arg construction + resume-skip logic).
-- **Alternative: a boolean `supportsResume` flag + keep `findLatestSessionId` and literal `--resume` at call sites.** Rejected — leaves the Claude-specific discovery *and* the `--resume` flag-shape spread across call sites. Pairing `discoverResumeSession` with `buildResumeInvocation` (per analysis §4.1) moves both fully into the provider, which is the cleaner seam. The builder bash path consumes `buildResumeInvocation(id).args` by joining them into the script (`${baseCmd} <args...>`), so no Claude-specific string survives at the call site.
+- **Alternative: a boolean `supportsResume` flag + keep `findLatestSessionId` and literal `--resume` at call sites.** Rejected — leaves the Claude-specific discovery *and* the `--resume` flag-shape spread across call sites. A single `buildResume()` returning both the Node-argv and the **escaped** script fragment moves both fully into the provider (mirroring `buildRoleInjection`/`buildScriptRoleInjection`), so no Claude-specific string and no shell-quoting decision survives at the call site.
+- **Alternative: two independently-optional methods (`discoverResumeSession` + `buildResumeInvocation`).** Rejected — independent optionality forces a non-null assertion (`!`) at call sites and tempts a raw-argv `.join(' ')` into the bash script (word-splits / comma-stringifies on any arg with whitespace). Bundling them removes the `!` and guarantees the script form is pre-escaped.
 
 ## Test Plan
 
@@ -137,6 +165,7 @@ MVP item 3 (per-harness submit pacing / bracketed-paste in `message-write.ts`) i
 - `afx workspace start` main architect launches on a **clean** cwd.
 - `afx workspace start` main architect launches with a **stale Claude `.jsonl` present** in `~/.claude/projects/<encoded-cwd>/` — must NOT crash-loop (primary regression target). Confirm no `--resume` in the launched command (check the shellper/PTY command).
 - `afx workspace add-architect` sibling launches.
+- **gemini only**: after launch, `.gemini/settings.json` exists with `context.fileName: "AGENTS.md"` (and a pre-existing one was not clobbered).
 - `afx send` delivers + submits: single-line, multi-line (>3 lines, no swallowed Enter), `--interrupt`, and while the TUI is streaming. (If flaky → triggers the conditional submit-strategy work.)
 - Tower stop→start reconnect and shellper auto-restart both relaunch the architect.
 - A builder spawned by a codex/gemini architect preserves `CODEV_ARCHITECT_NAME` affinity.
