@@ -122,11 +122,12 @@ export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     const assigned = !!me && !!item.assignees?.some(a => a.toLowerCase() === me);
     const author = item.author ? ` @${item.author}` : '';
     // Render-time "now": items aging past the 24h window lose `[new]` on the
-    // next refresh, no persistent state (#930). The `[new]` prefix sits after
-    // the issue number and coexists with the assignment icon (following #810).
+    // next refresh, no persistent state (#930). The `[new]` prefix leads the
+    // row (before the issue number) and coexists with the assignment icon
+    // (following #810).
     const now = Date.now();
     const prefix = recencyPrefix(item.createdAt, now);
-    const ti = new BacklogTreeItem(item.id, item.url, item.title, `#${item.id} ${prefix}${item.title}${author}`);
+    const ti = new BacklogTreeItem(item.id, item.url, item.title, `${prefix}#${item.id} ${item.title}${author}`);
     const age = relativeAge(item.createdAt, now);
     ti.tooltip = age ? `${item.url}\nCreated ${age}` : item.url;
     ti.contextValue = 'backlog-item';

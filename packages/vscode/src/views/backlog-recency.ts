@@ -7,9 +7,9 @@
  * (`backlog.ts`) imports these and applies them during row construction.
  *
  * The "new" signal follows the #810 design language: a monochrome `[new]`
- * text prefix after the issue number — coexisting with the existing
- * `account` / `issues` icon rather than clobbering it — so a freshly-filed
- * issue *assigned to you* keeps its account icon AND shows `[new]`.
+ * text prefix leading the row — coexisting with the existing `account` /
+ * `issues` icon rather than clobbering it — so a freshly-filed issue
+ * *assigned to you* keeps its account icon AND shows `[new]`.
  *
  * `now` is injected (ms) rather than read from `Date.now()` so tests are
  * deterministic. (The existing `relativeTime` in `view-artifact.ts` hardcodes
@@ -37,8 +37,8 @@ export function isRecentlyCreated(createdAt: string | undefined, nowMs: number):
 
 /**
  * The label prefix for a backlog row: `'[new] '` when recently created, else
- * `''`. Designed to splice between the issue number and the title
- * (`#${id} ${recencyPrefix(...)}${title}`) — when empty the label is
+ * `''`. Designed to lead the row label
+ * (`${recencyPrefix(...)}#${id} ${title}`) — when empty the label is
  * byte-identical to the pre-#930 form. Graceful empty-string fallback mirrors
  * #810's `GATE_ICONS[gate] || 'bell'` shape.
  */
