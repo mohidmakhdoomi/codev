@@ -108,15 +108,34 @@ export async function fetchPRList(
 export async function fetchIssueList(
   cwd?: string,
   forgeConfig?: ForgeConfig | null,
-  options?: { state?: 'open' | 'closed' | 'all'; includeBody?: boolean },
 ): Promise<ForgeIssueListItem[] | null> {
-  // Opt-in env passed to the `issue-list` concept. The default
-  // (/api/overview) path sends neither, preserving the lean open-issue
-  // fetch; the backlog-search path sets state + requests `body`.
-  const env: Record<string, string> = {};
-  if (options?.state) { env.CODEV_ISSUE_STATE = options.state; }
-  if (options?.includeBody) { env.CODEV_ISSUE_FIELDS = 'body'; }
-  const result = await executeForgeCommand('issue-list', env, {
+  const result = await executeForgeCommand('issue-list', {}, {
+    cwd,
+    forgeConfig,
+  });
+  return result as ForgeIssueListItem[] | null;
+}
+
+/**
+ * Search-oriented issue fetch for the backlog-search webview (#920).
+ * Routes through the dedicated `issue-search` concept — distinct from
+ * `issue-list` so the always-on overview path stays lean: `issue-search`
+ * always includes `body` (for title+body matching) and honors a requested
+ * `state`. Returns null on failure (forge unavailable, or a forge whose
+ * preset has no `issue-search` script) so the panel degrades to a clear
+ * "search unavailable" rather than silently-wrong results.
+ *
+ * @param state - open | closed | all (default open). Passed to the concept
+ *   via `CODEV_ISSUE_STATE`, mirroring how `issue-view` takes `CODEV_ISSUE_ID`.
+ */
+export async function searchIssues(
+  cwd?: string,
+  state: 'open' | 'closed' | 'all' = 'open',
+  forgeConfig?: ForgeConfig | null,
+): Promise<ForgeIssueListItem[] | null> {
+  const result = await executeForgeCommand('issue-search', {
+    CODEV_ISSUE_STATE: state,
+  }, {
     cwd,
     forgeConfig,
   });

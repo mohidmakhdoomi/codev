@@ -63,7 +63,7 @@ import {
 import { OverviewCache } from './overview.js';
 import {
   fetchIssue,
-  fetchIssueList,
+  searchIssues,
   fetchPRList,
   fetchCurrentUser,
   parseLinkedIssue,
@@ -938,7 +938,7 @@ async function handleBacklogSearch(res: http.ServerResponse, url: URL): Promise<
   const state: 'open' | 'closed' | 'all' =
     rawState === 'closed' || rawState === 'all' ? rawState : 'open';
 
-  const issues = await fetchIssueList(workspaceRoot, null, { state, includeBody: true });
+  const issues = await searchIssues(workspaceRoot, state);
   if (issues === null) {
     const body: BacklogSearchResponse = {
       items: [],

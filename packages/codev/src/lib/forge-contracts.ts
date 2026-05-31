@@ -39,11 +39,10 @@ export interface IssueListItem {
   author?: { login: string };
   assignees?: Array<{ login: string }>;
   /**
-   * Issue body. Only populated when the caller opts in via
-   * `fetchIssueList(..., { includeBody: true })` (the backlog-search path);
-   * omitted from the default `/api/overview` fetch so that payload stays
-   * lean. Non-GitHub forges may not populate it — consumers degrade to
-   * title-only matching when it's absent.
+   * Issue body. Populated by the `issue-search` concept (the backlog-search
+   * path); the `issue-list` concept omits it so the always-on `/api/overview`
+   * payload stays lean. Non-GitHub forges may not populate it — consumers
+   * degrade to title-only matching when it's absent.
    */
   body?: string;
 }
