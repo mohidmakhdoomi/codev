@@ -200,9 +200,19 @@ export interface UserConfig {
    */
   worktree?: {
     /**
-     * Glob patterns of files to symlink from the workspace root into each new
-     * worktree. Resolved at spawn time relative to the workspace root.
-     * Example values: '.env.local', 'packages/<any>/.env', 'turbo.json'.
+     * Patterns to symlink from the workspace root into each new worktree,
+     * resolved at spawn time relative to the workspace root.
+     *
+     * - File entries are glob patterns expanded with `nodir: true`, so a match
+     *   that is a directory is silently skipped. This guards against a pattern
+     *   like 'apps/auth' masking the worktree's own source with the parent
+     *   checkout. Example values: '.env.local', 'packages/<any>/.env', 'turbo.json'.
+     * - A trailing slash opts a directory in explicitly: '.local-user-data/' is
+     *   treated as a literal path and symlinked whole. The source need not exist
+     *   at spawn time (a dangling link is fine — runtime tooling may create it).
+     *   Directory entries are literal, not globbed (no wildcard expansion), and
+     *   are intentionally NOT branch-isolated (the link is shared with the parent).
+     *
      * Note: root `.env` and `.codev/config.json` are always symlinked regardless.
      */
     symlinks?: string[];

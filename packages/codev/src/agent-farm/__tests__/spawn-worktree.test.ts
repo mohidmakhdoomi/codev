@@ -24,6 +24,8 @@ vi.mock('node:fs', async (importOriginal) => {
   return {
     ...actual,
     existsSync: vi.fn(() => false),
+    lstatSync: vi.fn(() => { throw new Error('ENOENT'); }),
+    statSync: vi.fn(() => ({ isDirectory: () => true })),
     readFileSync: vi.fn(() => '{}'),
     writeFileSync: vi.fn(),
     chmodSync: vi.fn(),
@@ -928,6 +930,124 @@ describe('spawn-worktree', () => {
       symlinkConfigFiles(config, '/tmp/wt');
 
       expect(symlinkSync).not.toHaveBeenCalled();
+    });
+
+    // -- Directory entries (trailing-slash opt-in, Issue #805) ----------------
+
+    it('symlinks a trailing-slash directory entry whole, with the dir type', async () => {
+      const { existsSync, symlinkSync, statSync } = await import('node:fs');
+      getWorktreeConfigMock.mockReturnValueOnce({
+        symlinks: ['.local-user-data/'],
+        postSpawn: [],
+        devCommand: null,
+        devUrls: [],
+      });
+      vi.mocked(existsSync)
+        .mockReturnValueOnce(false)  // root .env
+        .mockReturnValueOnce(false)  // root .codev/config.json
+        .mockReturnValueOnce(false)  // pathOccupied(target): existsSync
+        .mockReturnValueOnce(true);  // existsSync(srcAbs): source dir present
+      vi.mocked(statSync).mockReturnValueOnce({ isDirectory: () => true } as any);
+
+      symlinkConfigFiles(config, '/tmp/wt');
+
+      // Directory entries are literal — never globbed.
+      expect(globSyncMock).not.toHaveBeenCalled();
+      expect(symlinkSync).toHaveBeenCalledTimes(1);
+      expect(symlinkSync).toHaveBeenCalledWith(
+        '/projects/test/.local-user-data',
+        '/tmp/wt/.local-user-data',
+        'dir',
+      );
+    });
+
+    it('creates a dangling link when the source directory is absent', async () => {
+      const { symlinkSync } = await import('node:fs');
+      getWorktreeConfigMock.mockReturnValueOnce({
+        symlinks: ['.local-user-data/'],
+        postSpawn: [],
+        devCommand: null,
+        devUrls: [],
+      });
+      // Default mocks: existsSync → false everywhere (incl. srcAbs), lstatSync throws.
+      symlinkConfigFiles(config, '/tmp/wt');
+
+      // Link still created (no throw); no 'dir' type since the source isn't a dir.
+      expect(symlinkSync).toHaveBeenCalledTimes(1);
+      expect(symlinkSync).toHaveBeenCalledWith(
+        '/projects/test/.local-user-data',
+        '/tmp/wt/.local-user-data',
+        undefined,
+      );
+    });
+
+    it('skips a directory entry when the target dir already exists', async () => {
+      const { existsSync, symlinkSync } = await import('node:fs');
+      getWorktreeConfigMock.mockReturnValueOnce({
+        symlinks: ['.local-user-data/'],
+        postSpawn: [],
+        devCommand: null,
+        devUrls: [],
+      });
+      vi.mocked(existsSync)
+        .mockReturnValueOnce(false)  // root .env
+        .mockReturnValueOnce(false)  // root .codev/config.json
+        .mockReturnValueOnce(true);  // pathOccupied(target): existsSync → true
+      symlinkConfigFiles(config, '/tmp/wt');
+
+      expect(symlinkSync).not.toHaveBeenCalled();
+    });
+
+    it('skips a directory entry when a dangling link already occupies the target', async () => {
+      const { lstatSync, symlinkSync } = await import('node:fs');
+      getWorktreeConfigMock.mockReturnValueOnce({
+        symlinks: ['.local-user-data/'],
+        postSpawn: [],
+        devCommand: null,
+        devUrls: [],
+      });
+      // existsSync(target) → false (default), but lstatSync(target) succeeds:
+      // the link file is present though its target is absent (dangling).
+      vi.mocked(lstatSync).mockReturnValueOnce({} as any);
+      symlinkConfigFiles(config, '/tmp/wt');
+
+      // No EEXIST — re-run is idempotent.
+      expect(symlinkSync).not.toHaveBeenCalled();
+    });
+
+    it('still skips a directory matched by a non-slash entry (footgun guard)', async () => {
+      const { symlinkSync } = await import('node:fs');
+      getWorktreeConfigMock.mockReturnValueOnce({
+        symlinks: ['apps/auth'],
+        postSpawn: [],
+        devCommand: null,
+        devUrls: [],
+      });
+      // nodir:true filtered the directory out → no matches.
+      globSyncMock.mockReturnValueOnce([]);
+      symlinkConfigFiles(config, '/tmp/wt');
+
+      expect(globSyncMock).toHaveBeenCalledWith(
+        'apps/auth',
+        expect.objectContaining({ nodir: true }),
+      );
+      expect(symlinkSync).not.toHaveBeenCalled();
+    });
+
+    it('warns and skips a trailing-slash entry containing glob metacharacters', async () => {
+      const { symlinkSync } = await import('node:fs');
+      const { logger } = await import('../utils/logger.js');
+      getWorktreeConfigMock.mockReturnValueOnce({
+        symlinks: ['packages/*/data/'],
+        postSpawn: [],
+        devCommand: null,
+        devUrls: [],
+      });
+      symlinkConfigFiles(config, '/tmp/wt');
+
+      expect(symlinkSync).not.toHaveBeenCalled();
+      expect(globSyncMock).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalled();
     });
 
   });

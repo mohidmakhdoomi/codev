@@ -9,7 +9,7 @@
 
 import { resolve, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, chmodSync, symlinkSync, readdirSync, mkdirSync } from 'node:fs';
+import { existsSync, lstatSync, statSync, readFileSync, writeFileSync, chmodSync, symlinkSync, readdirSync, mkdirSync } from 'node:fs';
 import { globSync } from 'glob';
 import type { Config, ProtocolDefinition } from '../types.js';
 import { logger, fatal } from '../utils/logger.js';
@@ -39,13 +39,36 @@ export async function checkDependencies(): Promise<void> {
 // =============================================================================
 
 /**
+ * True when `p` already exists on disk, including a *dangling* symlink (a link
+ * whose target is absent). `existsSync` follows symlinks, so it reports `false`
+ * for a dangling link even though the link file occupies the path — which would
+ * make a re-run of `symlinkConfigFiles` (e.g. `afx setup`) throw EEXIST. The
+ * `lstatSync` fallback inspects the link itself without following it.
+ */
+function pathOccupied(p: string): boolean {
+  if (existsSync(p)) return true;
+  try {
+    lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Symlink config files from workspace root into a worktree (if they exist).
  * Shared by createWorktree() and createWorktreeFromBranch().
  *
  * Always symlinks root `.env` and `.codev/config.json` (existing behavior).
  * Additionally, when `worktree.symlinks` is configured in `.codev/config.json`,
- * expands each glob pattern from the workspace root and symlinks each match
- * into the worktree at the same relative path.
+ * each entry is linked into the worktree at the same relative path:
+ *   - File entries (no trailing slash) are glob-expanded with `nodir: true`, so
+ *     a pattern that resolves to a directory is silently skipped — this guards
+ *     against masking the worktree's own source with the parent checkout.
+ *   - Directory entries (trailing slash) opt explicitly out of that guard: the
+ *     slash is stripped, the remainder is treated as a literal path, and the
+ *     directory is symlinked whole. The source need not exist at spawn time — a
+ *     dangling link is acceptable (runtime tooling may create the dir later).
  */
 export function symlinkConfigFiles(config: Config, worktreePath: string): void {
   // Symlink .env at root level
@@ -78,15 +101,32 @@ export function symlinkConfigFiles(config: Config, worktreePath: string): void {
     }
   }
 
-  // Opt-in: expand worktree.symlinks globs and link each match at the same
-  // relative path inside the worktree. Unconfigured repos see no effect.
+  // Opt-in: link each worktree.symlinks entry at the same relative path inside
+  // the worktree. Unconfigured repos see no effect.
   for (const pattern of getWorktreeConfig(config.workspaceRoot).symlinks) {
-    for (const rel of globSync(pattern, { cwd: config.workspaceRoot, dot: true, nodir: true })) {
+    if (pattern.endsWith('/')) {
+      // Directory opt-in: literal path, symlinked whole (see fn-level comment).
+      const rel = pattern.slice(0, -1);
+      if (!rel) continue; // guard against a bare "/" entry
+      if (/[*?[\]{}!()]/.test(rel)) {
+        logger.warn(`Skipping worktree.symlinks entry "${pattern}": directory entries are literal paths, not globs.`);
+        continue;
+      }
       const target = resolve(worktreePath, rel);
-      if (existsSync(target)) continue;
+      if (pathOccupied(target)) continue;
+      const srcAbs = resolve(config.workspaceRoot, rel);
       mkdirSync(dirname(target), { recursive: true });
-      symlinkSync(resolve(config.workspaceRoot, rel), target);
-      logger.info(`Linked ${rel} from workspace root`);
+      const isDir = existsSync(srcAbs) && statSync(srcAbs).isDirectory();
+      symlinkSync(srcAbs, target, isDir ? 'dir' : undefined);
+      logger.info(`Linked directory ${rel}/ from workspace root`);
+    } else {
+      for (const rel of globSync(pattern, { cwd: config.workspaceRoot, dot: true, nodir: true })) {
+        const target = resolve(worktreePath, rel);
+        if (existsSync(target)) continue;
+        mkdirSync(dirname(target), { recursive: true });
+        symlinkSync(resolve(config.workspaceRoot, rel), target);
+        logger.info(`Linked ${rel} from workspace root`);
+      }
     }
   }
 }

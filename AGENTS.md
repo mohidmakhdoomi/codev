@@ -364,7 +364,7 @@ When configured, each builder worktree (`.builders/<id>/`) becomes runnable — 
 }
 ```
 
-- `symlinks`: globs resolve from the workspace root; matches symlink into the worktree at the same relative path. Root `.env` and `.codev/config.json` are *always* symlinked regardless. **Symlinks, not copies** — edits to main's env files reflect instantly in any running dev session.
+- `symlinks`: globs resolve from the workspace root; matches symlink into the worktree at the same relative path. Root `.env` and `.codev/config.json` are *always* symlinked regardless. **Symlinks, not copies** — edits to main's env files reflect instantly in any running dev session. A directory match is silently skipped (so a glob can't mask the worktree's own source) **unless** the entry ends with a trailing slash: `".local-user-data/"` is treated as a literal path and symlinks the directory whole (shared with the parent, not branch-isolated; a dangling link is fine if the source doesn't exist yet).
 - `postSpawn`: each command runs sequentially with `cwd` = worktree path. Non-zero exit aborts the spawn loud (half-built worktree stays for inspection).
 - `devCommand`: the foreground command that starts your dev server. Required for `afx dev` to work.
 
