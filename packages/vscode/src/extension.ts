@@ -71,9 +71,22 @@ function extractBuilderId(arg: vscode.TreeItem | string | undefined): string | u
  * BacklogTreeItem itself; command-palette invocations pass nothing →
  * undefined → spawnBuilder falls back to its full quick-pick flow.
  */
-function extractIssueId(arg: vscode.TreeItem | string | undefined): string | undefined {
+/**
+ * Argument shape accepted by the backlog issue commands. Beyond the sidebar's
+ * `TreeItem` and the row-click `string`, the Search Backlog webview (#920)
+ * passes a plain `{ issueId, issueTitle }` object so its inline "reference in
+ * architect" action can carry the title (which a bare id string can't).
+ */
+type IssueCommandArg =
+	| vscode.TreeItem
+	| string
+	| { issueId: string; issueTitle?: string }
+	| undefined;
+
+function extractIssueId(arg: IssueCommandArg): string | undefined {
 	if (typeof arg === 'string') { return arg; }
 	if (arg instanceof BacklogTreeItem) { return arg.issueId; }
+	if (arg && typeof arg === 'object' && 'issueId' in arg) { return arg.issueId; }
 	return undefined;
 }
 
@@ -85,8 +98,11 @@ function extractIssueId(arg: vscode.TreeItem | string | undefined): string | und
  * fall back. An empty title is normalised to undefined so the fallback
  * branch handles it identically to a missing title.
  */
-function extractIssueTitle(arg: vscode.TreeItem | string | undefined): string | undefined {
+function extractIssueTitle(arg: IssueCommandArg): string | undefined {
 	if (arg instanceof BacklogTreeItem) {
+		return arg.issueTitle || undefined;
+	}
+	if (arg && typeof arg === 'object' && 'issueId' in arg) {
 		return arg.issueTitle || undefined;
 	}
 	return undefined;
@@ -601,9 +617,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 		vscode.commands.registerCommand('codev.viewBacklogIssue', (arg: vscode.TreeItem | string | undefined) =>
 			viewBacklogIssue(connectionManager!, extractIssueId(arg))),
-			vscode.commands.registerCommand('codev.openBacklogSearch', () =>
-				BacklogSearchPanel.createOrShow(connectionManager!, overviewCache, context.extensionUri)),
-		vscode.commands.registerCommand('codev.referenceIssueInArchitect', async (arg: vscode.TreeItem | string | undefined) => {
+		vscode.commands.registerCommand('codev.openBacklogSearch', () =>
+			BacklogSearchPanel.createOrShow(connectionManager!, overviewCache, context.extensionUri)),
+		vscode.commands.registerCommand('codev.referenceIssueInArchitect', async (arg: IssueCommandArg) => {
 			// Inline-button action on a backlog row: open + focus the architect
 			// terminal, then type `#<id> "<title>" ` into its prompt without
 			// submitting, so the user can keep typing their context before

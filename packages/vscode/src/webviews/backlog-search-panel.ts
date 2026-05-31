@@ -132,7 +132,7 @@ export class BacklogSearchPanel {
 
   private onMessage(msg: unknown): void {
     if (!msg || typeof msg !== 'object') { return; }
-    const m = msg as { type?: string; criteria?: BacklogSearchCriteria; state?: string; id?: string };
+    const m = msg as { type?: string; criteria?: BacklogSearchCriteria; state?: string; id?: string; title?: string };
     switch (m.type) {
       case 'criteria':
         this.criteria = m.criteria ?? {};
@@ -147,6 +147,17 @@ export class BacklogSearchPanel {
         return;
       case 'open':
         if (m.id) { void vscode.commands.executeCommand('codev.viewBacklogIssue', m.id); }
+        return;
+      case 'reference':
+        // Same inline action as the sidebar row: open + focus the architect
+        // terminal and inject `#<id> "<title>" ` (without submitting). Passing
+        // the object form carries the title, which a bare id string can't.
+        if (m.id) {
+          void vscode.commands.executeCommand('codev.referenceIssueInArchitect', {
+            issueId: m.id,
+            issueTitle: m.title,
+          });
+        }
         return;
     }
   }

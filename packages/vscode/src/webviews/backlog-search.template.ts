@@ -47,6 +47,14 @@ const STYLES = /* css */ `
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   tbody tr { cursor: pointer; }
   tbody tr:hover { background: var(--vscode-list-hoverBackground); }
+  td.actions, th.actions { width: 1%; padding: 0 8px; text-align: right; }
+  /* Inline row action, mirroring the sidebar's hover-revealed icon at the row's right edge. */
+  .row-action {
+    background: none; border: none; padding: 2px 4px; cursor: pointer;
+    color: var(--vscode-foreground); opacity: 0; font-size: 1.05em; line-height: 1;
+  }
+  tbody tr:hover .row-action, .row-action:focus-visible { opacity: 0.9; }
+  .row-action:hover { color: var(--vscode-textLink-foreground); opacity: 1; }
   footer { margin-top: 10px; font-size: 0.85em; opacity: 0.8; }
   .error { color: var(--vscode-errorForeground); }
   .empty { opacity: 0.7; padding: 16px 8px; }
@@ -136,6 +144,22 @@ const CLIENT_SCRIPT = `
         td.textContent = text;
         tr.appendChild(td);
       }
+      // Inline action: reference this issue in the architect chat (id + title),
+      // mirroring the sidebar row's hover button. stopPropagation so it doesn't
+      // also trigger the row-open.
+      const actionTd = document.createElement('td');
+      actionTd.className = 'actions';
+      const refBtn = document.createElement('button');
+      refBtn.className = 'row-action';
+      refBtn.textContent = '↪';
+      refBtn.title = 'Reference #' + r.id + ' in architect chat';
+      refBtn.setAttribute('aria-label', refBtn.title);
+      refBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'reference', id: r.id, title: r.title });
+      });
+      actionTd.appendChild(refBtn);
+      tr.appendChild(actionTd);
       tbody.appendChild(tr);
     }
     $('empty').hidden = rows.length > 0;
@@ -220,6 +244,7 @@ export function renderBacklogSearchHtml(cspSource: string): string {
         <th data-col="area">Area</th>
         <th data-col="assignee">Assignee</th>
         <th data-col="age">Age</th>
+        <th class="actions" aria-label="Actions"></th>
       </tr>
     </thead>
     <tbody id="rows"></tbody>
