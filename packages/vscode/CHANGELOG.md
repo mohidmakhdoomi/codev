@@ -6,6 +6,7 @@ What's changed in the Codev VS Code extension, version by version, written for t
 
 ### What's new
 
+- **Search Backlog editor-tab webview.** A new 🔍 icon in the Backlog view's title bar opens a full editor-tab panel for exploratory triage. Filter by Area / Assignee / Author, substring-search title + body, sort any column, see a match-count footer. Rows open the issue or reference it in the architect chat. Complements (rather than replaces) the always-on sidebar tree and the `Codev: Search Backlog…` Quick Pick.
 - **Codev CLI preflight on startup.** The extension now verifies that the `codev` CLI is installed and at a version at least as new as itself. Missing → opens the new `Get started with Codev` walkthrough (detect / install / verify). Outdated → upgrade notification with one-click `Update via npm`. A persistent **Codev CLI** row in the sidebar's Status view shows the current state with a recheck button.
 - **`[new]` prefix on freshly-created backlog rows.** Backlog items created in the last 24 hours now lead with a `[new]` prefix right after the issue number (e.g. `#930 [new] vscode: mark recently-created...`). The prefix drops off automatically as items age past 24h — no per-user "mark as seen" state, no manual dismissal.
 

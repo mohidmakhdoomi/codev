@@ -35,6 +35,16 @@ Section template:
 
 -->
 
+## Search Backlog editor-tab webview (#920, PR #957)
+
+The Backlog view's title bar gains a 🔍 icon that opens a new **Search Backlog** editor-tab panel — a full editor-area webview built for exploratory triage where the always-on sidebar tree and the Quick Pick both fall short.
+
+Filter the open backlog by Area, Assignee, and Author (three native-styled dropdowns that AND together); substring-search title **and body** with a debounced live query; sort any column; row click opens the issue and the ↪ inline action references it in the architect chat with `#<id> "<title>"`. A match-count footer reads `N matches found · by-area breakdown`.
+
+Three modes: `Open` (default, mirrors the sidebar's PR-excluded backlog), `Closed` (lifts the PR exclusion since closed issues usually have a merged PR), `All`. The panel is a singleton — re-invoking the command focuses the existing tab instead of stacking duplicates. Themed via CSS variables only, so dark / light / high-contrast all render cleanly without per-theme code.
+
+This panel coexists with the sidebar Backlog tree and the `Codev: Search Backlog…` Quick Pick (#918) rather than replacing either. The sidebar is at-a-glance "what's on my plate"; Quick Pick is muscle-memory "I know it exists, find it, dismiss"; this panel is "scan, filter, sort, refine". Supersedes the closed #906.
+
 ## Codev CLI preflight on extension activation (#791, PR #955)
 
 The extension now verifies, on every startup, that the `codev` CLI is installed on `PATH` and at a version at least as new as itself. The probe is fire-and-forget and bounded to 400ms so activation isn't blocked; the result caches for the session. Until #791 this dependency was implicit — a missing or out-of-date CLI surfaced only as a confusing "not connected to Tower" error from deep in the activation path, with no actionable guidance.
