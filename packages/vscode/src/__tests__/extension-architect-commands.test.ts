@@ -31,7 +31,7 @@ const EXT_SRC = readFileSync(
 describe('Spec 786 Phase 6 — extension.ts architect commands', () => {
   it('codev.openArchitectTerminal accepts an optional architectName arg', () => {
     expect(EXT_SRC).toMatch(
-      /registerCommand\(['"]codev\.openArchitectTerminal['"],\s*async\s*\(architectName\?: string\)/
+      /(?:registerCommand|reg)\(['"]codev\.openArchitectTerminal['"],\s*async\s*\(architectName\?: string\)/
     );
   });
 
@@ -48,20 +48,20 @@ describe('Spec 786 Phase 6 — extension.ts architect commands', () => {
   });
 
   it('codev.removeArchitect is registered', () => {
-    expect(EXT_SRC).toMatch(/registerCommand\(['"]codev\.removeArchitect['"]/);
+    expect(EXT_SRC).toMatch(/(?:registerCommand|regCli)\(['"]codev\.removeArchitect['"]/);
   });
 
   it("codev.removeArchitect refuses 'main' before calling Tower", () => {
     // The server enforces this too (Phase 4 OQ-B), but the client gate gives
     // a faster error and keeps the modal from appearing for an impossible
     // operation.
-    const removeBlock = EXT_SRC.split("registerCommand('codev.removeArchitect'")[1] ?? '';
+    const removeBlock = EXT_SRC.split("regCli('codev.removeArchitect'")[1] ?? '';
     expect(removeBlock).toMatch(/if \(name === ['"]main['"]\)/);
     expect(removeBlock).toMatch(/Cannot remove.*main/i);
   });
 
   it('codev.removeArchitect uses a modal confirmation', () => {
-    const removeBlock = EXT_SRC.split("registerCommand('codev.removeArchitect'")[1] ?? '';
+    const removeBlock = EXT_SRC.split("regCli('codev.removeArchitect'")[1] ?? '';
     expect(removeBlock).toMatch(/showInformationMessage/);
     expect(removeBlock).toMatch(/modal: true/);
   });
@@ -70,7 +70,7 @@ describe('Spec 786 Phase 6 — extension.ts architect commands', () => {
     // Spec 786 Phase 6 (post iter-1 CMAP): without this call, the removed
     // sibling stays visible in the sidebar until the next unrelated state
     // event.
-    const removeBlock = EXT_SRC.split("registerCommand('codev.removeArchitect'")[1] ?? '';
+    const removeBlock = EXT_SRC.split("regCli('codev.removeArchitect'")[1] ?? '';
     expect(removeBlock).toMatch(/workspaceProvider\.refresh\(\)/);
   });
 
@@ -85,7 +85,7 @@ describe('Spec 786 Phase 6 — extension.ts architect commands', () => {
     // instead of an inline template literal). The assertion now anchors on the
     // helper call rather than the literal `#${issueId} ` template — the
     // architect-name default behaviour is still the point of this test.
-    const refBlock = EXT_SRC.split("registerCommand('codev.referenceIssueInArchitect'")[1] ?? '';
+    const refBlock = EXT_SRC.split("regCli('codev.referenceIssueInArchitect'")[1] ?? '';
     // The injection call passes only the text — no architect name.
     expect(refBlock).toMatch(/injectArchitectText\(buildArchitectReferenceInjection\(/);
   });
