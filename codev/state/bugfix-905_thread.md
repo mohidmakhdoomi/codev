@@ -52,6 +52,18 @@ Verifying: reproduce timeout w/o dist, then build dist and re-run.
   Note: `origin` has split URLs (fetch=cluesmith, push=mohidmakhdoomi fork); branch lives on the fork.
 - CMAP-3 (--issue 905): Gemini APPROVE (HIGH), Codex APPROVE (MEDIUM, couldn't re-run vitest in RO sandbox).
   Claude lane hit a usage limit (rate-limited, not a finding). No REQUEST_CHANGES.
-- porch: investigate → fix → pr done; **PR gate requested — WAITING FOR HUMAN APPROVAL**
-  (`porch approve bugfix-905 pr`).
+- porch: investigate → fix → pr done; PR gate requested.
+
+## CI regression follow-up (architect-flagged)
+- Tower Integration Tests job went red: `send-integration.e2e.test.ts` afterAll (10s) timed out.
+- Cause: the EXIT-replay fix makes shellper exits propagate *earlier*. `waitForTerminalExit`
+  (`tower-instances.ts:123`) attached `once('exit')` *after* the event had already fired, so an
+  already-exited session waited out the full 5s safety timeout × N terminals (A then B ≈ 10s).
+- Fix: short-circuit `waitForTerminalExit` when `session.status === 'exited'` before attaching the
+  listener. Exported the fn + added 3 focused unit tests in `tower-instances.test.ts`.
+- Could NOT reproduce the e2e locally: `registerTerminal` returns 500 in this sandbox during
+  `beforeAll` (real-shellper spawn fails — same node-pty-in-child-process limitation that gates
+  these CI-tier tests). My change only touches teardown, so it can't cause a beforeAll 500.
+- Verified: full `pnpm build` + full unit suite green (152 files / 3214 passed, +3 new, 0 failed).
+  Pushed for CI to verify the Tower Integration Tests job. **Do NOT merge until CI green + re-approval.**
 
