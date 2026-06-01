@@ -37,4 +37,11 @@ Reviewer iterated on the implementation at the gate; addressed each:
 
 Green after all three: full codev suite 3192 passed / 13 pre-existing skips ✓; vscode check-types ✓ / lint ✓ / esbuild ✓ / 135 unit ✓.
 
+### main merged + dev-approval approved → review phase (2026-06-01)
+Merged `origin/main` (202 commits behind: v3.1.6 + merged builders incl. #918 Quick Pick). One conflict (`extension.ts`): kept both search imports, adapted my command to main's new `reg()`/`regCli()` registration wrappers, preserved `IssueCommandArg` widening on `referenceIssueInArchitect`. Verified no double-icon (only `openBacklogSearch` in title bar; #918 Quick Pick palette-only). Post-merge green: vscode 192, codev 3210. `extension.ts` left tab-indented (pre-existing file style; no repo formatter). dev-approval gate approved by human; advanced to review.
+
+---
+
+(earlier dev-approval feedback rounds, for reference:)
+
 4. **Naming consistency** — reviewer flagged the route `/api/backlog-search` was inconsistent with the resource-named `/api/issue` (and with my own `issue-search` concept / `searchIssues` lib). Unified the data path on `issue-search`: route `/api/issue-search`, handler `handleIssueSearch`, client `TowerClient.searchIssues`, wire types `IssueSearchItem`/`IssueSearchResponse`. "Backlog" survives only on the feature side — `BacklogSearchPanel`, the "Search Backlog" tab, and the host-side `searchBacklog`/`BacklogSearchCriteria` filter helpers (describe the panel feature, not the resource). Principle: transport/server = resource (issue), UI = feature (backlog). Green: types/core/codev build ✓, vscode 135 ✓, codev forge/github/overview/tower-routes 359 ✓.
