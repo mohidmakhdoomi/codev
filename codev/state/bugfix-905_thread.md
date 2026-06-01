@@ -66,4 +66,7 @@ Verifying: reproduce timeout w/o dist, then build dist and re-run.
   these CI-tier tests). My change only touches teardown, so it can't cause a beforeAll 500.
 - Verified: full `pnpm build` + full unit suite green (152 files / 3214 passed, +3 new, 0 failed).
   Pushed for CI to verify the Tower Integration Tests job. **Do NOT merge until CI green + re-approval.**
+- **CI RESULT: all 6 checks GREEN** — Tower Integration Tests (the formerly-red job), Unit Tests,
+  CLI Tests (ubuntu + macos), CLI Integration Tests, Package Install Verification all pass.
+  Holding at the pr gate awaiting architect re-approval. Not merging.
 
