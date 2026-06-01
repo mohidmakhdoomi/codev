@@ -1,4 +1,4 @@
-import type { OverviewBacklogItem, OverviewData, BacklogSearchItem } from '@cluesmith/codev-types';
+import type { OverviewBacklogItem, OverviewData, IssueSearchItem } from '@cluesmith/codev-types';
 
 /**
  * Backlog rows the user can act on — exclude issues that already have an
@@ -73,10 +73,10 @@ export function formatBacklogTitle(
 }
 
 // =============================================================================
-// Backlog search (#920) — pure host-side filter/sort over BacklogSearchItem
+// Backlog search (#920) — pure host-side filter/sort over IssueSearchItem
 //
 // The "Search Backlog" webview posts criteria; the extension host runs these
-// helpers against the dataset fetched from /api/backlog-search and posts the
+// helpers against the dataset fetched from /api/issue-search and posts the
 // rows back. Kept vscode-free (this file already is) so vitest can exercise
 // every branch without the editor runtime. The webview itself never filters —
 // body never crosses into it.
@@ -114,13 +114,13 @@ export interface BacklogSearchCriteria {
   currentUser?: string;
 }
 
-function matchesText(item: BacklogSearchItem, text: string): boolean {
+function matchesText(item: IssueSearchItem, text: string): boolean {
   // Title + body, case-insensitive substring. Pure substring by design —
   // fuzzy matching is Quick Pick's job (#918), not this panel's.
   return `${item.title}\n${item.body}`.toLowerCase().includes(text);
 }
 
-function matchesAssignee(item: BacklogSearchItem, assignee: string, me: string | undefined): boolean {
+function matchesAssignee(item: IssueSearchItem, assignee: string, me: string | undefined): boolean {
   if (!assignee) { return true; }
   if (assignee === ASSIGNEE_UNASSIGNED) {
     return !item.assignees || item.assignees.length === 0;
@@ -132,7 +132,7 @@ function matchesAssignee(item: BacklogSearchItem, assignee: string, me: string |
   return !!item.assignees?.some(a => a.toLowerCase() === target);
 }
 
-function matchesAuthor(item: BacklogSearchItem, author: string, me: string | undefined): boolean {
+function matchesAuthor(item: IssueSearchItem, author: string, me: string | undefined): boolean {
   if (!author) { return true; }
   const target = (author === AUTHOR_ME ? me : author)?.toLowerCase();
   if (!target) { return true; }
@@ -140,7 +140,7 @@ function matchesAuthor(item: BacklogSearchItem, author: string, me: string | und
 }
 
 /** Numeric/string sort key per column; `age` uses negated time so larger = older. */
-function sortKey(item: BacklogSearchItem, column: BacklogSortColumn): number | string {
+function sortKey(item: IssueSearchItem, column: BacklogSortColumn): number | string {
   switch (column) {
     case 'id': return Number(item.id) || 0;
     case 'title': return item.title.toLowerCase();
@@ -151,10 +151,10 @@ function sortKey(item: BacklogSearchItem, column: BacklogSortColumn): number | s
 }
 
 function sortBacklog(
-  items: BacklogSearchItem[],
+  items: IssueSearchItem[],
   column: BacklogSortColumn,
   direction: BacklogSortDirection,
-): BacklogSearchItem[] {
+): IssueSearchItem[] {
   const dir = direction === 'asc' ? 1 : -1;
   return [...items].sort((a, b) => {
     const ka = sortKey(a, column);
@@ -172,9 +172,9 @@ function sortBacklog(
  * Empty criteria → every item, sorted. Pure and synchronous.
  */
 export function searchBacklog(
-  items: BacklogSearchItem[],
+  items: IssueSearchItem[],
   criteria: BacklogSearchCriteria,
-): BacklogSearchItem[] {
+): IssueSearchItem[] {
   const text = criteria.text?.trim().toLowerCase() ?? '';
   const me = criteria.currentUser?.toLowerCase();
   const filtered = items.filter(item => {

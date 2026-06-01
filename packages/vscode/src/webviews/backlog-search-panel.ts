@@ -9,7 +9,7 @@
  * - **Single instance.** `createOrShow` focuses the existing panel rather than
  *   stacking duplicates.
  * - **Data via Tower.** The body-bearing dataset comes from
- *   `TowerClient.searchBacklog` (GET /api/backlog-search), fetched on open, on
+ *   `TowerClient.searchIssues` (GET /api/issue-search), fetched on open, on
  *   `OverviewCache` heartbeats (throttled), and whenever the Status dropdown
  *   changes (the one criterion the server resolves).
  * - **Filtering is host-side.** The webview posts criteria; this class runs the
@@ -20,7 +20,7 @@
  */
 
 import * as vscode from 'vscode';
-import type { BacklogSearchItem } from '@cluesmith/codev-types';
+import type { IssueSearchItem } from '@cluesmith/codev-types';
 import type { ConnectionManager } from '../connection-manager.js';
 import type { OverviewCache } from '../views/overview-data.js';
 import {
@@ -50,7 +50,7 @@ export class BacklogSearchPanel {
   private static current: BacklogSearchPanel | undefined;
 
   private readonly disposables: vscode.Disposable[] = [];
-  private dataset: BacklogSearchItem[] = [];
+  private dataset: IssueSearchItem[] = [];
   private currentUser: string | undefined;
   private state: IssueState = 'open';
   private criteria: BacklogSearchCriteria = {};
@@ -117,7 +117,7 @@ export class BacklogSearchPanel {
       this.postResults();
       return;
     }
-    const response = await client.searchBacklog(workspacePath, this.state);
+    const response = await client.searchIssues(workspacePath, this.state);
     if (!response) {
       this.loadError = 'Could not load backlog (forge unavailable?)';
       this.dataset = [];

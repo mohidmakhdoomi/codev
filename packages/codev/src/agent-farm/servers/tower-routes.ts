@@ -69,7 +69,7 @@ import {
   parseLinkedIssue,
   parseArea,
 } from '../../lib/github.js';
-import type { BacklogSearchItem, BacklogSearchResponse } from '@cluesmith/codev-types';
+import type { IssueSearchItem, IssueSearchResponse } from '@cluesmith/codev-types';
 import { computeAnalytics } from './analytics.js';
 import { getAllTasks, executeTask, getTaskId } from './tower-cron.js';
 import { getGlobalDb } from '../db/index.js';
@@ -159,7 +159,7 @@ const ROUTES: Record<string, RouteEntry> = {
   'GET /api/status':      (_req, res) => handleStatus(res),
   'GET /api/overview':    (_req, res, url, ctx) => handleOverview(res, url, undefined, ctx),
   'GET /api/issue':       (_req, res, url) => handleIssueView(res, url),
-  'GET /api/backlog-search': (_req, res, url) => handleBacklogSearch(res, url),
+  'GET /api/issue-search': (_req, res, url) => handleIssueSearch(res, url),
   'GET /api/worktree-config': (_req, res, url) => handleWorktreeConfigView(res, url),
   'GET /api/analytics':   (_req, res, url) => handleAnalytics(res, url),
   'POST /api/overview/refresh': (_req, res, _url, ctx) => handleOverviewRefresh(res, ctx),
@@ -908,7 +908,7 @@ async function handleIssueView(res: http.ServerResponse, url: URL): Promise<void
 }
 
 /**
- * GET /api/backlog-search — the data source for the VSCode "Search Backlog"
+ * GET /api/issue-search — the data source for the VSCode "Search Backlog"
  * editor-tab webview (#920). Returns the issue set for the requested
  * `state`, each row carrying its `body` so the panel can substring-match
  * title + body host-side.
@@ -922,7 +922,7 @@ async function handleIssueView(res: http.ServerResponse, url: URL): Promise<void
  * - `state=closed|all`: lifts the PR-exclusion (a closed issue usually *has*
  *   a merged PR, so excluding would empty the list) and returns the raw set.
  */
-async function handleBacklogSearch(res: http.ServerResponse, url: URL): Promise<void> {
+async function handleIssueSearch(res: http.ServerResponse, url: URL): Promise<void> {
   let workspaceRoot = url.searchParams.get('workspace');
   if (!workspaceRoot) {
     const knownPaths = getKnownWorkspacePaths();
@@ -940,7 +940,7 @@ async function handleBacklogSearch(res: http.ServerResponse, url: URL): Promise<
 
   const issues = await searchIssues(workspaceRoot, state);
   if (issues === null) {
-    const body: BacklogSearchResponse = {
+    const body: IssueSearchResponse = {
       items: [],
       error: 'Forge unavailable — could not fetch issues',
     };
@@ -963,10 +963,10 @@ async function handleBacklogSearch(res: http.ServerResponse, url: URL): Promise<
     }
   }
 
-  const items: BacklogSearchItem[] = issues
+  const items: IssueSearchItem[] = issues
     .filter(issue => !prLinkedIssues.has(String(issue.number)))
     .map(issue => {
-      const item: BacklogSearchItem = {
+      const item: IssueSearchItem = {
         id: String(issue.number),
         title: issue.title,
         url: issue.url,
@@ -980,7 +980,7 @@ async function handleBacklogSearch(res: http.ServerResponse, url: URL): Promise<
       return item;
     });
 
-  const response: BacklogSearchResponse = { items };
+  const response: IssueSearchResponse = { items };
   const currentUser = await fetchCurrentUser(workspaceRoot);
   if (currentUser) { response.currentUser = currentUser; }
 

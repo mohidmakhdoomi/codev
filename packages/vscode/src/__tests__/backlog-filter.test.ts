@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { OverviewBacklogItem, OverviewData, BacklogSearchItem } from '@cluesmith/codev-types';
+import type { OverviewBacklogItem, OverviewData, IssueSearchItem } from '@cluesmith/codev-types';
 import {
   filterMine,
   spawnableBacklog,
@@ -179,7 +179,7 @@ describe('formatBacklogTitle', () => {
 
 // --- Backlog search (#920) ---
 
-function searchItem(over: Partial<BacklogSearchItem> & { id: string }): BacklogSearchItem {
+function searchItem(over: Partial<IssueSearchItem> & { id: string }): IssueSearchItem {
   return {
     title: `Issue ${over.id}`,
     url: `https://example.test/${over.id}`,
