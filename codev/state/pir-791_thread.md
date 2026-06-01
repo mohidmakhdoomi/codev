@@ -39,3 +39,9 @@ Verified: check-types ✓, lint ✓, test:unit 155 ✓, esbuild ✓.
 - `install.md`: added Node.js ≥20 prerequisite note (engines.node >=20.0.0, CI on 20; VS Code's bundled Node doesn't count).
 
 Commits 2b87f216..(install note). check-types/lint/test:unit(155)/esbuild all green. Pushing → porch done → dev-approval gate.
+
+### dev-approval gate (in-gate revisions)
+Reviewer ran the Extension Dev Host. Two refinements during the gate: (1) wired `codev.cliReady` context key in preflight + repointed walkthrough Verify step to `onContext:codev.cliReady` (ticks on real outcome, not on recheck attempt); (2) renamed walkthrough title → "Get started with Codev". First two walkthrough steps left as check-on-view (read-and-do). Committed ccb5bb5f. Gate approved by human.
+
+## Review phase
+Wrote `codev/reviews/791-vscode-startup-preflight-verif.md`. Updated arch.md (VS Code Extension key-decisions: startup CLI preflight + reg/regCli pattern) and lessons-learned.md (2 UI/UX entries: walkthrough completion semantics; bundled-Node≠system-Node). Next: commit review+arch+lessons, open PR, porch done → 3-way consult (single advisory pass), pr gate.
