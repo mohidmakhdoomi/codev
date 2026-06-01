@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { TunnelStatus } from '@cluesmith/codev-types';
 import type { ConnectionManager } from '../connection-manager.js';
+import { getPreflightState, onPreflightChange } from '../preflight/preflight.js';
 
 export class StatusProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
@@ -9,6 +10,9 @@ export class StatusProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
   constructor(private connectionManager: ConnectionManager) {
     connectionManager.onStateChange(() => this.changeEmitter.fire());
     connectionManager.onSSEEvent(() => this.changeEmitter.fire());
+    // The CLI row reflects preflight state, which changes independently of
+    // Tower (e.g. after a recheck) — refresh on its dedicated event too.
+    onPreflightChange(() => this.changeEmitter.fire());
   }
 
   getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
@@ -19,6 +23,11 @@ export class StatusProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     const items: vscode.TreeItem[] = [];
     const client = this.connectionManager.getClient();
     const state = this.connectionManager.getState();
+
+    // Codev CLI preflight status. Driven by preflight state (not the Tower
+    // connection), so it renders even when Tower is offline — exactly the
+    // case where a missing / outdated CLI is the likely cause.
+    items.push(this.cliRow());
 
     // Tower status
     const towerItem = new vscode.TreeItem(`Tower: ${state}`);
@@ -56,5 +65,38 @@ export class StatusProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     }
 
     return items;
+  }
+
+  /**
+   * The "Codev CLI" row. A non-ok status sets a `codev-cli-<status>`
+   * contextValue so package.json's inline `view/item/context` menu shows the
+   * recheck button; `ok` carries no contextValue, so no button.
+   */
+  private cliRow(): vscode.TreeItem {
+    const { status, cliVersion } = getPreflightState();
+    const labelFor: Record<typeof status, string> = {
+      ok: `Codev CLI: ${cliVersion ?? 'ready'}`,
+      outdated: `Codev CLI: ${cliVersion ?? '?'} (outdated)`,
+      missing: 'Codev CLI: not installed',
+      pending: 'Codev CLI: checking…',
+    };
+    const item = new vscode.TreeItem(labelFor[status]);
+    switch (status) {
+      case 'ok':
+        item.iconPath = new vscode.ThemeIcon('check', new vscode.ThemeColor('testing.iconPassed'));
+        break;
+      case 'outdated':
+        item.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('testing.iconQueued'));
+        item.contextValue = 'codev-cli-outdated';
+        break;
+      case 'missing':
+        item.iconPath = new vscode.ThemeIcon('error', new vscode.ThemeColor('testing.iconFailed'));
+        item.contextValue = 'codev-cli-missing';
+        break;
+      case 'pending':
+        item.iconPath = new vscode.ThemeIcon('sync~spin');
+        break;
+    }
+    return item;
   }
 }

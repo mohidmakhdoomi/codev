@@ -151,6 +151,11 @@
         "title": "Codev: Add Review Comment"
       },
       {
+        "command": "codev.recheckCli",
+        "title": "Codev: Recheck CLI",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "codev.viewDiff",
         "title": "Codev: View Diff"
       },
@@ -303,6 +308,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "codev.recheckCli",
+          "when": "view == codev.status && viewItem =~ /^codev-cli-(missing|outdated)$/",
+          "group": "inline@1"
+        },
         {
           "command": "codev.removeArchitect",
           "when": "view == codev.workspace && viewItem == workspace-architect-sibling",
@@ -624,7 +634,35 @@
           "description": "Show every open backlog issue. When off (the default), the Backlog view filters to items assigned to the current GitHub user. Toggleable via the Backlog title-bar eye icon."
         }
       }
-    }
+    },
+    "walkthroughs": [
+      {
+        "id": "codevGettingStarted",
+        "title": "Get started with Codev",
+        "description": "Install the Codev CLI and connect VS Code to Tower.",
+        "steps": [
+          {
+            "id": "detect",
+            "title": "Check your setup",
+            "description": "Codev needs the `codev` command-line tool installed globally, at a version at least as new as this extension. This walkthrough helps you install it and verify it.",
+            "media": { "markdown": "walkthroughs/detect.md" }
+          },
+          {
+            "id": "install",
+            "title": "Install the Codev CLI",
+            "description": "Install or update the CLI globally with npm.",
+            "media": { "markdown": "walkthroughs/install.md" }
+          },
+          {
+            "id": "verify",
+            "title": "Verify the installation",
+            "description": "Confirm the CLI is detected and at a compatible version.",
+            "media": { "markdown": "walkthroughs/verify.md" },
+            "completionEvents": ["onContext:codev.cliReady"]
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "pnpm --filter @cluesmith/codev-core --filter @cluesmith/codev-types build && pnpm package",

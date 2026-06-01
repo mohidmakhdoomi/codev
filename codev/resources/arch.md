@@ -1054,6 +1054,7 @@ The VS Code extension (`packages/vscode`) is a thin client over Tower's existing
 - **TerminalLocation.Editor**: Terminals open directly in editor area via `ViewColumn.One` (architect) and `ViewColumn.Two` (builders). Uses stable VS Code API, not the undocumented `moveIntoEditor` command.
 - **Subpath exports**: `codev-core` uses subpath exports (`./tower-client`, `./escape-buffer`, etc.) to prevent Node builtins from leaking into the dashboard's Vite build.
 - **Injectable auth**: `TowerClient` accepts a `getAuthKey` callback. CLI uses `ensureLocalKey()` (creates key if missing). Extension uses `readLocalKey()` + `SecretStorage` (never creates keys).
+- **Startup CLI preflight (#791)**: On `activate()` the extension verifies the `codev` CLI is installed and at least its own `package.json` version (`codev --version`, resolved like `resolveAfxPath`, cached per session, 400ms-bounded, fire-and-forget so activation never blocks). Missing → `Get started with Codev` walkthrough; outdated → upgrade notification; either dismissed → CLI-dependent commands no-op with one "run setup" toast. Commands register through two helpers — `reg` (unguarded) and `regCli` (guarded) — so the registrar name *is* the guard policy (no separate list). Preflight also sets the `codev.cliReady` context key, which drives the walkthrough's Verify-step completion. Lives in `src/preflight/` (`preflight-core.ts` pure + unit-tested, `preflight.ts` vscode glue).
 
 ## Repository Dual Nature
 
