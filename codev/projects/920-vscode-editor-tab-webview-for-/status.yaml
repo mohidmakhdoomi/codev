@@ -1,7 +1,7 @@
 id: '920'
 title: vscode-editor-tab-webview-for-
 protocol: pir
-phase: implement
+phase: review
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -19,4 +19,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-29T23:07:49.040Z'
-updated_at: '2026-06-01T12:10:36.345Z'
+updated_at: '2026-06-01T12:12:36.559Z'
