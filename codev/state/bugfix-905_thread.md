@@ -45,4 +45,13 @@ Verifying: reproduce timeout w/o dist, then build dist and re-run.
 ### Results
 - 3 affected tests: 45.98s timeout → all pass in <2s.
 - Full shellper-process + session-manager suites: 114 passed, 0 failed (18.72s).
+- After clean `pnpm install && pnpm build`: full unit suite 152 files / 3211 passed, 13 skipped, 0 failed.
+
+## PR phase
+- PR #953 → cluesmith/codev (cross-fork from mohidmakhdoomi:builder/bugfix-905).
+  Note: `origin` has split URLs (fetch=cluesmith, push=mohidmakhdoomi fork); branch lives on the fork.
+- CMAP-3 (--issue 905): Gemini APPROVE (HIGH), Codex APPROVE (MEDIUM, couldn't re-run vitest in RO sandbox).
+  Claude lane hit a usage limit (rate-limited, not a finding). No REQUEST_CHANGES.
+- porch: investigate → fix → pr done; **PR gate requested — WAITING FOR HUMAN APPROVAL**
+  (`porch approve bugfix-905 pr`).
 
