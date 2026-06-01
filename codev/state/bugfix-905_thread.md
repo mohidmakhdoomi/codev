@@ -70,3 +70,10 @@ Verifying: reproduce timeout w/o dist, then build dist and re-run.
   CLI Tests (ubuntu + macos), CLI Integration Tests, Package Install Verification all pass.
   Holding at the pr gate awaiting architect re-approval. Not merging.
 
+## Final state: HOLD (architect decision 2026-06-01)
+- pr gate human-approved; consult 2-0 APPROVE (Gemini+Codex HIGH); all 6 CI checks green; MERGEABLE.
+- Merge BLOCKED by GitHub branch protection: `reviewDecision=REVIEW_REQUIRED`, 0 formal reviews.
+  Single-account repo can't self-approve, so the required review can't be satisfied right now.
+- Architect decision: **leave PR #953 OPEN, do NOT merge, do NOT use --admin.** Stand by at pr gate;
+  revisit once a reviewer account / branch-protection config is sorted. Work itself is complete & green.
+
