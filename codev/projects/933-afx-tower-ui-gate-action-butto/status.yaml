@@ -1,7 +1,7 @@
 id: '933'
 title: afx-tower-ui-gate-action-butto
 protocol: pir
-phase: plan
+phase: implement
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -17,4 +17,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-02T00:03:40.820Z'
-updated_at: '2026-06-02T01:45:42.207Z'
+updated_at: '2026-06-02T01:45:51.932Z'
