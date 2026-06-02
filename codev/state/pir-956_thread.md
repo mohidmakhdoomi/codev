@@ -54,4 +54,13 @@ Verification:
 Note for porch checks: root `npm run build` / `npm test` target core+codev, not vscode, so
 they pass independent of this change. The real verification for this change is vscode `pnpm lint`.
 
-Awaiting dev-approval gate.
+Dev-approval gate: APPROVED (after rewording plan-review disable reasons to lead with
+policy — "intentionally unguarded: CLI-independent command" rather than "no access to
+reg/regCli").
+
+## Review phase
+
+Wrote `codev/reviews/956-vscode-lint-rule-banning-bare-.md` (retrospective, becomes PR body).
+No arch.md / lessons-learned.md changes (lint guardrail around existing #791 pattern; sections
+explain why). Next: PR, record with porch, `porch done` triggers single-pass 3-way consult,
+then pr gate.
