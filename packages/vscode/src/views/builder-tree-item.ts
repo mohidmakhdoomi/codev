@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AreaGroupTreeItem } from './area-group-tree-item.js';
+import { BUILDER_STATE_GLYPH, worstBuilderState, type GroupRollup } from './builder-row.js';
 
 /**
  * TreeItem subclass that carries a builder id as a typed field.
@@ -44,15 +45,11 @@ export class BuilderGroupTreeItem extends AreaGroupTreeItem {
     areaName: string,
     count: number,
     collapsibleState: vscode.TreeItemCollapsibleState,
-    rollup: { blocked: number; idle: number; active: number },
+    rollup: GroupRollup,
   ) {
     super(areaName, 'builder', count, collapsibleState);
-    const { blocked, idle, active } = rollup;
-    this.iconPath = blocked > 0
-      ? new vscode.ThemeIcon('bell', new vscode.ThemeColor('notificationsWarningIcon.foreground'))
-      : idle > 0
-      ? new vscode.ThemeIcon('comment-discussion', new vscode.ThemeColor('notificationsInfoIcon.foreground'))
-      : new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('testing.iconPassed'));
-    this.tooltip = `${blocked} blocked · ${idle} waiting · ${active} active`;
+    const { icon, color } = BUILDER_STATE_GLYPH[worstBuilderState(rollup)];
+    this.iconPath = new vscode.ThemeIcon(icon, new vscode.ThemeColor(color));
+    this.tooltip = `${rollup.blocked} blocked · ${rollup.idle} waiting · ${rollup.active} active`;
   }
 }

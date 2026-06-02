@@ -12,7 +12,25 @@ import { BuilderFolderTreeItem } from './builder-folder-tree-item.js';
 import { buildFilePathTree, type FilePathNode } from './file-path-tree.js';
 import type { BuilderDiffCache } from './builder-diff-cache.js';
 import { AreaGroupExpansionStore } from './area-group-expansion.js';
-import { builderRowLabel, gateIconFor, rollupGroupState } from './builder-row.js';
+import {
+  builderRowLabel,
+  gateIconFor,
+  rollupGroupState,
+  BUILDER_STATE_GLYPH,
+  type BuilderState,
+} from './builder-row.js';
+
+/**
+ * Builder state → `contextValue` family prefix. Drives menu `when`-clause
+ * scoping (Approve Gate inline only on `blocked-builder-*`; the rest apply to
+ * all three families). Keyed by the same `BuilderState` the icon uses so a
+ * row's menu and glyph never disagree.
+ */
+const CONTEXT_FAMILY: Record<BuilderState, 'blocked-builder' | 'awaiting-builder' | 'builder'> = {
+  blocked: 'blocked-builder',
+  idle: 'awaiting-builder',
+  active: 'builder',
+};
 
 /**
  * Order builders for the Builders tree: three buckets, top-down.
@@ -184,26 +202,25 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     // builder has committed a review file on disk — the
     // `codev.viewReviewFile` menu entry's `when` clause keys off it so
     // PIR rows hide the entry until the review phase produces the file.
-    let family: 'blocked-builder' | 'awaiting-builder' | 'builder';
+    // Classify once (blocked > idle > active); the state drives both the
+    // contextValue family (menu scoping) and the icon.
+    let state: BuilderState;
     if (isBlocked) {
-      family = 'blocked-builder';
+      state = 'blocked';
     } else if (isIdle) {
-      family = 'awaiting-builder';
+      state = 'idle';
     } else {
-      family = 'builder';
+      state = 'active';
     }
     const protocol = b.protocol || 'unknown';
     const reviewSuffix = builderHasReviewFile(b) ? '-review' : '';
-    item.contextValue = `${family}-${protocol}${reviewSuffix}`;
-    // Three icons for three states: gate-specific codicon (blocked, shape
-    // varies by gate via `gateIconFor` — color stays warning-yellow),
-    // comment-discussion (silent, likely waiting on a question), circle-filled
-    // (live/active).
-    item.iconPath = isBlocked
-      ? new vscode.ThemeIcon(gateIconFor(b.blockedGate), new vscode.ThemeColor('notificationsWarningIcon.foreground'))
-      : isIdle
-      ? new vscode.ThemeIcon('comment-discussion', new vscode.ThemeColor('notificationsInfoIcon.foreground'))
-      : new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('testing.iconPassed'));
+    item.contextValue = `${CONTEXT_FAMILY[state]}-${protocol}${reviewSuffix}`;
+    // Icon: the shared per-state glyph (single source of truth in
+    // builder-row.ts). A blocked row overrides the shape with the gate-specific
+    // `gateIconFor` codicon while keeping the shared warning color.
+    const { icon, color } = BUILDER_STATE_GLYPH[state];
+    const iconName = isBlocked ? gateIconFor(b.blockedGate) : icon;
+    item.iconPath = new vscode.ThemeIcon(iconName, new vscode.ThemeColor(color));
     // The row click runs `codev.openBuilderRow` — a wrapper that opens the
     // builder terminal AND expands the row (so single-click matches what
     // most users expect). Pass the item itself so the handler can call

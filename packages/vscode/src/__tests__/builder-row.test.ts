@@ -11,7 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { OverviewBuilder } from '@cluesmith/codev-types';
-import { builderRowLabel, gateIconFor, rollupGroupState } from '../views/builder-row.js';
+import { builderRowLabel, gateIconFor, rollupGroupState, worstBuilderState } from '../views/builder-row.js';
 
 // A fixed clock so elapsed-time suffixes are deterministic.
 const NOW = new Date('2026-05-30T12:00:00Z').getTime();
@@ -163,5 +163,23 @@ describe('rollupGroupState', () => {
 
   it('empty group → all zero', () => {
     expect(rollupGroupState([], NOW)).toEqual({ blocked: 0, idle: 0, active: 0 });
+  });
+});
+
+describe('worstBuilderState', () => {
+  it('blocked beats everything', () => {
+    expect(worstBuilderState({ blocked: 1, idle: 5, active: 9 })).toBe('blocked');
+  });
+
+  it('idle beats active when nothing blocked', () => {
+    expect(worstBuilderState({ blocked: 0, idle: 1, active: 9 })).toBe('idle');
+  });
+
+  it('active when nothing blocked or idle', () => {
+    expect(worstBuilderState({ blocked: 0, idle: 0, active: 3 })).toBe('active');
+  });
+
+  it('all-zero (empty group) → active', () => {
+    expect(worstBuilderState({ blocked: 0, idle: 0, active: 0 })).toBe('active');
   });
 });

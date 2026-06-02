@@ -53,10 +53,7 @@ export function gateIconFor(blockedGate: string | null): string {
  *
  * Pure / vscode-free so it's unit-tested under the vitest `__tests__/` harness.
  */
-export function rollupGroupState(
-  builders: OverviewBuilder[],
-  now: number,
-): { blocked: number; idle: number; active: number } {
+export function rollupGroupState(builders: OverviewBuilder[], now: number): GroupRollup {
   let blocked = 0;
   let idle = 0;
   let active = 0;
@@ -70,6 +67,43 @@ export function rollupGroupState(
     }
   }
   return { blocked, idle, active };
+}
+
+export interface GroupRollup {
+  blocked: number;
+  idle: number;
+  active: number;
+}
+
+/** The three builder states, in worst-to-best severity order. */
+export type BuilderState = 'blocked' | 'idle' | 'active';
+
+/**
+ * Single source of truth for the three builder-state glyphs (codicon name +
+ * theme color token), shared by the builder ROW (`builders.ts`) and the
+ * area-group header rollup (`builder-tree-item.ts`) so the vocabulary is
+ * defined once. Strings only — no vscode `ThemeIcon`/`ThemeColor` — so this
+ * module stays vscode-free and unit-testable; call sites wrap them.
+ *
+ * NOTE: a blocked ROW overrides `icon` with the gate-specific `gateIconFor`
+ * shape (keeping `color`); the generic `bell` here is the group HEADER's
+ * blocked glyph and the row's unmapped-gate fallback.
+ */
+export const BUILDER_STATE_GLYPH: Record<BuilderState, { icon: string; color: string }> = {
+  blocked: { icon: 'bell', color: 'notificationsWarningIcon.foreground' },
+  idle: { icon: 'comment-discussion', color: 'notificationsInfoIcon.foreground' },
+  active: { icon: 'circle-filled', color: 'testing.iconPassed' },
+};
+
+/**
+ * The worst (most severe) state present in a group's rollup: blocked beats
+ * idle beats active. Drives the header's worst-of icon without a nested
+ * ternary at the call site.
+ */
+export function worstBuilderState(rollup: GroupRollup): BuilderState {
+  if (rollup.blocked > 0) { return 'blocked'; }
+  if (rollup.idle > 0) { return 'idle'; }
+  return 'active';
 }
 
 /**
