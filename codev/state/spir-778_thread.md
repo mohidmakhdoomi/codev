@@ -129,6 +129,18 @@ API-out-of-scope). Gemini lane now supports TWO backends + a selector:
   cost-vs-quality tradeoff → PROPOSE + flag for architect, don't hard-code silently.
 Spec amended (Out-of-Scope/Desired/Success/Tests + Amendment A1 section). Committed.
 
-## NOW: Plan phase
-Advance via `porch done 778`. Design both dispatch paths + selector. Plan's 3-way consult covers the
-combined design. Keep lean ("two backends + a selector").
+## Plan phase — DRAFTED (2026-06-02)
+Advanced specify→plan (porch done). Drafted codev/plans/778-...md — 4 lean phases (passes
+plan_exists/has_phases_json/min_two_phases checks):
+1. **agy_backend** — agy --print --sandbox --add-dir; verified binary resolution (reject IDE stub);
+   role inlined (hermes precedent); plain-text→adapt extractReviewText; graceful cost; Codev-owned
+   timeout; fast COMMENT-skip on OAuth-URL/unavailable; agy doctor check.
+2. **api_backend** — @google/genai generateContent, gemini-3.1-pro-preview (Pro), role→
+   systemInstruction, INLINED content (no agentic read), usageMetadata→real cost, GEMINI_API_KEY
+   env auth (CI-friendly), COMMENT-skip when no key, large-input fallback; api doctor check.
+3. **backend_selector** — consult.gemini.backend: agy|api|auto. AUTO PRECEDENCE proposed
+   (prefer api if key present, else agy if authed, else skip) + FLAGGED for architect (cost-vs-
+   quality) — not hard-coded silently.
+4. **docs_skeleton_e2e** — doctor consolidation, docs/skeleton (model id stays gemini, no rename),
+   harness.ts noted untouched, e2e headline both backends + porch-progression test.
+Next: porch done → Plan's 3-way consult (reviews combined design) → plan-approval gate (HUMAN).
