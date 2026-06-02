@@ -64,3 +64,8 @@ Wrote `codev/reviews/956-vscode-lint-rule-banning-bare-.md` (retrospective, beco
 No arch.md / lessons-learned.md changes (lint guardrail around existing #791 pattern; sections
 explain why). Next: PR, record with porch, `porch done` triggers single-pass 3-way consult,
 then pr gate.
+
+PR #958 opened. 3-way consult (single advisory pass) all clear:
+gemini=APPROVE, codex=APPROVE, claude=APPROVE — KEY_ISSUES: None on all three.
+Architect notified. **At `pr` gate** — waiting for human merge approval. Merge is gated by
+porch state (gate_status: approved), never typed prose.
