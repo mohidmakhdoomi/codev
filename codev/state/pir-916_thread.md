@@ -1,0 +1,41 @@
+# PIR #916 — sidebar data intermittently disappears
+
+## Plan phase (2026-06-03)
+
+### Root cause (high confidence)
+Bug is **VSCode-side**, in `packages/vscode/src/views/overview-data.ts` — `OverviewCache.refresh()`.
+The shared `OverviewCache` is consumed by all four data-views (Builders, Backlog, PullRequests,
+RecentlyClosed). On a **transient** read it overwrites last-known-good with `null`:
+
+- `overview-data.ts:44-48` — if `getState() !== 'connected'` (or no client), it sets `this.data = null` and fires.
+- `overview-data.ts:52-54` — `client.getOverview() ?? null` → on a failed HTTP request commits `this.data = null`.
+
+Every provider does `if (!data) return []` → all four views render empty simultaneously.
+
+**Why WORKSPACE stays populated** (the architect's discriminating clue): `WorkspaceProvider` does NOT
+use `OverviewCache` — it reads `connectionManager` + worktree-config + terminal state directly and
+renders static rows. So a null overview cache empties the four data-views but never WORKSPACE. This
+matches the screenshot exactly and **rules out** the Tower-side empty-payload theory (suspected path 3):
+a `gh pr list`/`gh issue list` failure empties backlog/PRs only — builders come from `discoverBuilders()`
+(filesystem), so Tower-side failure can't empty BUILDERS with an active fleet.
+
+**Recovery-on-its-own**: after a transient blip, the next non-heartbeat SSE event triggers `refresh()`
+again and repopulates. Heartbeats are filtered (`sse-client.ts:133`), so it waits for a real event
+(spawn/cleanup/merge/overview-changed) — consistent with "seconds to minutes."
+
+### Confirmed contract
+`TowerClient.getOverview()` (`packages/core/src/tower-client.ts:314-318`) returns `null` ONLY on a failed
+request; a legit-empty workspace returns a real `OverviewData` with empty arrays. So treating `null` as
+"keep last-known-good" never masks a genuine empty workspace. Clean fix point.
+
+### Fix direction
+Make `OverviewCache` hold last-known-good: never clobber `this.data` with `null` on a transient
+not-connected / failed read. Optionally trigger a refresh on reconnect (`onStateChange → 'connected'`)
+to freshen promptly. Single chokepoint = the shared cache (not 4 providers).
+
+### Test
+Vitest unit test (`src/__tests__/`) mocking `vscode` (FakeEventEmitter, established pattern in
+`workspace-sse-subscriber.test.ts`) + fake ConnectionManager. Invariant: a single null/disconnected
+refresh does NOT empty `getData()` once it has been populated.
+
+Plan written → awaiting `plan-approval` gate.
