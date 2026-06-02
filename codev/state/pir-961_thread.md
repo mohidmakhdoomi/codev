@@ -27,3 +27,20 @@ Investigated all four call sites + the EscapeBuffer precedent + test/CI wiring.
 Core has no test suite (precedent EscapeBuffer is tested from dashboard). CI unit job runs only `packages/codev` vitest. Recommending: bootstrap vitest in core + add a CI step (proper home, satisfies acceptance literally). Lighter alt: co-locate tests in `packages/codev`. Flagged in plan.
 
 Plan written; awaiting plan-approval gate.
+
+## 2026-06-02 — Implement phase (plan approved)
+
+Built `packages/core/src/reconnect-policy.ts` (`backoffDelayMs` + `BackoffController` + `classifyUpgradeError`) and adopted at all four sites exactly as planned. Factoring held up: the pure curve fn with an explicit `attempt` arg let the tunnel keep its increment→delay ordering while the terminals use the controller.
+
+Bootstrapped vitest in core (had none) — 17 tests, all green. Added a CI step (`packages/core` → `pnpm test`).
+
+### Verification
+- core: build ✓, 17 tests ✓
+- vscode: `tsc --noEmit` ✓, 222 unit tests ✓ (terminal-adapter close-loop exercises the *real* controller — no mock — and still asserts `[1s,2s,4s,8s,16s,30s]`→give-up)
+- codev: tunnel-client + edge-cases 78 tests ✓ (`calculateBackoff` signature/behavior preserved)
+- dashboard: `tsc -b` ✓, reconnect suite 12 ✓ (updated for 6-attempt contract + new recovery-affordance test)
+
+### Pre-existing failure (OUT OF SCOPE — not my diff)
+`dashboard/__tests__/scrollController.test.ts > warns on unexpected scroll-to-top` fails on a clean tree too (verified by stashing my Terminal.tsx change — the test imports only `ScrollController`, never `Terminal`). Noting for the review's Lessons Learned; not fixing per protocol.
+
+Pushing branch; will pause at dev-approval for the cross-surface forced-give-up smoke test.
