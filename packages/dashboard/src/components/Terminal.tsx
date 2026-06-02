@@ -12,6 +12,7 @@ import { MOBILE_BREAKPOINT } from '../lib/constants.js';
 import { uploadPasteImage } from '../lib/api.js';
 import { ScrollController } from '../lib/scrollController.js';
 import { EscapeBuffer } from '../lib/escapeBuffer.js';
+import { BackoffController, classifyUpgradeError } from '@cluesmith/codev-core/reconnect-policy';
 
 /**
  * Floating controls overlay for terminal windows — refresh (re-fit + resize)
@@ -394,7 +395,6 @@ export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra }: Termi
     // Reconnection state (Bugfix #442, #451)
     const rc = {
       lastSeq: 0,
-      attempts: 0,
       timer: null as ReturnType<typeof setTimeout> | null,
       disposed: false,
       initialPhase: true,
@@ -402,8 +402,11 @@ export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra }: Termi
       flushTimer: null as ReturnType<typeof setTimeout> | null,
       skipReplay: false,  // When true, discard replay data and just send SIGWINCH
     };
-    const MAX_ATTEMPTS = 50;
-    const BACKOFF_CAP_MS = 30_000;
+    // Shared backoff curve + give-up threshold (#961). Unified with the VSCode
+    // terminal at 6 attempts (was 50) so the same "terminal stopped
+    // reconnecting" state means the same thing across both surfaces.
+    const MAX_ATTEMPTS = 6;
+    const backoff = new BackoffController({ maxAttempts: MAX_ATTEMPTS });
 
     const filterDA = (text: string): string => {
       text = text.replace(/\x1b\[[\?>][\d;]*c/g, '');
@@ -480,7 +483,7 @@ export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra }: Termi
 
       ws.onopen = () => {
         // Reset reconnection counter on successful connect
-        rc.attempts = 0;
+        backoff.recordSuccess();
         setConnStatus('connected');
         sendControl(ws, 'resize', { cols: term.cols, rows: term.rows });
       };
@@ -519,10 +522,16 @@ export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra }: Termi
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (rc.disposed) return;
 
-        if (rc.attempts >= MAX_ATTEMPTS) {
+        // Session-unknown fast-path (#961): a 4xx-class close code means the
+        // session is gone — give up immediately rather than blind-retrying.
+        // Browsers see 1006 (transient) for Tower's upgrade-stage 404 today, so
+        // this is behavior-neutral until Tower emits a browser-visible close
+        // code; the seam is wired now so adoption is then a no-op.
+        const permanent = classifyUpgradeError({ code: event.code }) === 'permanent';
+        if (permanent || backoff.recordFailure() === 'give-up') {
           setConnStatus('disconnected');
           return;
         }
@@ -530,8 +539,7 @@ export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra }: Termi
         // Start reconnection — status icon in toolbar handles visual feedback
         setConnStatus('reconnecting');
 
-        const delay = Math.min(1000 * Math.pow(2, rc.attempts), BACKOFF_CAP_MS);
-        rc.attempts++;
+        const delay = backoff.nextDelayMs();
         rc.timer = setTimeout(() => {
           if (rc.disposed) return;
           connect(rc.lastSeq || undefined);
@@ -651,18 +659,29 @@ export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra }: Termi
       }
     });
 
-    // Refresh: re-fit terminal to container and send SIGWINCH so the running
-    // program redraws at the correct width. Preserves all scroll history.
+    // Refresh button. Two modes depending on socket state:
+    // - Live socket → re-fit to the container and SIGWINCH so the running
+    //   program redraws at the correct width. Preserves all scroll history.
+    // - Dropped / given-up socket → a true reconnect from a fresh backoff
+    //   budget (#961). Without this, a web terminal that exhausted its 6
+    //   retries could only recover via a full page reload (the recovery
+    //   affordance the VSCode terminal got in #939).
     reconnectRef.current = () => {
-      // Force an immediate fit (recalculates cols/rows from container size)
-      if (fitRef.current) {
-        fitRef.current.fit();
-      }
-      // Send SIGWINCH via resize to make the running program redraw
       const ws = wsRef.current;
       if (ws?.readyState === WebSocket.OPEN) {
+        if (fitRef.current) {
+          fitRef.current.fit();
+        }
         sendControl(ws, 'resize', { cols: term.cols, rows: term.rows });
+        return;
       }
+      if (rc.disposed) return;
+      if (rc.timer) {
+        clearTimeout(rc.timer);
+        rc.timer = null;
+      }
+      backoff.reset();
+      connect(rc.lastSeq || undefined);
     };
 
     // Initial connection

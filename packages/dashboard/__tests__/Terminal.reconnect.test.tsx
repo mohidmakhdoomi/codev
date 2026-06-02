@@ -2,7 +2,9 @@
  * Tests for WebSocket auto-reconnection with session resumption (Bugfix #442, #451).
  *
  * Covers: exponential backoff, seq tracking, status dot indicator,
- * and max attempt limit (50 attempts with exponential backoff).
+ * and max attempt limit (6 attempts with exponential backoff — unified with the
+ * VSCode terminal via the shared BackoffController, #961; was 50), plus the
+ * recovery affordance that re-connects from the given-up state.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
@@ -215,8 +217,8 @@ describe('Terminal WebSocket auto-reconnect (Bugfix #442)', () => {
     act(() => { vi.advanceTimersByTime(5000); });
     act(() => { wsInstances[0].simulateClose(); });
 
-    // Exhaust all 50 reconnection attempts
-    for (let i = 0; i < 55; i++) {
+    // Exhaust all 6 reconnection attempts (#961: unified down from 50)
+    for (let i = 0; i < 10; i++) {
       act(() => { vi.advanceTimersByTime(35_000); });
       const lastWs = wsInstances[wsInstances.length - 1];
       if (lastWs.readyState !== 3) {
@@ -229,19 +231,20 @@ describe('Terminal WebSocket auto-reconnect (Bugfix #442)', () => {
     act(() => { vi.advanceTimersByTime(120_000); });
     expect(wsInstances).toHaveLength(countBefore);
 
-    // Should not exceed initial + MAX_ATTEMPTS (50) reconnection attempts
-    expect(wsInstances.length).toBeLessThanOrEqual(1 + 50);
+    // initial connection + 6 reconnection attempts, then give-up
+    expect(wsInstances.length).toBe(1 + 6);
   });
 
-  it('keeps retrying after rapid connection failures (Bugfix #451)', () => {
+  it('keeps retrying after rapid connection failures below the give-up threshold (Bugfix #451)', () => {
     render(<Terminal wsPath="/ws/terminal/t1" />);
     act(() => { wsInstances[0].simulateOpen(); });
 
     act(() => { vi.advanceTimersByTime(5000); });
     act(() => { wsInstances[0].simulateClose(); });
 
-    // Simulate 10 rapid failures (connection fails before OPEN) — should NOT give up
-    for (let i = 0; i < 10; i++) {
+    // Simulate 3 rapid failures (below the 6-attempt give-up threshold) — the
+    // controller must keep retrying, not give up early on a rapid burst.
+    for (let i = 0; i < 3; i++) {
       const delay = Math.min(1000 * Math.pow(2, i), 30_000);
       act(() => { vi.advanceTimersByTime(delay); });
       act(() => { wsInstances[wsInstances.length - 1].simulateClose(); });
@@ -251,6 +254,31 @@ describe('Terminal WebSocket auto-reconnect (Bugfix #442)', () => {
     const countBefore = wsInstances.length;
     act(() => { vi.advanceTimersByTime(30_000); });
     expect(wsInstances.length).toBeGreaterThan(countBefore);
+  });
+
+  it('reconnects from the given-up state when the refresh affordance is used (#961)', () => {
+    const { container } = render(<Terminal wsPath="/ws/terminal/t1" />);
+    act(() => { wsInstances[0].simulateOpen(); });
+    act(() => { vi.advanceTimersByTime(5000); });
+    act(() => { wsInstances[0].simulateClose(); });
+
+    // Exhaust the 6 attempts → give up (status 'disconnected')
+    for (let i = 0; i < 10; i++) {
+      act(() => { vi.advanceTimersByTime(35_000); });
+      const lastWs = wsInstances[wsInstances.length - 1];
+      if (lastWs.readyState !== 3) {
+        act(() => { lastWs.simulateClose(); });
+      }
+    }
+    const dot = container.querySelector('.terminal-status-icon');
+    expect(dot!.classList.contains('terminal-status-disconnected')).toBe(true);
+
+    // Click the refresh button — with the socket gone, this is a true reconnect
+    // from a fresh backoff budget, not just a SIGWINCH refresh.
+    const countBefore = wsInstances.length;
+    const refreshBtn = container.querySelector('[aria-label="Refresh terminal"]')!;
+    act(() => { refreshBtn.dispatchEvent(new Event('pointerdown', { bubbles: true })); });
+    expect(wsInstances.length).toBe(countBefore + 1);
   });
 
   it('shows disconnected status dot after max attempts', () => {
