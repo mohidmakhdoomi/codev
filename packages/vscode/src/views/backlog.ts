@@ -57,7 +57,7 @@ export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem>
 
   getChildren(element?: vscode.TreeItem): vscode.TreeItem[] {
     if (element instanceof BacklogGroupTreeItem) {
-      return this.rowsForGroup(element.areaName);
+      return this.rowsForGroup(element.groupName);
     }
     if (element) {
       return [];

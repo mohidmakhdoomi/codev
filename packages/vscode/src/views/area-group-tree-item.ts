@@ -14,21 +14,23 @@ export type AreaGroupKind = 'backlog' | 'builder';
  * onDidExpand/Collapse handler can scope to its own groups via
  * `instanceof` rather than discriminating on a string field.
  *
- * `areaName`, `id`, and `contextValue` all use the raw wire value so
- * expansion-state persistence and `areaName === ...` matchers in the
- * per-view providers keep working. Only the human-visible label is
- * passed through `uppercaseAreaName`, matching VSCode's own
- * container-label convention (EXPLORER, SOURCE CONTROL, etc.).
+ * `groupName` is the group's key — an `area/*` value for the Backlog view and
+ * (since #952) either an `area/*` value or a lifecycle stage for the Builders
+ * view, depending on its active grouping axis. `groupName`, `id`, and
+ * `contextValue` all use the raw wire value so expansion-state persistence and
+ * `groupName === ...` matchers in the per-view providers keep working. Only the
+ * human-visible label is passed through `uppercaseAreaName`, matching VSCode's
+ * own container-label convention (EXPLORER, SOURCE CONTROL, etc.).
  */
 export class AreaGroupTreeItem extends vscode.TreeItem {
   constructor(
-    public readonly areaName: string,
+    public readonly groupName: string,
     public readonly kind: AreaGroupKind,
     count: number,
     collapsibleState: vscode.TreeItemCollapsibleState,
   ) {
-    super(`${uppercaseAreaName(areaName)} (${count})`, collapsibleState);
-    this.id = `${kind}-group:${areaName}`;
+    super(`${uppercaseAreaName(groupName)} (${count})`, collapsibleState);
+    this.id = `${kind}-group:${groupName}`;
     this.contextValue = `${kind}-group`;
   }
 }

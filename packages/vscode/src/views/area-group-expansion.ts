@@ -59,12 +59,12 @@ export function persistAreaGroupExpansion(
   return [
     view.onDidExpandElement((e) => {
       if (e.element instanceof GroupClass) {
-        store.set(e.element.areaName, true);
+        store.set(e.element.groupName, true);
       }
     }),
     view.onDidCollapseElement((e) => {
       if (e.element instanceof GroupClass) {
-        store.set(e.element.areaName, false);
+        store.set(e.element.groupName, false);
       }
     }),
   ];
