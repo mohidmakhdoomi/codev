@@ -49,3 +49,7 @@ First swap landed + green (root build/test, vscode check-types, 255 vscode tests
 Architect: some users prefer area-grouping. Keep BOTH, default stage, add a view-header toggle. (Issue #952 listed this exact toggle as a potential follow-up under Out-of-scope.) Bundling into #952 per architect choice.
 Mirror the `buildersFileViewAsTree` house pattern: config setting `codev.buildersGroupBy` (enum stage|area, default stage) + two paired view/title commands gated on a `codev.buildersGroupBy` context key.
 Key design: the ROW PREFIX flips with mode — area-mode shows `[<phase>]` (restores #810), stage-mode shows `[<area>]`. Per-mode expansion stores (stage key + reuse original area key `codev.buildersGroupExpansion`). Area-mode keeps the single-Uncategorized flatten; stage-mode doesn't.
+
+## Refactor (architect-directed): BuilderGrouping strategy pattern
+
+Architect flagged that per-mode logic was smeared across ~5 provider branch-points (groupBy/groupedBuilders/activeExpansion/rowPrefix/flatten). Chose a single `BuilderGrouping` strategy interface; `stage` and `area` become two instances each owning group()/expansion/rowPrefix/flattenLoneUncategorized. Provider delegates to `active()`. New vscode-free `builder-grouping.ts` (type-only import of GroupExpansionStore → unit-testable). builderRowLabel simplified to take a precomputed `prefix` string (prefix selection moves into strategies). Base tree-item field renamed areaName→`groupName` (honest: it's a group key, area for Backlog, area-or-stage for Builders) — resolves the earlier naming thread.
