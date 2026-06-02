@@ -2,23 +2,17 @@ import * as vscode from 'vscode';
 import WebSocket from 'ws';
 import { FRAME_CONTROL, FRAME_DATA, type ControlMessage } from '@cluesmith/codev-types';
 import { EscapeBuffer } from '@cluesmith/codev-core/escape-buffer';
+import { BackoffController, classifyUpgradeError } from '@cluesmith/codev-core/reconnect-policy';
 
 const CHUNK_SIZE = 16384; // 16KB — chunk onDidWrite to avoid CPU spikes
 const MAX_QUEUE = 1048576; // 1MB — disconnect if queue exceeds this
 
-// Reconnect backoff. Mirrors connection-manager.ts's curve (1000 * 2^attempt,
-// capped at 30s) for cross-layer consistency, but adds the give-up bound that
-// layer lacks: after MAX_RECONNECT_ATTEMPTS the adapter stops auto-retrying and
-// surfaces a terminal failure state (#936). Sequence: 1s, 2s, 4s, 8s, 16s, 30s.
+// Reconnect backoff. The exponential curve (1000 * 2^attempt, capped at 30s),
+// the give-up threshold, and the session-unknown classifier all live in the
+// shared BackoffController / classifyUpgradeError (#961). This adapter keeps the
+// #936 tuning: give up after MAX_RECONNECT_ATTEMPTS retries (sequence 1s, 2s,
+// 4s, 8s, 16s, 30s) and surface a terminal failure state.
 const MAX_RECONNECT_ATTEMPTS = 6;
-const MAX_RECONNECT_DELAY = 30000;
-
-// A rejected WebSocket upgrade (e.g. Tower 404s an unknown session ID at the
-// HTTP-upgrade stage) surfaces in the `ws` client as an `error` event with this
-// shape, immediately before an abnormal `close` (code 1006). A 4xx means the
-// session/resource is gone — retrying is hopeless — so we give up immediately
-// instead of burning the full backoff budget (#936 design-call #4).
-const UPGRADE_CLIENT_ERROR = /Unexpected server response: 4\d\d/;
 
 /**
  * The clickable token emitted in the give-up message. Shared with the terminal
@@ -56,8 +50,9 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
 
   // Reconnect-loop state. The adapter owns reconnection end-to-end (#936) —
   // backoff scheduling, give-up after MAX_RECONNECT_ATTEMPTS, and a terminal
-  // failure state that stops the loop until the user manually reconnects.
-  private reconnectAttempt = 0;
+  // failure state that stops the loop until the user manually reconnects. The
+  // backoff curve and give-up threshold live in the shared controller (#961).
+  private readonly backoff = new BackoffController({ maxAttempts: MAX_RECONNECT_ATTEMPTS });
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private gaveUp = false;
 
@@ -139,7 +134,7 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
       // A successful (re)connect clears the loop state so a later close starts
       // a fresh backoff chain from the 1s base delay rather than continuing
       // where the previous failure run left off.
-      this.reconnectAttempt = 0;
+      this.backoff.recordSuccess();
       this.gaveUp = false;
       // Send auth via control message (not query param)
       if (this.authKey) {
@@ -187,7 +182,7 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
       // A 4xx upgrade rejection means the session/resource is gone (Tower 404s
       // an unknown session ID). The matching `close` fires right after; give up
       // now so the close handler's scheduleReconnect() is a no-op.
-      if (this.ws === socket && UPGRADE_CLIENT_ERROR.test(err.message)) {
+      if (this.ws === socket && classifyUpgradeError(err.message) === 'permanent') {
         this.giveUp('this terminal session no longer exists on Tower');
       }
     });
@@ -200,16 +195,15 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
    */
   private scheduleReconnect(): void {
     if (this.disposed || this.gaveUp || this.reconnectTimer) { return; }
-    if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+    if (this.backoff.recordFailure() === 'give-up') {
       this.giveUp(`unable to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts`);
       return;
     }
 
-    const delay = Math.min(1000 * 2 ** this.reconnectAttempt, MAX_RECONNECT_DELAY);
-    this.reconnectAttempt++;
+    const delay = this.backoff.nextDelayMs();
     this.writeEmitter.fire(
       `\x1b[33m[Codev: Connection lost — retrying in ${delay / 1000}s ` +
-      `(attempt ${this.reconnectAttempt}/${MAX_RECONNECT_ATTEMPTS})]\x1b[0m\r\n`,
+      `(attempt ${this.backoff.attempt}/${MAX_RECONNECT_ATTEMPTS})]\x1b[0m\r\n`,
     );
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -257,7 +251,7 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.reconnectAttempt = 0;
+    this.backoff.reset();
     this.gaveUp = false;
     if (this.ws) {
       this.ws.close();

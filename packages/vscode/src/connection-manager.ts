@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { TowerClient } from '@cluesmith/codev-core/tower-client';
+import { backoffDelayMs } from '@cluesmith/codev-core/reconnect-policy';
 import { AuthWrapper } from './auth-wrapper.js';
 import { detectWorkspacePath, getTowerAddress } from './workspace-detector.js';
 import { SSEClient } from './sse-client.js';
@@ -174,7 +175,10 @@ export class ConnectionManager {
     if (this.reconnectTimer) { return; }
 
     this.setState('reconnecting');
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempt), this.maxReconnectDelay);
+    // Shared backoff curve (#961). The SSE health-check retries forever (no
+    // give-up), so it uses the bare curve fn with its own counter rather than a
+    // BackoffController.
+    const delay = backoffDelayMs(this.reconnectAttempt, { capMs: this.maxReconnectDelay });
     this.reconnectAttempt++;
 
     this.log('INFO', `Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt})`);
