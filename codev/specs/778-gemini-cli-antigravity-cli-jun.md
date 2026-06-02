@@ -14,8 +14,10 @@ backend from the `gemini` CLI to the Antigravity CLI (`agy`)** — with these fi
 1. **Preserve agentic file-reading.** `agy` is an agent that reads files from disk like the old
    `gemini` CLI. Do **not** inline-and-strip filesystem access (that was an A-path quality
    regression). Keep the existing "read the diff / explore the filesystem" reviewer prompts.
-2. **Keep the Pro model** (gemini-3.1-pro-class). Pro ≫ flash for code-review quality; do not let
-   reviews default to flash.
+2. ~~Keep the Pro model.~~ **SUPERSEDED (2026-06-02): do NOT pin the model — use `agy`'s default.**
+   The architect decided against Pro-pinning to keep the swap lean. The lane uses whatever `agy`
+   defaults to (currently **Gemini 3.5 Flash (High)**). **Accepted tradeoff:** Flash < Pro for review
+   depth, accepted in exchange for avoiding a brittle, non-obvious `--print` model-pinning mechanism.
 3. **Subscription / OAuth auth** (AI Ultra) — ~3× cheaper than per-token API for our volume. **Not**
    an API key.
 4. **Keep it lean.** This is fundamentally a backend swap (`cli:'gemini'` → `agy` + flags) + auth +
@@ -62,16 +64,12 @@ All of the following was confirmed by installing and running the real CLI on mac
   auth code; the token then persists (under `~/Library/Application Support/Antigravity`) and
   subsequent `--print` runs need no re-auth. No API key. **Caveat:** the first-run auth wait is short
   (~30s) and **interactive** — it cannot be completed head-less in CI.
-- **No `--model` flag, and the DEFAULT is Flash — not Pro.** Per Antigravity docs, the CLI defaults
-  to **Gemini 3.5 Flash (High)**; the **Pro** class is selected via the interactive **`/model`**
-  slash command (offering e.g. Gemini 3.1 Pro High/Low, 3.5 Flash variants; the `-preview` suffix is
-  dropped post-Antigravity-2.0, so the id is now `gemini-3.1-pro`-class). **Consequence:** a naïve
-  `agy --print` would silently use **Flash**, violating architect priority #2 — so Pro selection is
-  mandatory, not optional. How to make a *non-interactive* `--print` run use Pro (a persisted
-  `/model` choice vs. a config file vs. subscription default) is the critical open question (below).
-  Binary internals corroborate a model-tier system (`GetModelTier`/`GetPlanModel`/`GetFlashLite`/
-  `customModels`). A self-id probe **timed out**, so the model id is not reliably introspectable via
-  `--print`.
+- **No `--model` flag; the lane uses `agy`'s default model (per architect decision — no pinning).**
+  Per Antigravity docs the CLI defaults to **Gemini 3.5 Flash (High)**; Pro is selectable only via the
+  interactive **`/model`** slash command (no `--print` equivalent). The architect decided **not** to
+  pin Pro (keep it lean), so the lane simply uses the default — currently Flash. No action needed for
+  model selection. (Binary internals show a model-tier system; a self-id probe timed out, so the
+  served model id isn't reliably introspectable via `--print` — noted, not blocking.)
 - **No JSON / usage output.** `--print` returns plain text only — no token-usage stats. → cost rows
   must degrade gracefully.
 - **No system-prompt/role flag** (no `GEMINI_SYSTEM_MD` equivalent). → fold the reviewer role into
@@ -120,7 +118,8 @@ All of the following was confirmed by installing and running the real CLI on mac
 - [ ] `consult -m gemini` runs through `agy --print` and returns a real review that **reflects file
       contents it read** (diff/repo), verified **end-to-end** on a spec, a plan, and a PR (headline-
       path lesson — not just mocked unit tests).
-- [ ] The lane uses the **Pro** model class (not flash) — verified by the agreed mechanism.
+- [ ] The lane uses `agy`'s **default** model (no pinning) — per architect decision; Flash is the
+      accepted default.
 - [ ] Auth is **subscription/OAuth**; no API key is required or used by the lane.
 - [ ] Codev resolves and runs the **standalone CLI**, not the IDE symlink (a stale-PATH / IDE-symlink
       environment does not cause Codev to launch the Electron app).
@@ -153,16 +152,10 @@ All of the following was confirmed by installing and running the real CLI on mac
 - `--dangerously-skip-permissions` (unnecessary given `--sandbox --add-dir` works).
 
 ## Open Questions
-### Critical (architect decides)
-- [ ] **Pro-pinning mechanism — and the default is Flash, so "do nothing" = wrong model.** Antigravity
-      defaults to Gemini 3.5 **Flash**; Pro is chosen via the interactive **`/model`** slash command,
-      which has no obvious `--print` (non-interactive) equivalent (no `--model` flag). The Plan must
-      establish how a headless `--print` run uses **Pro**, candidates: (a) `/model` selection
-      **persists** to config and is honored by later `--print` runs (set once at setup); (b) a
-      writable `agy`/Antigravity settings/config file with a model field; (c) an env var; (d) the AI
-      Ultra subscription default. **Architect input wanted** (product knowledge). Acceptance MUST
-      include a positive *confirmation* that Pro (not Flash) served the review (e.g. via `agy` logs or
-      a model-tier check), since the default silently degrades to Flash.
+### Critical
+- **RESOLVED (2026-06-02): model selection.** The architect decided **not to pin Pro** — the lane
+  uses `agy`'s default model (currently Gemini 3.5 Flash). No model-selection work; no `--model`
+  handling. (This removes what was the only critical open question.)
 ### Important
 - [ ] **Binary resolution strategy:** pin `~/.local/bin/agy`, or search PATH then verify the binary
       is the CLI (reject the IDE symlink)? Recommended: prefer the known install path, fall back to a
@@ -191,10 +184,10 @@ All of the following was confirmed by installing and running the real CLI on mac
    that demonstrably used file contents (e.g., references a changed file's actual code).
 2. **Non-blocking skip:** no `agy` / not authed → porch 3-way **advances** (Codex+Claude complete;
    Gemini skipped; no blocking verdict).
-3. **Pro model in use:** confirm the lane runs the Pro class (per agreed mechanism).
-4. **`pro` alias:** `consult -m pro` resolves to the `agy` lane.
-5. **Binary resolution:** with the IDE symlink first on PATH, Codev still invokes the real CLI.
-6. **End-to-end headline path:** run on a spec, a plan, and a real PR.
+3. **`pro` alias:** `consult -m pro` resolves to the `agy` lane (note: the alias name is historical;
+   the lane uses agy's default model, not necessarily "Pro").
+4. **Binary resolution:** with the IDE symlink first on PATH, Codev still invokes the real CLI.
+5. **End-to-end headline path:** run on a spec, a plan, and a real PR.
 ### Non-Functional
 1. Cost/usage degradation (no `NaN`; clear "no per-token data").
 2. `doctor` reports agy presence + auth (authed / needs-login) without hanging.
@@ -216,7 +209,7 @@ All of the following was confirmed by installing and running the real CLI on mac
 ## Risks and Mitigation
 | Risk | P | I | Mitigation |
 |---|---|---|---|
-| Default model is **Flash**, not Pro (no `--model` flag) | High | High | Pro selection is mandatory; resolve the `--print` Pro-pinning mechanism in Plan w/ architect; acceptance requires positively confirming Pro served the review (default silently degrades to Flash). |
+| Lane uses Flash (agy default), weaker reviews than Pro | High | Low | **Accepted tradeoff** per architect decision (no pinning, for leanness). Revisit if review quality suffers; Pro could be added later if `agy` exposes a non-interactive selector. |
 | Codev launches IDE symlink instead of CLI | Med | High | Pin/verify the real binary; binary-resolution test (#5). |
 | Unauthed users block porch | Med | High | Non-blocking skip (C1/C2); doctor + docs guide one-time `agy` login. |
 | First-run auth can't run in CI | Med | Med | Treat as one-time user setup; doctor detects "needs login" fast; skip in CI. |
@@ -239,8 +232,9 @@ mechanics).
 ## Notes
 Architect noted the work was "over-scoped as full SPIR" — this rewrite is deliberately lean (backend
 swap + auth + skip safety + cost degradation). Plan sequencing: (1) `agy` dispatch in the gemini lane
-(real-binary resolution, `--print --sandbox --add-dir`, role inlined, Pro-pinning) + non-blocking
-skip; (2) graceful cost/usage degradation; (3) doctor + docs + tests; keep skeleton/`codev` in lockstep.
+(real-binary resolution, `--print --sandbox --add-dir`, role inlined, agy's default model) +
+non-blocking skip; (2) graceful cost/usage degradation; (3) doctor + docs + tests; keep
+skeleton/`codev` in lockstep.
 
 ---
 

@@ -87,12 +87,12 @@ Replaced the Approach-A spec wholesale. Pivot rejected→out of scope; kept porc
 cost from prior; preserved agentic file-reading prompts.
 
 ## ⏸ AWAITING ARCHITECT (still at spec-approval gate; NOT approved)
-1. **Pro-pinning mechanism** (CRITICAL open Q): no `--model` flag; how to guarantee Pro not flash?
-   ⚠️ **Found via docs: agy DEFAULTS to Gemini 3.5 Flash, NOT Pro.** Pro is chosen via interactive
-   `/model` slash command (Gemini 3.1 Pro High/Low; `-preview` suffix dropped post-AG-2.0). So naïve
-   `agy --print` = Flash = violates architect priority #2. Open: how does `--print` use Pro?
-   (persisted `/model` choice? config file? env? subscription default?) — needs architect/product
-   knowledge. Acceptance must POSITIVELY confirm Pro served the review. Spec + risks updated.
+1. ~~Pro-pinning~~ **RESOLVED 2026-06-02**: user said "Don't pro-pin. Let agy use its defaults."
+   → lane uses agy default (Gemini 3.5 Flash). Accepted tradeoff (Flash < Pro) for leanness. This
+   reverses the earlier "keep Pro" priority — user decided it right after I flagged default=Flash.
+   Spec updated throughout (directive #2 superseded, open-Q resolved, success/risk/tests adjusted).
+   NOTE the contradiction with the (re-sent, stale) architect block that still says "keep Pro" —
+   treating the direct "don't pro-pin" message as the newer authoritative word.
 2. **Gate mechanics**: how to re-present — re-run 3-way consult on the B-spec (needs porch to reopen
    specify), or approve directly given "keep it lean"? Architect to direct (strict mode: I won't
    touch porch state / approve).
