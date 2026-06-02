@@ -200,13 +200,32 @@ Layered on top of the stage-grouping swap: the Builders view's grouping axis is 
 - **Area mode** keeps the single-`Uncategorized` flatten (zero regression for unlabeled repos); **stage mode** never flattens.
 - **Per-axis expansion state**: stage mode persists under `codev.buildersStageGroupExpansion`, area mode under the original `codev.buildersGroupExpansion` (so pre-#952 area collapse state survives). A stable mode-routing wrapper (`GroupExpansionStore` interface) hands `persistAreaGroupExpansion` the active store at event time.
 
+### Structure — `BuilderGrouping` strategy (not flag-branching)
+
+The per-axis behavior is expressed as one strategy interface with two instances, so the provider never branches on the mode (the four things that vary per axis travel together and can't drift):
+
+```ts
+interface BuilderGrouping {
+  readonly id: BuildersGroupBy;                              // 'stage' | 'area'
+  group(ordered: OverviewBuilder[]): { key: string; items: OverviewBuilder[] }[];
+  readonly expansion: GroupExpansionStore;                   // own workspaceState key
+  rowPrefix(b: OverviewBuilder): string;                     // complementary-axis prefix
+  readonly flattenLoneUncategorized: boolean;                // area: true, stage: false
+}
+```
+
+`BuildersProvider` holds `Record<BuildersGroupBy, BuilderGrouping>` and an `active()` accessor (reads the setting); `rootChildren`/`rowsForGroup`/`makeBuilderRow` all delegate to `active()`. Adding an axis = one more strategy object.
+
 ### Files (beyond the swap)
+- `packages/vscode/src/views/builder-grouping.ts` — **new**. `BuilderGrouping` interface + `BuildersGroupBy` type + `stageGrouping()` / `areaGrouping()` factories. Pure / vscode-free (type-only `GroupExpansionStore` import) → unit-testable.
 - `packages/vscode/src/views/area-group-expansion.ts` — extract `GroupExpansionStore` interface; `AreaGroupExpansionStore implements` it; `persistAreaGroupExpansion` accepts the interface.
-- `packages/vscode/src/views/builder-row.ts` — `builderRowLabel(b, isIdle, now, groupBy)`; prefix flips on `groupBy`; export `BuildersGroupBy` type.
-- `packages/vscode/src/views/builders.ts` — `groupBy()` reads the setting; `groupedBuilders()` normalizes both helpers to `{ key, items }`; two per-mode expansion stores + routing `expansion`; area-only flatten.
+- `packages/vscode/src/views/area-group-tree-item.ts` + `builder-tree-item.ts` — rename the shared group-key field `areaName` → `groupName` (honest: it's an area for Backlog, an area-or-stage for Builders); the tree item is axis-agnostic.
+- `packages/vscode/src/views/builder-row.ts` — `builderRowLabel(b, isIdle, now, prefix)` is now a pure formatter; the prefix (area vs phase) is supplied by the active strategy, not selected here.
+- `packages/vscode/src/views/builders.ts` — `active()` returns the strategy; `groupParentByBuilderId`/flatten/expansion/rowPrefix all go through it; reads `element.groupName`.
+- `packages/vscode/src/views/backlog.ts` — reads `element.groupName` (field rename only; backlog stays area-grouped).
 - `packages/vscode/src/extension.ts` — context-key mirror + `codev.groupBuildersByArea` / `codev.groupBuildersByPhase` command handlers.
 - `packages/vscode/package.json` — `codev.buildersGroupBy` config, two commands, two `view/title` menus gated on the context key.
-- `packages/vscode/src/__tests__/builder-row.test.ts` — area-mode (phase-prefix) coverage alongside the stage-mode (area-prefix) cases.
+- `packages/vscode/src/__tests__/builder-grouping.test.ts` (**new**, strategy coverage) + `builder-row.test.ts` (row label as pure prefix formatter).
 
 ### Acceptance criteria delta (toggle)
 - **ADDED**: Builders view groups by `stage` (default) or `area`, switchable via a title-bar toggle (`codev.buildersGroupBy`); the row prefix is the complementary axis in each mode; per-axis collapse state is independent; area mode preserves the unlabeled-repo flatten. All prior criteria still hold for the default (stage) mode.
