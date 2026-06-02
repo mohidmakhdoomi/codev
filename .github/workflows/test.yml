@@ -29,6 +29,10 @@ jobs:
         working-directory: packages/core
         run: pnpm build
 
+      - name: Run core unit tests
+        working-directory: packages/core
+        run: pnpm test
+
       - name: Copy skeleton for unit tests
         working-directory: packages/codev
         run: pnpm copy-skeleton
