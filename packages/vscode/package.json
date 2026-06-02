@@ -117,7 +117,7 @@
       {
         "command": "codev.groupBuildersByPhase",
         "title": "Codev: Group Builders by Phase",
-        "icon": "$(list-ordered)"
+        "icon": "$(milestone)"
       },
       {
         "command": "codev.openBacklogSearch",

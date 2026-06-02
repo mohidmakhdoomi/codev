@@ -193,7 +193,7 @@ Layered on top of the stage-grouping swap: the Builders view's grouping axis is 
 
 ### Behavior
 - **`codev.buildersGroupBy`** setting, enum `'stage' | 'area'`, default `'stage'`.
-- Title-bar toggle button (mirrors the `buildersFileViewAsTree` house pattern): shows **"Group Builders by Area"** (`$(tag)`) when in stage mode, **"Group Builders by Phase"** (`$(list-ordered)`) when in area mode. Click flips the setting → context key updates → provider refreshes → tree re-groups.
+- Title-bar toggle button (mirrors the `buildersFileViewAsTree` house pattern): shows **"Group Builders by Area"** (`$(tag)`) when in stage mode, **"Group Builders by Phase"** (`$(milestone)`) when in area mode. Click flips the setting → context key updates → provider refreshes → tree re-groups.
 - **The row prefix flips with the mode** (the group header carries one axis, the prefix the complementary one):
   - stage mode → groups are stages, prefix is `[<area>]` (Uncategorized omitted).
   - area mode → groups are `area/*`, prefix is `[<phase>]` (the original #810 form; empty phase omitted).
