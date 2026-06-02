@@ -35,6 +35,19 @@ Section template:
 
 -->
 
+## Area-header roll-up icons (#926, PR #959)
+
+The `area/*` group headers in the Backlog and Builders sidebar trees now carry a status glyph that summarises what's inside, so you can triage areas at a glance without expanding each group.
+
+The two views answer different questions and the rollup vocabularies reflect that:
+
+- **Backlog** is **binary** — filled grey dot if the area has any builder working it, outline grey if it's purely open work waiting to be spawned. The Backlog asks "is anyone working this area?", and grey reads as a calm "where can I spawn?" surface rather than overloading the green that builder rows reserve for *live agents*.
+- **Builders** is a **worst-of-three** — yellow `bell` if any builder in the group is blocked at a gate, blue `comment-discussion` if any are idle, green `circle-filled` only if all are active. Reuses the per-row glyph vocabulary so the header is a literal summary of what's below it. The full `{b blocked · i waiting · a active}` breakdown lives in the tooltip.
+
+A consequence worth a conscious nod: the same area can show a filled-grey Backlog header (has a builder) while its Builders header reads yellow `bell` (that builder is blocked). That's intended — the two views are different questions, and the headers answer each in its own register.
+
+One known limitation, tracked as a follow-up: an area whose only open issue is being built has the issue filtered out of the Backlog today, so the area renders no Backlog header at all. #948 explores keeping in-progress issues in the Backlog with the builder's state icon, which would close that gap.
+
 ## Search Backlog editor-tab webview (#920, PR #957)
 
 The Backlog view's title bar gains a 🔍 icon that opens a new **Search Backlog** editor-tab panel — a full editor-area webview built for exploratory triage where the always-on sidebar tree and the Quick Pick both fall short.
