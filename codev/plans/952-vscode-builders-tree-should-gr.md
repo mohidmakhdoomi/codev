@@ -1,5 +1,7 @@
 # PIR Plan: Builders tree groups by phase (action axis), area becomes the row prefix
 
+> **Addendum (scope expansion, agreed at the dev-approval gate)** — after the swap landed, user feedback showed some reviewers prefer the area-grouping. Rather than commit to a one-way swap, #952 now ships **both axes with a title-bar toggle**, defaulting to stage. The issue itself listed this toggle under *Out of scope → "could be a follow-up if the swap turns out to be controversial"*; the architect chose to bundle it into #952. The body below describes the stage-grouping swap (still the default); the **"Toggle addendum"** section at the end documents the dual-mode design layered on top. Both are implemented and verified.
+
 ## Understanding
 
 Today the VSCode **Builders** tree groups rows by their `area/*` label (`groupByArea(ordered, b => b.area)` in `packages/vscode/src/views/builders.ts:147`), and each row's label leads with the phase: `[<phase>] #<id> <title>` (`builderRowLabel` in `packages/vscode/src/views/builder-row.ts:149-160`). That mirrors the Backlog tree (#811/#818), which was a deliberate "one mental model across views" call.
@@ -184,3 +186,27 @@ All other acceptance criteria carry over verbatim.
   - Confirm Backlog tree still groups by area (no regression).
   - Confirm group collapse/expand persists across a window reload (new storage key).
 - **Build/typecheck**: `pnpm --filter @cluesmith/codev-core build` then `pnpm --filter @cluesmith/codev build` (no `check-types` script in vscode — full build is the typecheck); run the vitest unit suites.
+
+## Toggle addendum — dual-axis grouping (stage | area)
+
+Layered on top of the stage-grouping swap: the Builders view's grouping axis is now switchable, defaulting to `stage`.
+
+### Behavior
+- **`codev.buildersGroupBy`** setting, enum `'stage' | 'area'`, default `'stage'`.
+- Title-bar toggle button (mirrors the `buildersFileViewAsTree` house pattern): shows **"Group Builders by Area"** (`$(tag)`) when in stage mode, **"Group Builders by Phase"** (`$(list-ordered)`) when in area mode. Click flips the setting → context key updates → provider refreshes → tree re-groups.
+- **The row prefix flips with the mode** (the group header carries one axis, the prefix the complementary one):
+  - stage mode → groups are stages, prefix is `[<area>]` (Uncategorized omitted).
+  - area mode → groups are `area/*`, prefix is `[<phase>]` (the original #810 form; empty phase omitted).
+- **Area mode** keeps the single-`Uncategorized` flatten (zero regression for unlabeled repos); **stage mode** never flattens.
+- **Per-axis expansion state**: stage mode persists under `codev.buildersStageGroupExpansion`, area mode under the original `codev.buildersGroupExpansion` (so pre-#952 area collapse state survives). A stable mode-routing wrapper (`GroupExpansionStore` interface) hands `persistAreaGroupExpansion` the active store at event time.
+
+### Files (beyond the swap)
+- `packages/vscode/src/views/area-group-expansion.ts` — extract `GroupExpansionStore` interface; `AreaGroupExpansionStore implements` it; `persistAreaGroupExpansion` accepts the interface.
+- `packages/vscode/src/views/builder-row.ts` — `builderRowLabel(b, isIdle, now, groupBy)`; prefix flips on `groupBy`; export `BuildersGroupBy` type.
+- `packages/vscode/src/views/builders.ts` — `groupBy()` reads the setting; `groupedBuilders()` normalizes both helpers to `{ key, items }`; two per-mode expansion stores + routing `expansion`; area-only flatten.
+- `packages/vscode/src/extension.ts` — context-key mirror + `codev.groupBuildersByArea` / `codev.groupBuildersByPhase` command handlers.
+- `packages/vscode/package.json` — `codev.buildersGroupBy` config, two commands, two `view/title` menus gated on the context key.
+- `packages/vscode/src/__tests__/builder-row.test.ts` — area-mode (phase-prefix) coverage alongside the stage-mode (area-prefix) cases.
+
+### Acceptance criteria delta (toggle)
+- **ADDED**: Builders view groups by `stage` (default) or `area`, switchable via a title-bar toggle (`codev.buildersGroupBy`); the row prefix is the complementary axis in each mode; per-axis collapse state is independent; area mode preserves the unlabeled-repo flatten. All prior criteria still hold for the default (stage) mode.
