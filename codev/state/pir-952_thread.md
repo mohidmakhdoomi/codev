@@ -20,3 +20,10 @@ Design approach (recommendations in plan):
 - Backlog tree untouched. Dashboard has no builders-by-area grouping → no dashboard scope.
 
 #913 (ephemeral group state) still OPEN, not merged → proceed with persistence (new key); note coordination.
+
+## Plan revision 1 (architect Q: "all phase types across all protocols?")
+
+Audited all 9 bundled protocols (no `tick` protocol.json ships). Confirmed experiment/maintain/research/spike ARE spawnable as builders → their phases can appear. Found 2 gaps in draft 1:
+- Gap A: `complete` (backward-compat terminal synonym of `verified`) would render as a stray COMPLETE group → fix: normalize complete→verified before bucketing.
+- Gap B: "custom phases alphabetical" scrambles experiment/research/bugfix natural sequences → fix: single curated PHASE_DISPLAY_ORDER (17 ids) keeping each protocol's natural order; unrecognized-future alphabetical; unknown(empty) last.
+Distinct buckets possible ≈ 19 (17 authored ids + verified + unknown, complete normalized away); realistically 1–7 live.

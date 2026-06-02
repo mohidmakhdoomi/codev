@@ -21,16 +21,20 @@ The issue argues the two views answer different questions:
 
 ### 1. New pure core helper `groupByPhase` (lifecycle-ordered)
 
-Add `packages/core/src/phase-grouping.ts` — sibling to `area-grouping.ts`. It buckets items by a phase key and returns groups in **lifecycle order**, not alphabetical:
+Add `packages/core/src/phase-grouping.ts` — sibling to `area-grouping.ts`. It buckets items by a phase key and returns groups in an **explicit total order over every phase id authored across all 9 bundled protocols** (not alphabetical, and not just the mainline lifecycle — see "Phase coverage" below). The order, kept as one curated constant `PHASE_DISPLAY_ORDER`:
 
 ```
-specify → plan → implement → review → pr → verify → verified
+specify · plan · implement · review · pr · verify · verified      # mainline lifecycle (spir/aspir/pir/air)
+investigate · fix · scope · synthesize · critique                  # bugfix / research
+hypothesis · design · execute · analyze · maintain · spike         # experiment / maintain / spike
 ```
 
-- Known lifecycle phases emit first, in that fixed order.
-- Any **custom / protocol-specific** phase not in the lifecycle list (e.g. `investigate`, `fix`, `scope`, `hypothesis`, `maintain`, `spike`, `synthesize`, `critique`, `design`, `execute`, `analyze`) is appended **after** `verified`, sorted alphabetically among themselves.
+Rules:
+- Phases present in `PHASE_DISPLAY_ORDER` emit in that fixed order.
+- **`complete` is normalized to `verified` before bucketing** (it is the backward-compat synonym; `overview.ts:384-385` already collapses the two). Without this, a `complete` builder would render as a stray `COMPLETE` group apart from `VERIFIED`.
+- Any **unrecognized future** phase (not in the list, non-empty) is appended after the known set, sorted alphabetically — a graceful fallback so a new protocol's phase never renders order-less.
 - A builder whose `protocolPhase` is empty/whitespace is bucketed under a trailing **`unknown`** sentinel group (so transient init-state builders still have a home), appended last.
-- **Empty lifecycle groups are omitted** — a bucket exists only if ≥1 builder is in it. This satisfies the "hide empty phase groups" acceptance criterion automatically.
+- **Empty groups are omitted** — a bucket exists only if ≥1 builder is in it. This satisfies the "hide empty phase groups" acceptance criterion automatically.
 
 Signature mirrors `groupByArea` for consistency:
 
@@ -41,9 +45,22 @@ export function groupByPhase<T>(
 ): Array<{ phase: string; items: T[] }>
 ```
 
-The lifecycle order is exported as a named constant `PHASE_LIFECYCLE_ORDER` so the ordering is testable and documented in one place.
+#### Phase coverage (all 9 protocols)
 
-> **Design call #1 (phase order) — locked**: lifecycle order `specify → plan → implement → review → pr → verify → verified`, custom phases alphabetical after `verified`, `unknown` last. Note: `verify` (active SPIR verify phase) sorts before `verified` (terminal) intentionally — they are distinct `protocolPhase` values.
+| Protocol | Phases | Terminal |
+|---|---|---|
+| spir / aspir | specify · plan · implement · review · verify | verified (`complete` = synonym) |
+| pir | plan · implement · review | verified |
+| air | implement · pr | verified |
+| bugfix | investigate · fix · pr | verified |
+| maintain | maintain · review | verified |
+| experiment | hypothesis · design · execute · analyze | verified |
+| research | scope · investigate · synthesize · critique | verified |
+| spike | spike | verified |
+
+`experiment` / `maintain` / `research` / `spike` are confirmed spawnable as builders (`spawn.test.ts`, `agent-names.test.ts`), so their phases really can appear in this tree — `PHASE_DISPLAY_ORDER` covers each in its natural per-protocol sequence rather than scrambling them alphabetically. Shared ids (`implement`, `review`, `pr`, `investigate`) merge cross-protocol into one bucket by design (the triage question "everything at implement" is protocol-agnostic). **Distinct buckets possible: 17 authored ids + `verified` + `unknown` ≈ 19** (with `complete` normalized away); realistically 1–7 live at once.
+
+> **Design call #1 (phase order) — locked**: explicit total order per `PHASE_DISPLAY_ORDER` above (mainline lifecycle, then auxiliary protocols each in natural order); `complete`→`verified` normalized; unrecognized future phases alphabetical; `unknown` (empty) last. Note: `verify` (active SPIR verify phase) sorts before `verified` (terminal) intentionally — they are distinct `protocolPhase` values. **Revised from the first draft** (which appended all non-mainline phases alphabetically) after auditing that alphabetical scrambles experiment/research/bugfix's internal sequences — reintroducing exactly the nonsense this design call rejects.
 >
 > **Design call #2 (empty groups) — locked**: hidden entirely (a bucket only exists if it has members).
 
@@ -103,7 +120,7 @@ A clarifying comment is added to `BuilderGroupTreeItem` noting its `areaName` sl
 
 ## Files to Change
 
-- `packages/core/src/phase-grouping.ts` — **new**. `groupByPhase` + `PHASE_LIFECYCLE_ORDER` + an `UNKNOWN_PHASE` sentinel. Pure, generic, vscode-free.
+- `packages/core/src/phase-grouping.ts` — **new**. `groupByPhase` + `PHASE_DISPLAY_ORDER` (full 17-id curated order) + `complete`→`verified` normalization + an `UNKNOWN_PHASE` sentinel. Pure, generic, vscode-free.
 - `packages/core/src/index.ts` (or the package's export map) — export the new module so VSCode can import `@cluesmith/codev-core/phase-grouping` (mirror how `area-grouping` is exported). *Verify the actual export mechanism before editing — package.json `exports` map vs. barrel file.*
 - `packages/vscode/src/views/builders.ts` — `groupByArea`→`groupByPhase` at lines 147 & 179; `rowsForGroup(phaseName)`; group-item construction with `g.phase`; remove the Uncategorized-flatten branch (153-156); new storage key `codev.buildersPhaseGroupExpansion` (line 86); update class-level JSDoc (55-69) to describe phase-grouping.
 - `packages/vscode/src/views/builder-row.ts:149-160` — `builderRowLabel`: `phasePrefix`→`areaPrefix`; import `UNCATEGORIZED_AREA`; rewrite JSDoc (124-148).
@@ -123,8 +140,10 @@ A clarifying comment is added to `BuilderGroupTreeItem` noting its `areaName` sl
 ## Test Plan
 
 - **Unit (core `groupByPhase`)**:
-  - lifecycle phases returned in `specify → plan → implement → review → pr → verify → verified` order regardless of input order;
-  - custom phases (`investigate`, `fix`, etc.) appended after `verified`, alphabetical among themselves;
+  - mainline phases returned in `specify → plan → implement → review → pr → verify → verified` order regardless of input order;
+  - auxiliary phases returned in their natural per-protocol order (experiment `hypothesis → design → execute → analyze`; research `scope → investigate → synthesize → critique`; bugfix `investigate → fix`) — explicitly assert they are NOT alphabetized;
+  - `complete` is bucketed together with `verified` (normalization), not as a separate group;
+  - an unrecognized future phase (e.g. `frobnicate`) appears after the known set, alphabetically;
   - empty buckets omitted (a phase with no members produces no group);
   - empty-string `protocolPhase` → `unknown` bucket, last;
   - within-bucket input order preserved (display-order sort already applied upstream).
