@@ -6,6 +6,7 @@
  */
 
 import type { OverviewBuilder } from '@cluesmith/codev-types';
+import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
 
 /**
  * Blocked-gate → codicon name. Keyed off the CANONICAL gate name
@@ -34,6 +35,41 @@ const GATE_ICONS: Record<string, string> = {
 /** Codicon name for a blocked builder's gate, with a `bell` fallback. */
 export function gateIconFor(blockedGate: string | null): string {
   return (blockedGate && GATE_ICONS[blockedGate]) || 'bell';
+}
+
+/**
+ * Roll up a Builders area-group's members into `{ blocked, idle, active }`
+ * counts (#926). Uses the SAME per-builder classification as the row icon in
+ * `builders.ts` — blocked (`b.blocked` truthy) takes precedence over idle
+ * (`isIdleWaiting`), which takes precedence over active — so the header's
+ * worst-of severity always tracks the rows beneath it.
+ *
+ * The header subclass (`BuilderGroupTreeItem`) turns this into the worst-of icon
+ * (blocked → `bell`, else idle → `comment-discussion`, else `circle-filled`) and
+ * a `"<b> blocked · <i> waiting · <a> active"` tooltip. Note the blocked header
+ * uses a GENERIC `bell`, not `gateIconFor` of any one member: a group can hold
+ * builders at different gates, so a single gate shape on the header would
+ * misrepresent the group — the yellow color carries the group-level signal.
+ *
+ * Pure / vscode-free so it's unit-tested under the vitest `__tests__/` harness.
+ */
+export function rollupGroupState(
+  builders: OverviewBuilder[],
+  now: number,
+): { blocked: number; idle: number; active: number } {
+  let blocked = 0;
+  let idle = 0;
+  let active = 0;
+  for (const b of builders) {
+    if (b.blocked) {
+      blocked++;
+    } else if (isIdleWaiting(b, now)) {
+      idle++;
+    } else {
+      active++;
+    }
+  }
+  return { blocked, idle, active };
 }
 
 /**

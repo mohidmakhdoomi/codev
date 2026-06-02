@@ -5,7 +5,7 @@ import { groupByArea } from '@cluesmith/codev-core/area-grouping';
 import type { OverviewCache } from './overview-data.js';
 import { BacklogGroupTreeItem, BacklogTreeItem } from './backlog-tree-item.js';
 import { AreaGroupExpansionStore } from './area-group-expansion.js';
-import { filterMine, spawnableBacklog } from './backlog-filter.js';
+import { activeBuilderCountByArea, filterMine, spawnableBacklog } from './backlog-filter.js';
 import { recencyPrefix, relativeAge } from './backlog-recency.js';
 
 // Re-export so existing call sites (extension.ts, src/test/backlog.test.ts)
@@ -94,12 +94,13 @@ export class BacklogProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     }
 
     const expansion = this.expansion.read();
+    const activeByArea = activeBuilderCountByArea(data.builders);
     return groups.map(g => {
       const expanded = expansion[g.area] ?? true;
       const state = expanded
         ? vscode.TreeItemCollapsibleState.Expanded
         : vscode.TreeItemCollapsibleState.Collapsed;
-      return new BacklogGroupTreeItem(g.area, g.items.length, state);
+      return new BacklogGroupTreeItem(g.area, g.items.length, state, activeByArea.get(g.area) ?? 0);
     });
   }
 

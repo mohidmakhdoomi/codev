@@ -12,7 +12,7 @@ import { BuilderFolderTreeItem } from './builder-folder-tree-item.js';
 import { buildFilePathTree, type FilePathNode } from './file-path-tree.js';
 import type { BuilderDiffCache } from './builder-diff-cache.js';
 import { AreaGroupExpansionStore } from './area-group-expansion.js';
-import { builderRowLabel, gateIconFor } from './builder-row.js';
+import { builderRowLabel, gateIconFor, rollupGroupState } from './builder-row.js';
 
 /**
  * Order builders for the Builders tree: three buckets, top-down.
@@ -144,7 +144,7 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
       const state = expanded
         ? vscode.TreeItemCollapsibleState.Expanded
         : vscode.TreeItemCollapsibleState.Collapsed;
-      const groupItem = new BuilderGroupTreeItem(g.area, g.items.length, state);
+      const groupItem = new BuilderGroupTreeItem(g.area, g.items.length, state, rollupGroupState(g.items, now));
       for (const b of g.items) {
         this.groupParentByBuilderId.set(b.id, groupItem);
       }

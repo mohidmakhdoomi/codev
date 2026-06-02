@@ -1,4 +1,4 @@
-import type { OverviewBacklogItem, OverviewData, IssueSearchItem } from '@cluesmith/codev-types';
+import type { OverviewBacklogItem, OverviewBuilder, OverviewData, IssueSearchItem } from '@cluesmith/codev-types';
 
 /**
  * Backlog rows the user can act on — exclude issues that already have an
@@ -12,6 +12,28 @@ import type { OverviewBacklogItem, OverviewData, IssueSearchItem } from '@cluesm
  */
 export function spawnableBacklog(items: OverviewBacklogItem[]): OverviewBacklogItem[] {
   return items.filter(i => !i.hasBuilder);
+}
+
+/**
+ * Count active builders per `area/*`, keyed on the raw `OverviewBuilder.area`
+ * wire value (the same value `groupByArea` keys on, so a Backlog group header's
+ * area matches without any client-side re-normalization).
+ *
+ * Backs the Backlog area-header roll-up icon (#926): a non-zero count means the
+ * area already has someone working it (green dot), zero means it's open to
+ * spawn into (grey dot). Reads from `OverviewData.builders` — NOT the visible
+ * backlog items — because issues with a builder are filtered out of the backlog
+ * (`spawnableBacklog`), so the "is this area active?" signal can only come from
+ * the builder list.
+ *
+ * Pure / vscode-free so it's unit-tested under the vitest `__tests__/` harness.
+ */
+export function activeBuilderCountByArea(builders: OverviewBuilder[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const b of builders) {
+    counts.set(b.area, (counts.get(b.area) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /**
