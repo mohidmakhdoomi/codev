@@ -1,7 +1,7 @@
 id: '926'
 title: vscode-area-header-roll-up-ico
 protocol: pir
-phase: review
+phase: verified
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -21,7 +21,7 @@ iteration: 1
 build_complete: true
 history: []
 started_at: '2026-05-29T23:15:30.202Z'
-updated_at: '2026-06-02T01:14:46.595Z'
+updated_at: '2026-06-02T01:14:54.059Z'
 pr_history:
   - phase: review
     pr_number: 959
