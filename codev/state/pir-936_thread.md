@@ -36,3 +36,7 @@ Plan-approval gate approved by human; porch advanced to `implement`. Plan commit
 **Verification:** had to `pnpm --filter codev-types build` + `codev-core build` first (unbuilt dist broke vitest module resolution — even mocked deps must resolve). Then: vitest 208/208 pass (11 new), `check-types` clean, `lint` clean, esbuild bundle OK.
 
 Next: push, `porch done 936`, dev-approval gate (human runs worktree via `afx dev pir-936`).
+
+## Review phase (2026-06-02)
+
+dev-approval approved by human → review phase. Wrote `codev/reviews/936-...md` (Summary/Files/Commits/Test Results/Architecture Updates/Lessons Learned/Things to Look At/How to Test). Decisions: no arch.md change (localized resilience in already-documented module; the 4× backoff-curve duplication is tracked as the area/core follow-up, not settled arch); one new lesson promoted ([From 936] Vitest mocked workspace deps must still resolve → build dist first). PR **#962** opened (Fixes #936, Fixes #939), recorded with porch. Ran single-pass 3-way consultation: **gemini=APPROVE, codex=APPROVE, claude=APPROVE** (all HIGH, zero blocking issues). `pr` gate now pending; architect notified (all-clear). Waiting for human to merge PR #962 + approve `pr` gate. Merge is gated by porch state, not pane prose — will verify `gate_status: approved` via `porch next` before `gh pr merge --merge`.
