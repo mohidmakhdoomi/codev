@@ -37,3 +37,7 @@ Distinct buckets possible ≈ 19 (17 authored ids + verified + unknown, complete
 - Helper renamed groupByPhase → `groupByStage`; storage key → `codev.buildersStageGroupExpansion`.
 - Design call #7 (group header icons): KEEP #926 worst-of-state rollup icon unchanged (orthogonal to grouping axis — label=stage, icon=attention signal). Only cosmetic "area-group"→"stage-group" rename in builder-tree-item.ts.
 - Acceptance criteria delta documented: issue's "append protocol phases after VERIFIED" REPLACED by the closed-stage fold.
+
+## IMPLEMENT phase (plan-approval APPROVED 2026-06-02)
+
+Building per approved plan. Harness notes: core has no test runner (build/check-types only); pure phase-grouping helper goes in core, tested via vitest in vscode `src/__tests__/` (mirrors builder-row.test.ts, resolves `@cluesmith/codev-core/phase-grouping` via exports→dist, so build core first).
