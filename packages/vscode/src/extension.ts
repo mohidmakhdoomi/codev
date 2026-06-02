@@ -385,6 +385,21 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 	);
 
+	// Builders grouping axis: stage (action axis, default) vs area (domain axis).
+	// Same mechanics as the file-tree toggle — read the `codev.buildersGroupBy`
+	// setting, mirror to a context key so the paired title-bar commands swap
+	// correctly, refresh the provider on change so the tree re-groups immediately.
+	const readBuildersGroupBy = () =>
+		vscode.workspace.getConfiguration('codev').get<string>('buildersGroupBy', 'stage');
+	vscode.commands.executeCommand('setContext', 'codev.buildersGroupBy', readBuildersGroupBy());
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration((e) => {
+			if (!e.affectsConfiguration('codev.buildersGroupBy')) { return; }
+			vscode.commands.executeCommand('setContext', 'codev.buildersGroupBy', readBuildersGroupBy());
+			buildersProvider.refresh();
+		}),
+	);
+
 	// Backlog mine-only / show-all toggle. Default is `false` (mine-only)
 	// so a fresh install opens to "what's on my plate". Same mechanics as
 	// the two toggles above: read setting, mirror to context key so the
@@ -717,6 +732,10 @@ export async function activate(context: vscode.ExtensionContext) {
 			vscode.workspace.getConfiguration('codev').update('backlogShowAll', true, vscode.ConfigurationTarget.Global)),
 		reg('codev.showBacklogMineOnly', () =>
 			vscode.workspace.getConfiguration('codev').update('backlogShowAll', false, vscode.ConfigurationTarget.Global)),
+		reg('codev.groupBuildersByArea', () =>
+			vscode.workspace.getConfiguration('codev').update('buildersGroupBy', 'area', vscode.ConfigurationTarget.Global)),
+		reg('codev.groupBuildersByPhase', () =>
+			vscode.workspace.getConfiguration('codev').update('buildersGroupBy', 'stage', vscode.ConfigurationTarget.Global)),
 		reg('codev.reconnect', () => connectionManager?.reconnect()),
 		regCli('codev.connectTunnel', () => connectTunnel(connectionManager!)),
 		regCli('codev.disconnectTunnel', () => disconnectTunnel(connectionManager!)),

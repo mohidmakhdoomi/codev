@@ -110,6 +110,16 @@
         "icon": "$(list-flat)"
       },
       {
+        "command": "codev.groupBuildersByArea",
+        "title": "Codev: Group Builders by Area",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "codev.groupBuildersByPhase",
+        "title": "Codev: Group Builders by Phase",
+        "icon": "$(list-ordered)"
+      },
+      {
         "command": "codev.openBacklogSearch",
         "title": "Codev: Search Backlog",
         "icon": "$(search)"
@@ -446,6 +456,16 @@
           "group": "navigation"
         },
         {
+          "command": "codev.groupBuildersByArea",
+          "when": "view == codev.builders && codev.buildersGroupBy != 'area'",
+          "group": "navigation"
+        },
+        {
+          "command": "codev.groupBuildersByPhase",
+          "when": "view == codev.builders && codev.buildersGroupBy == 'area'",
+          "group": "navigation"
+        },
+        {
           "command": "codev.refreshOverview",
           "when": "view == codev.pullRequests",
           "group": "navigation"
@@ -642,6 +662,19 @@
           "type": "boolean",
           "default": false,
           "description": "Show every open backlog issue. When off (the default), the Backlog view filters to items assigned to the current GitHub user. Toggleable via the Backlog title-bar eye icon."
+        },
+        "codev.buildersGroupBy": {
+          "type": "string",
+          "enum": [
+            "stage",
+            "area"
+          ],
+          "enumDescriptions": [
+            "Group builders by lifecycle stage (the action axis: SPECIFY → PLAN → IMPLEMENT → REVIEW → PR → VERIFIED) — answers \"where do I need to act?\"",
+            "Group builders by their area/* label (the domain axis), matching the Backlog view."
+          ],
+          "default": "stage",
+          "description": "Which axis the Builders view groups by. 'stage' (default) is the action axis; 'area' is the domain axis. Toggleable via the Builders title-bar button."
         }
       }
     },
