@@ -26,7 +26,7 @@ import { activateGateToasts } from './notifications/gate-toast.js';
 import { activateReviewDecorations } from './review-decorations.js';
 import { activateReviewComments } from './comments/plan-review.js';
 import { BuilderSpawnHandler } from './builder-spawn-handler.js';
-import { BuilderTerminalLinkProvider } from './terminal-link-provider.js';
+import { BuilderTerminalLinkProvider, ReconnectTerminalLinkProvider } from './terminal-link-provider.js';
 import { computeBuildersToClose, roleIdsFromBuilders } from './prune-builder-terminals.js';
 import { buildBuilderPickRows } from './builder-pick-rows.js';
 import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
@@ -763,6 +763,13 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.window.registerTerminalLinkProvider(
 			new BuilderTerminalLinkProvider(terminalManager),
+		),
+	);
+
+	// Make the give-up message's reconnect affordance clickable (#939)
+	context.subscriptions.push(
+		vscode.window.registerTerminalLinkProvider(
+			new ReconnectTerminalLinkProvider(terminalManager),
 		),
 	);
 

@@ -382,6 +382,22 @@ export class TerminalManager {
     terminal.show(!focus);
   }
 
+  /**
+   * Reconnect the adapter backing a specific VSCode terminal. Used by the
+   * give-up recovery affordance (#939): the terminal-link click resolves to
+   * the clicked terminal, and we map it back to its adapter by identity (works
+   * for every terminal kind — builder, architect, dev, shell — without parsing
+   * a role out of the message text).
+   */
+  reconnectByTerminal(terminal: vscode.Terminal): void {
+    for (const managed of this.terminals.values()) {
+      if (managed.terminal === terminal) {
+        managed.pty.reconnect();
+        return;
+      }
+    }
+  }
+
   private buildWsUrl(terminalId: string): string | null {
     const workspacePath = this.connectionManager.getWorkspacePath();
     if (!workspacePath) { return null; }
