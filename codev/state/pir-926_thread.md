@@ -74,3 +74,20 @@ Re-verified every plan reference against the rebased code and fixed drift:
   (no such script; pkg is `codev-vscode`, not part of root `pnpm build`) removed.
 - Refreshed shifted line refs (api.ts area fields → 197/237; builders icon →
   202-206; rootChildren blocks → backlog 96-103 / builders 140-152).
+
+## Implement phase (plan-approval approved)
+
+Implemented both rollups per the plan:
+- `backlog-filter.ts` → `activeBuilderCountByArea(builders)` (pure, keyed on raw
+  `.area`).
+- `builder-row.ts` → `rollupGroupState(builders, now)` (pure, reuses
+  `isIdleWaiting`; blocked > idle > active).
+- `BacklogGroupTreeItem` → binary green/grey icon + count tooltip.
+- `BuilderGroupTreeItem` → worst-of-three icon (generic `bell` for blocked, not
+  gate-specific) + "b · i · a" tooltip.
+- Wired both into `backlog.ts` / `builders.ts` `rootChildren()`.
+- Tests: +5 `rollupGroupState`, +5 `activeBuilderCountByArea` (vitest __tests__).
+
+Verified (worktree needed `pnpm install` + core/types build first):
+`pnpm check-types` ✓, `pnpm lint` ✓, `pnpm test:unit` ✓ (207 tests, 10 new),
+`node esbuild.js` ✓. Awaiting go-ahead to commit + push, then dev-approval gate.
