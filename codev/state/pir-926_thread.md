@@ -103,3 +103,17 @@ Builders view's active signal; Backlog stays a calm "where can I spawn" surface.
 Deviation from the approved plan (which specced green) — will be recorded in the
 review file. Re-verified: check-types/lint/test:unit (207)/esbuild all ✓.
 Builders worst-of-three header left as-is (reviewer: "looks good").
+
+Second dev-approval feedback: avoid the nested ternary in the header icon, and
+the row/header icons weren't centralized (duplicated literals in `builders.ts`
+row + header). Refactor:
+- `builder-row.ts` → new `BUILDER_STATE_GLYPH` (single source of truth for the
+  three state icon+color tokens), `BuilderState` type, `GroupRollup` interface,
+  and `worstBuilderState(rollup)` helper.
+- Header (`builder-tree-item.ts`) → `BUILDER_STATE_GLYPH[worstBuilderState(...)]`,
+  no ternary.
+- Row (`builders.ts`) → classify once into `BuilderState`, drive both the
+  contextValue family (new local `CONTEXT_FAMILY` map) and the icon from it;
+  blocked still overrides the glyph with `gateIconFor` (gate-specific) over the
+  shared color. Removes the duplicated literals + its own nested ternary.
+- +4 `worstBuilderState` unit tests. All green (211 tests).
