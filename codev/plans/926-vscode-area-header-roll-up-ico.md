@@ -31,7 +31,7 @@ children's icons. The unifying rule is "the header summarizes what's inside it,"
 but the rollup *function* differs per view because the children differ:
 
 - **Backlog children are issues** → binary "is anyone working this area?" →
-  green filled dot vs. grey outline dot.
+  filled grey dot (has a builder) vs. outline grey dot (open to spawn).
 - **Builders children are builders** → worst-of-three rollup over the three
   builder-row states (blocked / idle / active), reusing the exact icons + color
   tokens already on individual builder rows (`builders.ts:202-206`).
@@ -55,15 +55,20 @@ that count into `BacklogGroupTreeItem`; the subclass sets:
 
 | State | Icon | Color token |
 |---|---|---|
-| count ≥ 1 (area has a live builder) | `circle-filled` | `testing.iconPassed` (green) |
+| count ≥ 1 (area has a builder) | `circle-filled` | `disabledForeground` (grey) |
 | count = 0 (open to spawn) | `circle-outline` | `disabledForeground` (grey) |
 
 Tooltip: `"<n> builder(s) active in <area>"` (count ≥ 1) / `"No active builders
 in <area>"` (count = 0).
 
-The green dot is the *same* dot that means "live builder" on a builder row, so
-its meaning is reinforced; grey/idle areas stay muted so the eye skims for spawn
-targets.
+> **Updated at the `dev-approval` gate:** the active-area dot was originally
+> planned as **green** (`testing.iconPassed`) to echo the live-builder dot on a
+> builder row. The reviewer asked to drop green here so it stays exclusive to
+> the Builders view's "agent actively building" signal — overloading green
+> across two sibling views was the concern. Both Backlog states now use the
+> muted `disabledForeground` and differ only in **fill** (filled = has a
+> builder, outline = open to spawn), keeping the Backlog a calm "where can I
+> spawn" surface. This section is updated to match what shipped.
 
 ### Builders view (worst-of-three rollup)
 
@@ -139,7 +144,7 @@ headers, so it needs no rollup and is untouched.
     `new BacklogGroupTreeItem(g.area, g.items.length, state, activeCount)`.
 - `packages/vscode/src/views/backlog-tree-item.ts`
   - `BacklogGroupTreeItem` constructor gains `activeBuilderCount: number`; sets
-    `this.iconPath` (circle-filled/green vs circle-outline/grey) and
+    `this.iconPath` (filled/outline `circle`, both grey `disabledForeground`) and
     `this.tooltip`.
 - `packages/vscode/src/views/builder-row.ts` (vscode-free)
   - Add `rollupGroupState(builders: OverviewBuilder[], now: number): { blocked: number; idle: number; active: number }` (reuses `isIdleWaiting`).
@@ -210,8 +215,8 @@ headers, so it needs no rollup and is untouched.
   additionally lints + esbuilds. (The vscode extension is its own package — it is
   *not* part of the root `pnpm build`, which covers core/codev/dashboard.)
 - **Manual (at the `dev-approval` gate, in the VSCode Extension Host):**
-  - Backlog: an area with a spawnable issue **and** a live builder → green
-    filled dot; an area with only spawnable issues → grey outline dot. Hover →
+  - Backlog: an area with a spawnable issue **and** a live builder → filled grey
+    dot; an area with only spawnable issues → outline grey dot. Hover →
     builder count.
   - Builders: a group with a builder blocked at a gate → yellow `bell` on the
     header (generic), regardless of which gate; worst-idle group → blue

@@ -78,6 +78,29 @@ durable cross-cutting wisdom, and are captured in this review:
   rollup ships as filled/outline *grey* so green stays exclusive to live
   builders and the Backlog reads as a calm "where can I spawn" surface.
 
+## 3-Way Consultation (single advisory pass — PIR does not re-review)
+
+- **Claude: APPROVE** (HIGH).
+- **Codex: REQUEST_CHANGES** (HIGH) — two findings, both bookkeeping, no code defect:
+  1. *Backlog dot is grey, but the plan said green.* **Addressed by updating the
+     plan, not the code.** The grey was an explicit reviewer request at the
+     `dev-approval` gate (reserve green for the Builders "live agent" signal),
+     and the gate was approved with grey in place — reverting would contradict
+     the human decision. The plan's Backlog section is updated to match what
+     shipped, removing the drift. No code change, so no regression test applies.
+  2. *Plan lacks `approved`/`validated` frontmatter.* **Rebutted.** That
+     frontmatter is the architect-pre-approval convention (e.g. plan #925);
+     PIR builder-created plans approved via the porch `plan-approval` gate don't
+     carry it (siblings #920, #930, #932 have none), the approval record lives
+     in `status.yaml`, and `validated: [gemini, codex, claude]` would be
+     factually false — PIR's plan phase runs no consultation.
+- **Gemini: no verdict** — the run looped on a repeated file-search tool call
+  and exited without emitting a verdict file (infra issue, not a code finding).
+
+Net: one APPROVE, one REQUEST_CHANGES whose two findings are a plan-doc sync
+(done) and a frontmatter-convention rebut. Escalated to the human at the `pr`
+gate since PIR will not independently re-review.
+
 ## Things to Look At During PR Review
 
 - **Backlog "active builder" semantics.** `activeBuilderCountByArea` counts
