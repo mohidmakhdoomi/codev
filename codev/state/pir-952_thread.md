@@ -62,4 +62,4 @@ Architect flagged that per-mode logic was smeared across ~5 provider branch-poin
 
 ## REVIEW phase (dev-approval APPROVED)
 
-Wrote review `codev/reviews/952-*.md`; no arch.md change (view-layer feature, no module boundary); added 3 lessons-learned ([From #952]: bound-the-enum closed-set mapping, two-equal-modes toggle pattern, strategy-per-mode). Opened PR #970 (Fixes #952), recorded with porch. Running `porch done` → 3-way consult (single advisory pass, max_iterations:1). Awaiting verdicts → pr gate.
+Wrote review `codev/reviews/952-*.md`; no arch.md change (view-layer feature, no module boundary); added 3 lessons-learned ([From #952]: bound-the-enum closed-set mapping, two-equal-modes toggle pattern, strategy-per-mode). Opened PR #970 (Fixes #952), recorded with porch. 3-way consult (single advisory pass) returned **all APPROVE / HIGH confidence / no issues** (gemini, codex, claude). Notified architect (all-clear). **pr gate now PENDING** — waiting for human to merge + approve the gate. Will NOT merge until porch reports gate_status: approved.
