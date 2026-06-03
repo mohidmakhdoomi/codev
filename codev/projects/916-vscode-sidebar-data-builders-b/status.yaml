@@ -1,7 +1,7 @@
 id: '916'
 title: vscode-sidebar-data-builders-b
 protocol: pir
-phase: plan
+phase: implement
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -17,4 +17,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-02T22:53:54.850Z'
-updated_at: '2026-06-03T00:43:58.310Z'
+updated_at: '2026-06-03T00:44:04.471Z'
