@@ -69,3 +69,14 @@ Worktree had no node_modules — ran `pnpm install` + built `@cluesmith/codev-ty
 resolve the types package otherwise; 6 unrelated test files fail to load without it — env, not my change).
 After build: check-types ✓, lint ✓, vitest 21 files / 268 passed.
 Pushed → awaiting `dev-approval` gate.
+
+## Review phase (2026-06-03)
+dev-approval approved. Wrote review (`codev/reviews/916-*.md`) + lessons-learned entry [From 916].
+Opened PR #976, recorded with porch. 3-way consult (single advisory pass):
+- Gemini APPROVE, Claude APPROVE, Codex **REQUEST_CHANGES** (2 points, both valid, both addressed):
+  1. Cache-side `onStateChange` sub duplicated `extension.ts:467-469` → removed it (freshen-on-reconnect
+     preserved by the existing extension path). One deviation from approved plan; documented in review.
+  2. No test for the "don't fire onDidChange on transient read" invariant → added 3 fire/no-fire tests.
+- Re-verified: check-types ✓, lint ✓, 21 files / 269 tests. PIR single-pass: fix NOT re-consulted, so
+  escalated to architect leading with the REQUEST_CHANGES + disposition for human verify at pr gate.
+Awaiting `pr` gate (human merges).

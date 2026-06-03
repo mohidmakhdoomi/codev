@@ -16,8 +16,8 @@ connection is re-established.
 
 (`git diff --stat` vs merge-base `083996ce`)
 
-- `packages/vscode/src/views/overview-data.ts` (+37 / -8) — the fix: last-known-good retention + refresh-on-reconnect + disposable cleanup
-- `packages/vscode/src/__tests__/overview-cache.test.ts` (+178 / -0) — new vitest suite (7 tests)
+- `packages/vscode/src/views/overview-data.ts` (+35 / -8) — the fix: last-known-good retention + disposable cleanup
+- `packages/vscode/src/__tests__/overview-cache.test.ts` (+196 / -0) — new vitest suite (8 tests)
 - `codev/plans/916-vscode-sidebar-data-builders-b.md` (+149) — plan
 - `codev/state/pir-916_thread.md` (+71) — builder thread
 - `codev/resources/lessons-learned.md` (+2) — one durable lesson
@@ -37,7 +37,7 @@ connection is re-established.
 
 - `pnpm --filter codev-vscode check-types` (tsc --noEmit): ✓ pass
 - `pnpm --filter codev-vscode lint` (eslint): ✓ pass
-- `pnpm --filter codev-vscode test:unit` (vitest): ✓ 21 files / 268 tests pass (7 new in `overview-cache.test.ts`)
+- `pnpm --filter codev-vscode test:unit` (vitest): ✓ 21 files / 269 tests pass (8 new in `overview-cache.test.ts`)
 - Porch gate `checks`: build ✓ (6.0s), tests ✓ (20.6s)
 - Manual verification: human reviewed at the `dev-approval` gate.
 
@@ -75,14 +75,37 @@ rather than N independent bugs. That observation is what ruled out the Tower-sid
   orthogonal to this change (which guards the *value* committed). I kept it and its doc comment verbatim;
   worth confirming the two interact as intended (a dropped-but-good in-flight fetch is benign — last value
   retained, next event refreshes).
-- **Refresh-on-reconnect.** New `onStateChange → 'connected'` subscription. On reconnect this can fire
-  alongside the first SSE-driven refresh; `latestSeq` dedupes the commit, so the cost is at most one extra
-  localhost `/api/overview` request (the existing doc already accepts N-parallel-requests as negligible).
+- **Freshen-on-reconnect is the extension's existing path, not new code here.** The plan originally
+  proposed adding an `onStateChange → 'connected'` subscription inside `OverviewCache`. The 3-way
+  consultation (Codex) correctly flagged that `extension.ts:467-469` *already* does
+  `onStateChange('connected') → overviewCache.refresh()`, so a cache-side subscription would issue a
+  duplicate `/api/overview` fetch on every reconnect (`latestSeq` dedupes the commit but not the request).
+  I removed the cache-side subscription; freshen-on-reconnect behavior is unchanged (provided by the
+  existing extension wiring). This is the one deviation from the approved plan.
+- **`onDidChange` is not fired on transient reads.** Beyond retaining the data, `refresh()` now only fires
+  the change event on a successful commit — a transient not-connected/failed read fires nothing, so
+  providers are never asked to re-render mid-blip. Pinned by three explicit fire/no-fire tests.
 - **Trade-off by design.** If Tower is down for a long time, the sidebar now shows *stale* fleet data
   rather than blanking. This is the issue's stated acceptance ("hold last-known-good"). A distinct
   "disconnected" visual treatment for the data-views is intentionally out of scope.
 - **Repro is intermittent.** The original flicker is hard to reproduce on demand; the unit suite is the
   durable guard, and the manual check is "data is visibly *held* across a simulated blip."
+
+### 3-Way Consultation Disposition (single advisory pass)
+
+Gemini: APPROVE · Claude: APPROVE · Codex: **REQUEST_CHANGES**. PIR's consult is a single pass and does
+**not** re-review — so the human at the `pr` gate is the only remaining check on the changes below.
+Both Codex findings were **addressed in code** (commit after the consult; see git history):
+
+1. *Duplicate reconnect refresh.* Removed the cache-side `onStateChange` subscription that duplicated
+   `extension.ts:467-469`. (Detailed above under "Freshen-on-reconnect…".)
+2. *Missing no-fire test assertion.* Added three tests pinning that `onDidChange` fires only on a
+   successful commit, never on a transient not-connected / failed read — covering the plan's
+   "do not render an empty children array as a transient response" invariant at the event level.
+
+Net test delta: removed two tests that asserted the now-deleted cache-side reconnect subscription; added
+three `onDidChange` fire/no-fire tests (7 → 8 in this file; suite 268 → 269). Verbatim verdicts:
+`codev/projects/916-vscode-sidebar-data-builders-b/916-review-iter1-{gemini,codex,claude}.txt`.
 
 ## How to Test Locally
 
