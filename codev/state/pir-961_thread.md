@@ -44,3 +44,13 @@ Bootstrapped vitest in core (had none) — 17 tests, all green. Added a CI step 
 `dashboard/__tests__/scrollController.test.ts > warns on unexpected scroll-to-top` fails on a clean tree too (verified by stashing my Terminal.tsx change — the test imports only `ScrollController`, never `Terminal`). Noting for the review's Lessons Learned; not fixing per protocol.
 
 Pushing branch; will pause at dev-approval for the cross-surface forced-give-up smoke test.
+
+## 2026-06-03 — At dev-approval gate: review-driven refinements
+
+Reviewer (architect) poked at a few things during the gate; addressed:
+
+- **CI scope**: CI only ran `packages/codev` vitest. Kept #961's core step as the policy's CI guard (decision: a); filed **#967** for the broader gap (vscode + dashboard unit suites not in CI; also flags the pre-existing scrollController failure that must be fixed before the dashboard suite can gate).
+- **tsconfig exclude drift**: my `["src/**/*.test.ts","src/__tests__/**"]` was a one-off spelling. Aligned to codev's convention `["node_modules","dist","**/__tests__/**"]`. (`__tests__/` dir itself is the dominant convention — 58 vs 11 colocated.)
+- **Dropped the dormant web classifier seam**: `classifyUpgradeError({code: event.code})` in `Terminal.tsx` was inert (browsers see 1006) AND its HTTP-4xx numeric contract wouldn't match a future WS close code. Removed → web is literally "kept-as-is" blind retry. Deferred the real session-unknown adoption (needs a browser-visible Tower close code) to **#971**. Core's `classifyUpgradeError` object-form stays (spec'd API surface, tested, #971 builds on it).
+
+All green after changes: core 17 ✓, vscode 222 ✓, dashboard reconnect 12 ✓ (+ pre-existing scrollController fail, out of scope), codev 3210 ✓, root build ✓.
