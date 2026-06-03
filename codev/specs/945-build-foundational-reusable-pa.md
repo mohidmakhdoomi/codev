@@ -177,17 +177,20 @@ scale. Revisit only if an independent consumer needs the renderer without React.
   change events (e.g. a noisy file watcher), debouncing/coalescing is the host's
   responsibility before invoking the callback.
 - **Error semantics (iter-1 all three):** adapter rejections are the **host's** concern in
-  v1. The package `await`s adapter calls inside a guard: a rejected `MarkerAdapter.add` /
-  `FileAdapter.read` is caught, logged via an injectable logger (defaulting to `console`),
-  and surfaces to an **optional** host-provided `onError(err: unknown)` callback on the
-  component; the package never throws out of an event handler and never silently corrupts
-  state (a failed `add` leaves the rendered markers unchanged). There is no built-in retry in
-  v1 — retry/toast UX is the host's call.
+  v1. The package guards the adapter calls *it* makes — `FileAdapter.read` / `.watch`,
+  `MarkerAdapter.list`, `ThemeAdapter.resolve` / `.onChange`: a rejection is caught, logged
+  via an injectable logger (defaulting to `console`), and surfaces to an **optional**
+  host-provided `onError(err: unknown)` callback on the component; the package never throws
+  out of an event handler and never silently corrupts state (a failed `list` leaves the prior
+  rendered markers unchanged). `MarkerAdapter.add` is invoked by the **host** (D6), so its
+  rejection is handled host-side. There is no built-in retry in v1 — retry/toast UX is the
+  host's call.
 
 ### D3 — The package is serialization-agnostic; the host owns on-disk marker format
-The package defines the **in-memory** `ReviewMarker` shape and calls `MarkerAdapter.add(...)`;
-it does **not** mandate how markers are written to disk. The host's `MarkerAdapter`
-implementation owns serialization. **Rationale:** this is what keeps #857 untouched — the
+The package defines the **in-memory** `ReviewMarker` shape; the **host** calls
+`MarkerAdapter.add(...)` (per D6 the package emits a comment *intent* event and never writes
+markers itself). The package does **not** mandate how markers are written to disk. The host's
+`MarkerAdapter` implementation owns both the call and the serialization. **Rationale:** this is what keeps #857 untouched — the
 VSCode host can keep the existing positional `<!-- REVIEW(@author): text -->` form, while a
 dashboard host could choose an explicit-line form, without the package forcing either. The
 `ReviewMarker.raw` field carries the original marker text for lossless round-tripping. (See
@@ -215,12 +218,35 @@ This matches the existing #857 host, which reads/writes via VSCode's 0-based
 base is part of the contract and is documented in the README.
 
 ### D6 — Comment overlay is presentation + intent only
-The hover-`+` overlay renders the affordance and, on click, invokes a host-supplied callback
-with `{ line: number }`. The **text-input UX and the write-back both live in the host
-adapter**, not the package. **Rationale:** input affordances differ per surface (VSCode
-`InputBox`, a dashboard modal, a mobile sheet); forcing one into the package would couple it
-to a surface. The package guarantees the *intent* ("comment requested at line N") and the
-*round-trip refresh* (re-render markers after `MarkerAdapter` reports a change).
+The hover-`+` overlay renders the affordance and, on click, **emits a comment-intent event**
+carrying `{ line: number }` to a host-supplied callback (`onAddComment(line)`). **The package
+stops there.** The text-input UX *and* the write-back both live in the **host**: the host
+collects the comment text and calls its own `MarkerAdapter.add(uri, line, text, author)`.
+**The package never calls `MarkerAdapter.add` itself.** The canvas then refreshes its markers
+when the host's change propagates — via `FileAdapter.watch` firing (or the host re-driving a
+`MarkerAdapter.list`), at which point the new marker renders.
+
+**Rationale:** input affordances differ per surface (VSCode `InputBox`, a dashboard modal, a
+mobile sheet) and so does write-back; forcing either into the package would couple it to a
+surface and contradict D3 (serialization-agnostic). The package owns the *intent* and the
+*round-trip refresh*; the host owns *input* and *write*.
+
+This is the single authoritative model. The Acceptance Criteria and Test Scenario 3 below are
+written to match it: the package is asserted to *emit the intent event*, and a host-side test
+harness performs the `add` + refresh.
+
+### D7 — Rendered HTML is sanitized (no script execution)
+Markdown artifacts are rendered into a live DOM inside a VSCode webview and the browser
+dashboard, and artifacts can carry PR-sourced or otherwise untrusted prose. The renderer
+therefore (a) runs markdown-it with `html: false` (raw inline/block HTML is **not** passed
+through), and (b) sanitizes the generated HTML with **DOMPurify** before it reaches the DOM
+(React injection or otherwise) — defense in depth, so a future relaxation of `html` cannot
+silently open an XSS hole. `dompurify` is a declared package dependency. REVIEW HTML-comment
+markers remain non-executable metadata: they are consumed by `MarkerAdapter`/the renderer and
+surfaced as overlay UI, never emitted as executable content. See **Security Considerations**
+for the precedent (Codev #0048) and the required test. **Rationale:** rendering untrusted
+markdown into a privileged webview without sanitization is a classic XSS vector; both Gemini
+and Codex flagged its absence as blocking at iter-1.
 
 ## Adapter Interface Contracts (the core SPECIFY deliverable)
 
@@ -242,10 +268,11 @@ interface FileAdapter {
   watch(uri: string, onChange: (content: string) => void): Disposable;
 }
 
-/** Reads and mutates review markers. Serialization is the implementation's concern (D3). */
+/** Reads and mutates review markers. Serialization is the implementation's concern (D3).
+ *  In v1 the package calls only `list`; `add` is invoked by host glue code (D6). */
 interface MarkerAdapter {
   list(uri: string): Promise<ReviewMarker[]>;
-  add(uri: string, line: number, text: string, author: string): Promise<void>;
+  add(uri: string, line: number, text: string, author: string): Promise<void>; // host-invoked (D6)
   // Reserved for later issues (declared as optional so hosts may implement incrementally):
   // addRegion?(uri: string, lineStart: number, lineEnd: number, text: string, author: string): Promise<void>;
   // setCheckbox?(uri: string, line: number, checked: boolean): Promise<void>; // AC-progress (#862)
@@ -260,7 +287,7 @@ interface ThemeAdapter {
 /** In-memory marker model. `raw` preserves the on-disk text for lossless round-tripping. */
 interface ReviewMarker {
   author: string;
-  line: number;
+  line: number;                                  // 0-based, matches `data-line` (D5)
   text: string;
   raw: string;
   lineRange?: { start: number; end: number };  // reserved for region anchors (not used in v1)
@@ -288,6 +315,33 @@ Concrete consequences (carried forward to every dependent issue):
 **Acceptance includes an automated test** asserting no package affordance produces output
 that isn't (a) a source-markdown text mutation or (b) a clearly delimited adjacent text
 artifact.
+
+## Security Considerations
+
+The package renders markdown into a **privileged DOM** — a VSCode webview and the browser
+dashboard — and the markdown it renders is not always trusted (artifacts can include
+PR-authored prose, pasted content, or text from contributors outside the core team). Rendering
+untrusted markdown into such a surface without sanitization is a classic XSS vector.
+
+**Locked requirement (D7):**
+1. **markdown-it `html: false`.** Raw inline and block HTML in the source is not passed
+   through to the output.
+2. **DOMPurify sanitization.** The HTML markdown-it produces is run through **DOMPurify**
+   before it reaches the DOM. This is defense-in-depth: even if a later feature relaxes the
+   `html` option or injects HTML through another path, the sanitize step still strips
+   executable content. `dompurify` is a declared dependency of the package.
+3. **REVIEW markers stay metadata.** REVIEW HTML-comment markers are parsed/consumed by the
+   `MarkerAdapter` and renderer and surfaced as overlay UI; they are never emitted as
+   executable HTML.
+
+**Precedent.** Codev already treats sanitized markdown rendering as the norm: `codev/specs/
+0048-markdown-preview.md` established a markdown-preview surface, and DOMPurify is already
+bundled as a vendored client library (served via `tower-routes.ts`). D7 keeps this new package
+consistent with that precedent rather than introducing an unsanitized renderer.
+
+**Required test (see Test Scenario 8).** A sample artifact that attempts to embed executable
+content (e.g. `<img src=x onerror=...>`, `<script>...</script>`, a `javascript:` URL) renders
+with that content neutralized — no script executes and no event-handler attribute survives.
 
 ## Solution Approaches (alternatives considered)
 
@@ -349,12 +403,15 @@ All decisions needed to begin are resolved above.
 
 Functional (MUST):
 - [ ] `packages/artifact-canvas/` exists; `package.json` declares
-      `@cluesmith/codev-artifact-canvas`, peer-deps on `react`/`react-dom`, dep on `markdown-it`.
+      `@cluesmith/codev-artifact-canvas`, peer-deps on `react`/`react-dom`, deps on
+      `markdown-it` and `dompurify`.
 - [ ] Renderer produces HTML with `data-line` attributes on block tokens (paragraphs,
-      headings, list items, code blocks, blockquotes); a unit test covers the attribution.
-- [ ] A comment-overlay component renders a hover-`+` on rendered blocks; clicking invokes a
-      callback receiving `{ line: number }`; the text-input + write-back live in the host
-      adapter, not the package (unit test asserts the callback contract).
+      headings, list items, code blocks, blockquotes, tables); a unit test covers the
+      attribution.
+- [ ] A comment-overlay component renders a hover-`+` on rendered blocks; clicking **emits a
+      comment-intent event** carrying `{ line: number }` to the host callback; the package
+      does **not** call `MarkerAdapter.add` (text-input + write-back are host-owned, D6). A
+      unit test asserts the intent-event contract.
 - [ ] Three adapter interfaces (`FileAdapter`, `MarkerAdapter`, `ThemeAdapter`) plus
       `ReviewMarker` and `Disposable` are exported from the public API; the package has zero
       direct filesystem, `fetch`, or VSCode-API imports (import-boundary test).
@@ -366,6 +423,12 @@ Functional (MUST):
       VSCode webview and the dashboard's Vite/ESM pipeline.
 - [ ] **Text-as-source-of-truth invariant test**: no affordance produces output that isn't
       either a source-markdown text mutation or a clearly delimited adjacent text artifact.
+      (For v1 concretely: the comment overlay's only output channel is the `onAddComment`
+      intent event — no side-channel writes.)
+- [ ] **HTML-sanitization (D7)**: markdown-it runs with `html: false` and output is
+      DOMPurify-sanitized before render; rendered HTML contains **no executable script
+      content** even when the input markdown attempts to embed it (`<script>`, `onerror=`,
+      `javascript:` URLs). A test covers this.
 - [ ] `README.md` documents the three adapter contracts + a host-implementation example.
 
 Non-functional (MUST):
@@ -377,23 +440,34 @@ Non-functional (MUST):
 ### Test Scenarios
 **Functional**
 1. Render a sample artifact; assert each block element carries the correct `data-line`.
-2. Hover a block → `+` appears; click → callback fires with the expected `{ line }`.
-3. A stub `MarkerAdapter.list` returns markers → they render; `add` is invoked with
-   `(uri, line, text, author)` on a simulated submit; on resolve the markers re-render.
+2. Hover a block → `+` appears; click → the `onAddComment` intent event fires with the
+   expected `{ line }`.
+3. A stub `MarkerAdapter.list` returns markers → they render. Simulating a `+` click emits
+   the intent event with the expected `{ line }`; a host-side test harness then calls
+   `MarkerAdapter.add(uri, line, text, author)` and, on the subsequent refresh (a `watch`
+   callback or a re-`list`), the new marker renders. The package itself never calls `add`.
 4. `ThemeAdapter.onChange` fires → the canvas re-renders with new resolved tokens.
 
 **Non-functional**
 5. Import-boundary test: scanning package source finds no forbidden imports.
-6. Invariant test: enumerate affordances; assert each maps to text mutation / text artifact.
+6. Invariant test: assert the comment overlay's only output channel is the `onAddComment`
+   intent event — no side-channel writes (generalizes to future affordances).
 7. Build smoke: the CJS entry `require()`s and the ESM entry `import()`s without error.
+8. **Sanitization (D7):** render an artifact containing `<script>`, an `onerror=` attribute,
+   and a `javascript:` URL; assert none execute and the dangerous attributes/elements are
+   stripped from the rendered DOM.
+9. **Subscription teardown:** after `dispose()` on a `FileAdapter.watch` / `ThemeAdapter.onChange`
+   subscription, further host notifications do not trigger re-render (no leak); `dispose()`
+   called twice is a safe no-op.
 
 ## Dependencies
 - **Blocks**: #859 (on HOLD) — released to re-plan against this once it ships.
 - **Blocked by**: nothing.
 - **Coordinates with**: `@cluesmith/codev-types` and `@cluesmith/codev-core` conventions for
   monorepo package shape (naming, version alignment, `exports` style).
-- **Libraries**: `markdown-it` (dep); `react`/`react-dom` (peer); a dual-bundle build tool
-  (plan-decided); Vitest + Testing Library (test, matching the dashboard).
+- **Libraries**: `markdown-it` + `dompurify` (deps); `react`/`react-dom` (peer); a
+  dual-bundle build tool (plan-decided); Vitest + Testing Library (test, matching the
+  dashboard).
 
 ## What This Unlocks
 | Issue | After this lands |
@@ -423,34 +497,55 @@ Non-functional (MUST):
 | Marker-format mismatch silently regresses #857 | Low | High | D3 keeps the package serialization-agnostic; explicit "#857 untouched" AC + open-question raised at the gate. |
 | Scope creep into #860–#863 features | Med | Med | Non-Goals fence the implemented surface to renderer + comment overlay + adapters; later folders may be stubbed but not built. |
 | React peer-version skew (dashboard 19 vs webview 18) | Low | Med | Peer range `^18 || ^19`; avoid React-19-only APIs in package source. |
+| Unsanitized HTML in an artifact executes in the webview/dashboard (XSS) | Low | High | D7: markdown-it `html: false` + DOMPurify sanitize before render; sanitization AC + Test Scenario 8; follows #0048 precedent. |
 
 ## Consultation Log
 
 ### Iteration 1 — Specify (2026-05-31)
 **Models:** Gemini (gemini-3.1-pro-preview), Codex (gpt-5.4-codex), Claude (claude-opus).
-**Verdict:** all three **APPROVE WITH SUGGESTIONS** — no blockers; cleared to proceed to
-planning. All three independently affirmed D3 (serialization-agnostic package) as the
-keystone decision and praised the marker-format catch (Open Q §1).
+**Verdicts (per the on-disk verdict files):**
+- **Gemini — REQUEST_CHANGES (confidence HIGH).** Blocker: missing XSS/DOMPurify
+  sanitization invariant. Other comments: D2-vs-D4 ThemeAdapter/CSS overlap; suggested a
+  generic `FileAdapter.write` for future checkbox mutations; confirmed the #857 marker-format
+  catch is correct.
+- **Codex — REQUEST_CHANGES (confidence HIGH).** Blockers: (1) D6 (intent-only) contradicts
+  the Acceptance Criteria + Test Scenario 3 (which implied the package calls
+  `MarkerAdapter.add`); (2) no explicit markdown HTML-sanitization requirement. Also:
+  underspecified adapter error states.
+- **Claude — APPROVE (confidence HIGH).** No blockers; minor notes (line-base, error policy,
+  sanitization stance, blockquotes/tables in AC, Disposable teardown test).
 
-Refinements folded into the spec from the convergent feedback:
-- **Adapter error semantics** (all three) → added to D2: host owns errors in v1; package
-  guards adapter calls, logs via injectable logger, surfaces to an optional `onError`
-  callback, never throws out of a handler, no built-in retry.
-- **`data-line` line base** (all three) → D5 now states 0-based explicitly (from
-  `token.map[0]`), consistent with #857's `document.lineAt`; hosts convert at the boundary.
-- **Subscription lifecycle ownership** (Gemini, Claude) → D2: React `useEffect` owns
-  disposal; `Disposable.dispose()` must be idempotent (also noted on the interface).
-- **Change coalescing** (Codex, Claude) → D2: package re-renders per callback, does not
-  debounce; coalescing is the host's responsibility.
-- **Packaging hygiene** (Codex, Claude) → Technical Constraints: `examples/` smoke host
-  excluded from the published `files`/build output.
-- **React 18 floor** (Claude) → Technical Constraints: package source avoids React-19-only
-  APIs (`use()`, `useFormStatus`, `useOptimistic`).
+**Net: 2-of-3 REQUEST_CHANGES.** Two real blockers, both addressed in this revision.
 
-Open Questions §3 (build tool) and §4 (default-theme import path) remain plan-level
-decisions, as the reviewers agreed. Open Question §1 (REVIEW marker format) remains flagged
-for the architect at the spec-approval gate — the D3 resolution stands regardless of the
-wording fix.
+Changes made to clear the blockers:
+- **XSS sanitization (Gemini + Codex blocker)** → added **D7** + a **Security Considerations**
+  section: markdown-it `html: false` + DOMPurify sanitize before render; `dompurify` added to
+  declared deps; new AC + Test Scenario 8; references the #0048 precedent.
+- **D6 vs AC/Scenario-3 contradiction (Codex blocker)** → D6 reworded as the single
+  authoritative *intent-only* model (overlay emits `onAddComment(line)`; the **host** calls
+  `MarkerAdapter.add`; the package never calls `add`). Fixed the contradicting line in D3,
+  the AC comment-overlay item, and Test Scenario 3; annotated the `MarkerAdapter` interface.
+
+Non-blocking refinements also folded in:
+- **Adapter error semantics** (all three) → D2: package guards the calls it makes; `add`
+  errors are host-side; optional `onError`; no built-in retry.
+- **`data-line` / `ReviewMarker.line` base** (all three) → D5 + interface state **0-based**.
+- **Subscription lifecycle / idempotent Disposable** (Gemini, Claude) → D2 + interface;
+  Test Scenario 9 covers teardown.
+- **Change coalescing** (Codex, Claude) → D2: host's responsibility.
+- **Packaging hygiene** (Codex, Claude) → `examples/` excluded from published output.
+- **React 18 floor** (Claude) → package source avoids React-19-only APIs.
+- **AC element list** (Claude) → blockquotes + tables added to match D5.
+
+Deferred (reviewer-agreed): Open Q §3 (build tool) and §4 (default-theme import path) stay
+plan-level. Gemini's `FileAdapter.write` idea is noted for the #862 follow-up, not added to
+the v1 contract. Open Q §1 (REVIEW marker format) — the architect confirmed #857 is positional;
+the D3 resolution stands.
+
+### Iteration 2 — Specify re-consult (pending)
+Revised spec to be re-run through the 3-way consult. Per architect direction, the
+spec-approval gate will not be (re-)requested until at least 2-of-3 reviewers return APPROVE /
+APPROVE-WITH-SUGGESTIONS with **zero** REQUEST_CHANGES.
 
 ## Notes
 This spec deliberately includes the adapter interface signatures verbatim because, for this
