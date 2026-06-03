@@ -27,3 +27,33 @@ in the plan for the reviewer to redirect at the gate.
 
 Plan written to `codev/plans/975-vscode-run-stop-dev-server-con.md`. Awaiting
 plan-approval.
+
+## Implement phase (iteration 1)
+
+Plan approved. Implemented the `codev.hasDevCommand` context-key gate.
+
+Design evolved during pre-commit review with the architect:
+- Started with an SSE-driven key (mirrors WorkspaceProvider: onStateChange +
+  `worktree-config-updated` envelope). Architect pushed back: the context menu
+  is on-demand/ephemeral, unlike the always-on Workspace view — it doesn't
+  warrant a constant config-file listener.
+- Considered a visibility-snapshot (refresh on Builders view `onDidChangeVisibility`).
+  Rejected: split wiring + staleness if config edited while view already visible.
+- **Landed on render-path**: `BuildersProvider.refreshDevCommandContext()` called
+  fire-and-forget from `getChildren`'s root branch. The key tracks the same
+  cadence as the rows the menu gates; no dedicated listener; fully co-located in
+  the provider (extension.ts only passes connectionManager). Liveness: picks up
+  config edits on the next tree refresh (overview poll / tree event).
+
+Also fixed a latent empty-string bug: `workspace.ts` used `devCommand !== null`
+(would show a Start row for `"devCommand": ""` that errors on click). Both
+surfaces now share `hasRunnableDevCommand()` (trim non-empty).
+
+Surfaces gated: builder-row context menu (the bug), dev keybindings, and
+workspace-dev palette entries; builder-row dev palette entries pinned `when:false`
+(need a row arg — same as view{Spec,Plan,Review}File).
+
+Build + type-check clean; 276 unit tests pass (incl. 2 new test files:
+has-runnable-dev-command + menu-when-clauses additions). Lint clean.
+
+Pushing and signaling dev-approval — reviewer verifies the running worktree.

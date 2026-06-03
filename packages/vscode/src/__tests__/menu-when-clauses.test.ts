@@ -123,3 +123,70 @@ describe('commandPalette hiding for view{Spec,Plan,Review}File', () => {
     });
   }
 });
+
+/**
+ * `codev.hasDevCommand` gating for the dev-server commands (#975).
+ *
+ * The builder-row Run/Stop Dev Server context-menu entries must only
+ * surface when a runnable `worktree.devCommand` is configured. Previously
+ * they gated on view + viewItem family only, so they showed even with no
+ * dev command — picking one ran against a missing command. The fix appends
+ * `&& codev.hasDevCommand` (a setContext key the BuildersProvider refreshes
+ * from its render path off the Tower-merged config) to the `when` clause.
+ *
+ * The same gate extends to the keybindings and the workspace-dev palette
+ * entries for consistency; the builder-row dev commands are `when: false`
+ * in the palette because they need a tree-row argument (same rationale as
+ * the view{Spec,Plan,Review}File commands above).
+ *
+ * Pinning the wiring here: a drift in any of these `when` shapes would
+ * silently re-expose a command that can't run — no compile/runtime error
+ * would catch it.
+ */
+describe('codev.hasDevCommand gating for dev-server commands', () => {
+  const paletteEntries: Array<{ command: string; when?: string }> =
+    PKG.contributes.menus.commandPalette;
+  const keybindings: Array<{ command: string; when?: string }> =
+    PKG.contributes.keybindings;
+
+  for (const cmd of ['codev.runWorktreeDev', 'codev.stopWorktreeDev']) {
+    it(`${cmd} builder-row menu entry is gated by codev.hasDevCommand`, () => {
+      const entry = viewItemMenuEntries.find(
+        e => e.command === cmd && e.when.includes('view == codev.builders'));
+      expect(entry, `builders view/item/context entry for ${cmd}`).toBeDefined();
+      expect(entry!.when, `${cmd} when-clause`).toContain('&& codev.hasDevCommand');
+    });
+
+    it(`${cmd} is hidden from the command palette (needs a row argument)`, () => {
+      const entry = paletteEntries.find(e => e.command === cmd);
+      expect(entry, `commandPalette entry for ${cmd}`).toBeDefined();
+      expect(entry!.when, `${cmd} palette when-clause`).toBe('false');
+    });
+  }
+
+  for (const cmd of ['codev.runWorkspaceDev', 'codev.stopWorkspaceDev']) {
+    it(`${cmd} command palette entry is gated by codev.hasDevCommand`, () => {
+      const entry = paletteEntries.find(e => e.command === cmd);
+      expect(entry, `commandPalette entry for ${cmd}`).toBeDefined();
+      expect(entry!.when, `${cmd} palette when-clause`).toBe('codev.hasDevCommand');
+    });
+
+    it(`${cmd} keybinding is gated by codev.hasDevCommand`, () => {
+      const entry = keybindings.find(k => k.command === cmd);
+      expect(entry, `keybinding for ${cmd}`).toBeDefined();
+      expect(entry!.when, `${cmd} keybinding when-clause`).toBe('codev.hasDevCommand');
+    });
+  }
+
+  it('does not gate the Workspace view dev rows on codev.hasDevCommand (they gate via viewItem)', () => {
+    // The Workspace view rows are config-gated by row existence (the
+    // viewItem is only emitted when a dev command is configured), so their
+    // menu `when` must stay viewItem-only — no redundant context key.
+    for (const cmd of ['codev.runWorkspaceDev', 'codev.stopWorkspaceDev']) {
+      const entry = viewItemMenuEntries.find(
+        e => e.command === cmd && e.when.includes('view == codev.workspace'));
+      expect(entry, `workspace view/item/context entry for ${cmd}`).toBeDefined();
+      expect(entry!.when, `${cmd} workspace when-clause`).not.toContain('codev.hasDevCommand');
+    }
+  });
+});

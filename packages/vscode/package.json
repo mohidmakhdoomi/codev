@@ -320,6 +320,22 @@
         {
           "command": "codev.deleteReviewComment",
           "when": "false"
+        },
+        {
+          "command": "codev.runWorkspaceDev",
+          "when": "codev.hasDevCommand"
+        },
+        {
+          "command": "codev.stopWorkspaceDev",
+          "when": "codev.hasDevCommand"
+        },
+        {
+          "command": "codev.runWorktreeDev",
+          "when": "false"
+        },
+        {
+          "command": "codev.stopWorktreeDev",
+          "when": "false"
         }
       ],
       "view/item/context": [
@@ -385,12 +401,12 @@
         },
         {
           "command": "codev.runWorktreeDev",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
+          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/ && codev.hasDevCommand",
           "group": "3_dev@2"
         },
         {
           "command": "codev.stopWorktreeDev",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
+          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/ && codev.hasDevCommand",
           "group": "3_dev@3"
         },
         {
@@ -558,12 +574,14 @@
       {
         "command": "codev.runWorkspaceDev",
         "key": "ctrl+alt+r",
-        "mac": "cmd+alt+r"
+        "mac": "cmd+alt+r",
+        "when": "codev.hasDevCommand"
       },
       {
         "command": "codev.stopWorkspaceDev",
         "key": "ctrl+alt+s",
-        "mac": "cmd+alt+s"
+        "mac": "cmd+alt+s",
+        "when": "codev.hasDevCommand"
       },
       {
         "command": "codev.pasteImage",

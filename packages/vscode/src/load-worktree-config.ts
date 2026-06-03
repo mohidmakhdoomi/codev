@@ -31,3 +31,21 @@ export async function loadWorktreeConfig(
   if (!client || !workspacePath || connectionManager.getState() !== 'connected') { return null; }
   return client.getWorktreeConfig(workspacePath);
 }
+
+/**
+ * Whether the resolved config carries a *runnable* `worktree.devCommand`.
+ *
+ * "Runnable" means a non-empty, non-whitespace string — matching the
+ * actual gate in `commands/dev-shared.ts` (`if (!devCommand)`), where an
+ * empty string falls through to the "configure devCommand" error. The
+ * type is `string | null` (`ResolvedWorktreeConfig.devCommand`), so `""`
+ * is reachable and must be treated as absent, not present-but-disabled.
+ *
+ * Single source of truth for two surfaces: the `codev.hasDevCommand`
+ * context key (gates the builder-row Run/Stop Dev Server menu) and the
+ * Workspace view's Start-row visibility. Keeping both on this helper
+ * guarantees they agree on every config state.
+ */
+export function hasRunnableDevCommand(config: ResolvedWorktreeConfig | null): boolean {
+  return typeof config?.devCommand === 'string' && config.devCommand.trim().length > 0;
+}

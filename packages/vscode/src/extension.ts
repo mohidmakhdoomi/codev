@@ -290,7 +290,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// List views use createTreeView so their title can carry a live item
 	// count; the rest stay on registerTreeDataProvider.
-	const buildersProvider = new BuildersProvider(overviewCache, builderDiffCache, context.workspaceState);
+	const buildersProvider = new BuildersProvider(overviewCache, builderDiffCache, context.workspaceState, connectionManager);
 	buildersView = vscode.window.createTreeView('codev.builders', { treeDataProvider: buildersProvider });
 	context.subscriptions.push(...persistAreaGroupExpansion(
 		buildersView, BuilderGroupTreeItem, buildersProvider.expansion,

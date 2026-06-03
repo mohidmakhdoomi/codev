@@ -4,7 +4,7 @@ import type { ConnectionManager } from '../connection-manager.js';
 import type { TerminalManager } from '../terminal-manager.js';
 import { getTowerAddress } from '../workspace-detector.js';
 import { resolveWorkspaceDevTarget } from '../commands/dev-shared.js';
-import { loadWorktreeConfig } from '../load-worktree-config.js';
+import { loadWorktreeConfig, hasRunnableDevCommand } from '../load-worktree-config.js';
 
 /**
  * Workspace-level entry points: architect terminal, Tower web dashboard,
@@ -145,13 +145,16 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
     // too. The visible control is itself the state indicator (play/stop
     // model) — never both, no row-count jitter.
     //
-    // Visibility also depends on whether devCommand is configured:
+    // Visibility also depends on whether a *runnable* devCommand is
+    // configured (non-empty, non-whitespace — see hasRunnableDevCommand):
     //   - dev running → always show Stop (lets the user kill a dev they
-    //     started before nulling out devCommand)
-    //   - no dev running + devCommand set → show Start
-    //   - no dev running + devCommand null → show nothing
-    // The third case is the new one — it removes the "click Start, get a
-    // toast saying devCommand isn't configured" footgun.
+    //     started before clearing devCommand)
+    //   - no dev running + runnable devCommand → show Start
+    //   - no dev running + no runnable devCommand → show nothing
+    // The third case removes the "click Start, get a toast saying
+    // devCommand isn't configured" footgun. Gating on hasRunnableDevCommand
+    // (not `devCommand !== null`) also treats `"devCommand": ""` as absent,
+    // matching dev-shared.ts's runnability check.
     const allDevs = this.terminalManager.listDevTerminals();
     const targetDev = devTarget ? allDevs.find(d => d.builderId === devTarget.id) : undefined;
     const otherDev = !targetDev ? allDevs[0] : undefined; // single-slot ⇒ at most one
@@ -182,8 +185,8 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
         title: 'Stop Dev Server',
       };
       items.push(stopDev);
-    } else if (devCommand !== null) {
-      // No dev anywhere AND a devCommand is configured — Start row.
+    } else if (hasRunnableDevCommand(worktreeConfig)) {
+      // No dev anywhere AND a runnable devCommand is configured — Start row.
       const startDev = new vscode.TreeItem('Start Dev Server');
       startDev.iconPath = new vscode.ThemeIcon('play');
       startDev.tooltip = devTarget
@@ -196,7 +199,7 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
       };
       items.push(startDev);
     }
-    // else: no dev running and no devCommand → no dev-server row at all.
+    // else: no dev running and no runnable devCommand → no dev-server row at all.
 
     // Open Dev URL rows: one per entry in `worktree.devUrls`. Visible
     // independent of dev-PTY
