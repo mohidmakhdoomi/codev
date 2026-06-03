@@ -12,7 +12,7 @@ import { MOBILE_BREAKPOINT } from '../lib/constants.js';
 import { uploadPasteImage } from '../lib/api.js';
 import { ScrollController } from '../lib/scrollController.js';
 import { EscapeBuffer } from '../lib/escapeBuffer.js';
-import { BackoffController, classifyUpgradeError } from '@cluesmith/codev-core/reconnect-policy';
+import { BackoffController } from '@cluesmith/codev-core/reconnect-policy';
 
 /**
  * Floating controls overlay for terminal windows — refresh (re-fit + resize)
@@ -522,16 +522,15 @@ export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra }: Termi
         }
       };
 
-      ws.onclose = (event) => {
+      ws.onclose = () => {
         if (rc.disposed) return;
 
-        // Session-unknown fast-path (#961): a 4xx-class close code means the
-        // session is gone — give up immediately rather than blind-retrying.
-        // Browsers see 1006 (transient) for Tower's upgrade-stage 404 today, so
-        // this is behavior-neutral until Tower emits a browser-visible close
-        // code; the seam is wired now so adoption is then a no-op.
-        const permanent = classifyUpgradeError({ code: event.code }) === 'permanent';
-        if (permanent || backoff.recordFailure() === 'give-up') {
+        // The web terminal stays on blind retry for stale sessions: Tower 404s
+        // an unknown session at the HTTP-upgrade stage, which a browser only
+        // sees as close code 1006 (indistinguishable from a transport blip).
+        // The session-unknown fast-path the VSCode terminal has needs a
+        // browser-visible Tower close code first — tracked in #971.
+        if (backoff.recordFailure() === 'give-up') {
           setConnStatus('disconnected');
           return;
         }
