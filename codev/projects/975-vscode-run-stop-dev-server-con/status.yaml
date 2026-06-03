@@ -1,7 +1,7 @@
 id: '975'
 title: vscode-run-stop-dev-server-con
 protocol: pir
-phase: review
+phase: verified
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -21,7 +21,7 @@ iteration: 1
 build_complete: true
 history: []
 started_at: '2026-06-03T00:52:06.771Z'
-updated_at: '2026-06-03T02:06:35.320Z'
+updated_at: '2026-06-03T02:06:40.879Z'
 pr_history:
   - phase: review
     pr_number: 978
