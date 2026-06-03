@@ -57,3 +57,13 @@ Build + type-check clean; 276 unit tests pass (incl. 2 new test files:
 has-runnable-dev-command + menu-when-clauses additions). Lint clean.
 
 Pushing and signaling dev-approval — reviewer verifies the running worktree.
+
+## Review phase (iteration 1)
+
+dev-approval approved (incl. a constructor-param-grouping tweak at the gate:
+moved connectionManager ahead of the transient workspaceState param).
+
+Wrote `codev/reviews/975-vscode-run-stop-dev-server-con.md`. No arch.md /
+lessons-learned.md changes (UI-gating bug within existing TreeView+when-clause
+pattern; the one transferable note lives in code comments + the review). Opening
+PR, recording with porch, then porch's single-pass 3-way consult runs.
