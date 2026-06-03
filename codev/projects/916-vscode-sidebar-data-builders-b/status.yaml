@@ -1,0 +1,30 @@
+id: '916'
+title: vscode-sidebar-data-builders-b
+protocol: pir
+phase: verified
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: approved
+    requested_at: '2026-06-02T23:00:15.468Z'
+    approved_at: '2026-06-03T00:43:58.309Z'
+  dev-approval:
+    status: approved
+    requested_at: '2026-06-03T00:48:20.178Z'
+    approved_at: '2026-06-03T00:50:34.741Z'
+  pr:
+    status: approved
+    requested_at: '2026-06-03T00:59:45.383Z'
+    approved_at: '2026-06-03T01:02:12.576Z'
+iteration: 1
+build_complete: true
+history: []
+started_at: '2026-06-02T22:53:54.850Z'
+updated_at: '2026-06-03T01:02:21.750Z'
+pr_history:
+  - phase: review
+    pr_number: 976
+    branch: builder/pir-916
+    created_at: '2026-06-03T00:52:41.164Z'
+pr_ready_for_human: false
