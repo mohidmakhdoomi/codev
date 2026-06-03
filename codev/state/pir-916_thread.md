@@ -51,3 +51,21 @@ Rebased onto origin/main (was 79 behind). Re-verified plan accuracy against upda
   semantics identical. `setState('reconnecting')` now `:177`, SSE-lost `:235`.
 - `backlog.ts`: only an `areaName`→`groupName` param rename; null guard untouched.
 Plan substantively unchanged; updated only the drifted evidence line-numbers. Force-pushed rebased branch.
+
+## Implement phase (2026-06-03)
+plan-approval gate approved. Implemented the fix:
+- `overview-data.ts` `refresh()`: transient reads no longer clobber last-known-good. Not-connected /
+  no-client → early return (was `this.data = null; fire()`). Failed fetch (`getOverview()` null) →
+  early return (was committing null). Only a successful fetch commits + fires. `latestSeq` last-write-
+  wins guard preserved.
+- `overview-data.ts` constructor: added `onStateChange` subscription → `refresh()` on `'connected'` so
+  the cache re-syncs promptly on reconnect (heartbeats are filtered, so SSE alone could leave it stale).
+  Both subscriptions stored in `this.subscriptions[]` and disposed in `dispose()`.
+- New `__tests__/overview-cache.test.ts` (7 tests): retains data on not-connected / no-client / failed
+  fetch; commits valid-empty; starts+stays null on not-connected initial; freshens on reconnect; no
+  refresh on non-connected transitions.
+
+Worktree had no node_modules — ran `pnpm install` + built `@cluesmith/codev-types`+`-core` (vitest can't
+resolve the types package otherwise; 6 unrelated test files fail to load without it — env, not my change).
+After build: check-types ✓, lint ✓, vitest 21 files / 268 passed.
+Pushed → awaiting `dev-approval` gate.
