@@ -1,0 +1,18 @@
+id: '921'
+title: vscode-codev-dev-surface-botto
+protocol: pir
+phase: plan
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: pending
+  dev-approval:
+    status: pending
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-06-03T21:40:33.254Z'
+updated_at: '2026-06-03T21:40:33.255Z'
