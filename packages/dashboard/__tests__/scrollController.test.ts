@@ -336,7 +336,7 @@ describe('ScrollController', () => {
       expect(ctrl.state.wasAtBottom).toBe(true);
     });
 
-    it('warns on unexpected scroll-to-top but does not auto-correct (Issue #630)', () => {
+    it('accepts scroll-to-top without auto-correcting or warning (Issue #630)', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const { ctrl, term } = createController();
       ctrl.enterInteractive();
@@ -346,21 +346,23 @@ describe('ScrollController', () => {
       term.buffer.active.viewportY = 200;
       term._triggerScroll();
 
-      // Unexpected scroll to top (viewportY=0 with scrollback)
+      // Scroll to top (viewportY=0 with scrollback)
       term.buffer.active.viewportY = 0;
       term._triggerScroll();
 
-      // Should warn but NOT auto-correct — viewportY=0 is also the normal
-      // state when a user intentionally scrolls to the top of history.
-      // Root causes are prevented upstream by EscapeBuffer and WebGL handler.
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('unexpected scroll-to-top'),
-        expect.any(String),
-      );
-      // State IS updated (no correction, user may be at top intentionally)
-      expect(ctrl.state.viewportY).toBe(0);
+      // viewportY=0 is also the normal state when a user intentionally scrolls
+      // to the top of history, so handleScroll neither auto-corrects nor warns.
+      // The scroll-to-top *root causes* (ESC[3J clear-scrollback, WebGL context
+      // loss, split escape sequences) are prevented upstream in Terminal.tsx
+      // (eraseInDisplay case-3 interception, the context-loss handler, and
+      // EscapeBuffer) — see v3.0.0-rc.6. The diagnostic/correction block that
+      // once lived in handleScroll was removed once those causes were fixed at
+      // the source, so no warning is emitted here anymore.
       expect(term.scrollToLine).not.toHaveBeenCalled();
       expect(term.scrollToBottom).not.toHaveBeenCalled();
+      // State IS updated (no correction, user may be at top intentionally)
+      expect(ctrl.state.viewportY).toBe(0);
+      expect(warnSpy).not.toHaveBeenCalled();
       warnSpy.mockRestore();
     });
   });
