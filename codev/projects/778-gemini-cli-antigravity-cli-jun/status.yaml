@@ -5,11 +5,11 @@ phase: implement
 plan_phases:
   - id: agy_backend
     title: 'Phase 1: agy backend dispatch (OAuth, agentic file-reading, non-blocking skip)'
-    status: in_progress
+    status: complete
   - id: docs_skeleton_e2e
     title: 'Phase 2: Doctor + docs + skeleton consistency + e2e verification'
-    status: pending
-current_plan_phase: agy_backend
+    status: in_progress
+current_plan_phase: docs_skeleton_e2e
 gates:
   spec-approval:
     status: approved
@@ -23,8 +23,8 @@ gates:
     status: pending
   verify-approval:
     status: pending
-iteration: 3
-build_complete: true
+iteration: 1
+build_complete: false
 history:
   - iteration: 1
     plan_phase: agy_backend
@@ -59,4 +59,4 @@ history:
         file: >-
           /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-agy_backend-iter2-claude.txt
 started_at: '2026-06-02T01:16:31.004Z'
-updated_at: '2026-06-04T17:32:15.526Z'
+updated_at: '2026-06-04T17:32:31.227Z'
