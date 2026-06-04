@@ -154,6 +154,19 @@ Configure API keys:
 - Codex: `OPENAI_API_KEY`
 - Gemini: `GOOGLE_API_KEY` or `GEMINI_API_KEY`
 
+### Claude auth: subscription vs. metered API
+
+`consult -m claude` runs on the Claude Agent SDK. When `CLAUDE_CODE_OAUTH_TOKEN`
+(a Claude subscription/OAuth token) is present, consult strips `ANTHROPIC_API_KEY`
+and `ANTHROPIC_AUTH_TOKEN` from the SDK subprocess env so the consultation
+authenticates against the **subscription** rather than the **metered Opus API**.
+The Agent SDK otherwise prioritizes `ANTHROPIC_API_KEY`, which silently routes
+CMAP/review traffic to the metered API (issue #985). When no OAuth token is set,
+the API key is used as before so CI / key-only environments keep working.
+
+> **Caveat:** dedicated Agent-SDK subscription credit starts **2026-06-15**.
+> Before that date, subscription auth draws from the interactive Max quota.
+
 ## The Consultant Role
 
 The consultant role (`codev/roles/consultant.md`) defines behavior:

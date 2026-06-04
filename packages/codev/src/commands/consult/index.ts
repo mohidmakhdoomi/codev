@@ -478,6 +478,40 @@ export async function runCodexConsultation(
 }
 
 /**
+ * Build the env passed to the Claude Agent SDK subprocess for a consultation.
+ *
+ * Copies the given environment, but when a Claude subscription/OAuth token
+ * (`CLAUDE_CODE_OAUTH_TOKEN`) is present, strips `ANTHROPIC_API_KEY` and
+ * `ANTHROPIC_AUTH_TOKEN` from the *copy* (never the global `process.env`).
+ * The Agent SDK prioritizes the API key over the OAuth token, so leaving the
+ * key in would silently route CMAP/review traffic to the metered Opus API
+ * instead of the Claude subscription (issue #985).
+ *
+ * When no OAuth token is set, the API key is preserved so CI / key-only
+ * environments continue to authenticate.
+ *
+ * The deletion is scoped to this subprocess env only — other callers that need
+ * the API key (persona, dev:local) are unaffected.
+ */
+export function buildClaudeConsultEnv(
+  processEnv: NodeJS.ProcessEnv,
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(processEnv)) {
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+
+  if (env.CLAUDE_CODE_OAUTH_TOKEN) {
+    delete env.ANTHROPIC_API_KEY;
+    delete env.ANTHROPIC_AUTH_TOKEN;
+  }
+
+  return env;
+}
+
+/**
  * Run Claude consultation via Agent SDK.
  * Uses the SDK's query() function instead of CLI subprocess.
  * This avoids the CLAUDECODE nesting guard and enables tool use during reviews.
@@ -501,12 +535,7 @@ async function runClaudeConsultation(
   const savedClaudeCode = process.env.CLAUDECODE;
   delete process.env.CLAUDECODE;
 
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) {
-      env[key] = value;
-    }
-  }
+  const env = buildClaudeConsultEnv(process.env);
 
   try {
     const session = claudeQuery({
