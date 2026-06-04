@@ -130,7 +130,7 @@ consult -m hermes --protocol spir --type spec
 
 | Model | Typical Time | Approach |
 |-------|--------------|----------|
-| Gemini | ~120-150s | File access via --yolo, pure text output |
+| Gemini | ~120-180s | Antigravity CLI (`agy`); agentic file access via `--sandbox`, plain text output |
 | Codex | ~200-250s | Shell command exploration, read-only sandbox |
 | Claude | ~60-120s | Agent SDK with Read/Glob/Grep tools |
 
