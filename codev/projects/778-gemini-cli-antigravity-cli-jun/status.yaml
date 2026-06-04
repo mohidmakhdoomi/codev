@@ -23,8 +23,24 @@ gates:
     status: pending
   verify-approval:
     status: pending
-iteration: 1
-build_complete: true
-history: []
+iteration: 2
+build_complete: false
+history:
+  - iteration: 1
+    plan_phase: agy_backend
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: COMMENT
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-agy_backend-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-agy_backend-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-agy_backend-iter1-claude.txt
 started_at: '2026-06-02T01:16:31.004Z'
-updated_at: '2026-06-04T03:57:42.268Z'
+updated_at: '2026-06-04T04:13:46.499Z'
