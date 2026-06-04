@@ -51,7 +51,20 @@ The governing principle (from the issue): **wisdom only changes behavior if it l
 - Role files (`roles/builder.md`, `roles/architect.md`) never reference it.
 - `CLAUDE.md` / `AGENTS.md` mention it only as a MAINTAIN *target* and a directory-map entry — there is no "consult before designing" instruction.
 
-**Scale & shape of the change (verified):** the file/term is referenced across **both** the `codev/` instance tree **and** the `codev-skeleton/` distribution tree (mirrored protocol copies for spir/aspir/pir/maintain, the skill in two places, `CLAUDE.md`, `AGENTS.md`, `templates.ts`), plus many **historical** artifacts that must NOT be edited (`codev/maintain/*.md` run logs, `codev/plans/*`, `codev/projects/*`, `projectlist-archive.md`, `cmap-value-analysis-*.md`, prior-project rebuttals). `templates.ts` lists `resources/lessons-learned.md` as a protected `USER_DATA` path (preserved across `codev update`). This is a protocol-removal-scale edit (~dozens of files across two mirrored trees), with the well-known dual-directory footgun.
+**Scale & shape of the change (verified):** the file/term is referenced across **both** the `codev/` instance tree **and** the `codev-skeleton/` distribution tree (mirrored protocol copies for spir/aspir/pir/maintain, the skill in two places, `CLAUDE.md`, `AGENTS.md`, `templates.ts`), plus many **historical** artifacts that must NOT be edited (`codev/maintain/*.md` run logs, `codev/plans/*`, `codev/projects/*`, `projectlist-archive.md`, `cmap-value-analysis-*.md`, prior-project rebuttals). This is a protocol-removal-scale edit (~dozens of files across two mirrored trees), with the well-known dual-directory footgun.
+
+**Physical file copies of `lessons-learned.md` (verified — there are four, not two):**
+1. `codev/resources/lessons-learned.md` — the live instance archive.
+2. `codev-skeleton/templates/lessons-learned.md` — the distribution template seeded into new projects.
+3. `codev/templates/lessons-learned.md` — the instance's template copy.
+4. `codev/protocols/maintain/templates/lessons-learned.md` — a MAINTAIN-protocol template copy.
+All four must be retired; the replacement digest template must exist wherever a starter is needed (at least the two template trees that scaffold reads).
+
+**Scaffold / install / update path (verified):**
+- `packages/codev/src/lib/scaffold.ts` copies a `templates = ['lessons-learned.md', 'arch.md', 'cheatsheet.md', 'lifecycle.md']` list into a new project's `resources/`. New adopters get `lessons-learned.md` from here.
+- `packages/codev/src/__tests__/scaffold.test.ts` asserts `lessons-learned.md` is copied into `codev/resources/` (and `templates.test.ts` references it). These tests will fail / must be updated when the copy list changes.
+- `packages/codev/src/lib/templates.ts` `USER_DATA_PATTERNS` protects `resources/lessons-learned.md` from being overwritten/updated by `codev update`.
+- Framework files (protocols, prompts, resources) resolve through Codev's **four-tier fallback** (`.codev/` override → `codev/` project copy → runtime cache → installed-package skeleton). Any new injection of the digest must resolve through this same chain, so an existing repo that upgrades the package but has not yet checked in `codev/resources/design-heuristics.md` still gets the skeleton's copy instead of failing.
 
 ## Desired State
 
@@ -78,8 +91,11 @@ The net effect: the framework stops maintaining an unread archive that *looks* l
 - **Business Owners**: M Waleed Kadous (architect / decision authority).
 
 ## Success Criteria
-- [ ] `codev/resources/lessons-learned.md` and `codev-skeleton/templates/lessons-learned.md` are **deleted**.
-- [ ] A bounded `design-heuristics.md` exists in both the `codev/` instance and the `codev-skeleton/` distribution, with an explicit stated cap (entry count and/or "fits one screen") and a documented displacement discipline.
+- [ ] **All four** physical copies of `lessons-learned.md` are **deleted**: `codev/resources/`, `codev-skeleton/templates/`, `codev/templates/`, and `codev/protocols/maintain/templates/`.
+- [ ] A bounded `design-heuristics.md` exists as the live instance file (`codev/resources/`) and as a starter template in the trees scaffold reads from (`codev-skeleton/templates/`, and `codev/templates/` to keep the instance mirror coherent), with an explicit stated cap (entry count and/or "fits one screen") and a documented displacement discipline.
+- [ ] **Scaffold copies the new file**: `scaffold.ts`'s template copy list replaces `lessons-learned.md` with `design-heuristics.md`, so new adopters receive the digest; `scaffold.test.ts` / `templates.test.ts` are updated to assert the new behavior and no longer assert the old file.
+- [ ] **Injection resolves via the four-tier fallback chain**: the digest the design prompt injects is resolved through the standard resolver (`.codev/` → `codev/` → cache → skeleton), so a repo that upgrades the package before checking in its own `design-heuristics.md` still gets the skeleton copy rather than an empty/failed injection.
+- [ ] **`codev update` upgrade path is coherent for existing adopters**: `USER_DATA_PATTERNS` no longer protects the deleted file and protects `resources/design-heuristics.md` instead; the update path does not crash on a repo that still has an orphaned `lessons-learned.md`, and (at minimum) the plan decides whether to emit a migration hint ("`lessons-learned.md` is retired; see `design-heuristics.md`") rather than silently leaving an inert orphan.
 - [ ] The digest is **seeded** by a one-time migration: the durable design-time subset of the old archive is distilled into the digest; general behavioral rules are migrated to CLAUDE/AGENTS/role files; everything else is intentionally dropped (preserved by git history + reviews).
 - [ ] The **specify** and **plan** phase prompts inject the digest content such that it is present in the assembled phase prompt **verbatim and unconditionally** (not as a pointer to read a file). Verifiable by assembling a phase prompt and confirming the heuristics text appears.
 - [ ] The **review** prompts (spir/aspir/pir + `porch/prompts/review.md`) are changed from "append to `lessons-learned.md`" to "**route the lesson to its consumed surface**," with a renamed review section (e.g. `## Wisdom Routing`) replacing `## Lessons Learned Updates`.
@@ -87,7 +103,8 @@ The net effect: the framework stops maintaining an unread archive that *looks* l
 - [ ] **MAINTAIN** protocol + `maintain.md` prompt + the `update-arch-docs` skill (both tree copies) no longer generate/prune a lessons archive; they instead audit the bounded digest and the routed surfaces. The skill's frontmatter `description` and registration text are updated accordingly.
 - [ ] `templates.ts` `USER_DATA` list no longer protects the deleted file and protects `resources/design-heuristics.md` instead.
 - [ ] `CLAUDE.md` and `AGENTS.md` are updated (directory map, MAINTAIN bullet) and remain byte-identical to each other; they describe the new consumption model.
-- [ ] A full-repo `rg` for `lessons-learned` / `lessons_learned` / `Lessons Learned` returns **zero hits in live framework files** (protocols, prompts, skills, CLAUDE/AGENTS, templates, roles, source). Hits remaining only in **historical** artifacts (`codev/maintain/*`, `codev/plans/*`, `codev/projects/*`, archives, prior reviews) are acceptable and must be left untouched.
+- [ ] Every **live** framework surface that references the term is explicitly updated — not left to a grep criterion alone. At minimum: the spir/aspir/pir/maintain **protocol docs** (`protocol.md`), the **review templates** (`protocols/*/templates/review.md`), the **MAINTAIN templates** (`maintenance-run.md` and the retired lessons template), the **PIR builder-prompt and implement prompt**, the `porch/prompts/review.md`, `arch.md`'s sibling-doc pointer, and the `update-arch-docs` skill (both trees) — each audited in both `codev/` and `codev-skeleton/`.
+- [ ] A full-repo `rg` for `lessons-learned` / `lessons_learned` / `Lessons Learned` then returns **zero hits in live framework files** (protocols, prompts, skills, CLAUDE/AGENTS, templates, roles, source). Hits remaining only in **historical** artifacts (`codev/maintain/*`, `codev/plans/*`, `codev/projects/*`, archives, prior reviews, the release protocol's historical references) are acceptable and must be left untouched.
 - [ ] Changes are applied in **both** the `codev/` and `codev-skeleton/` mirrored trees wherever a file exists in both.
 - [ ] All existing tests pass; any test asserting the old review section / old file path is updated.
 
@@ -181,7 +198,7 @@ This is a methodology/mechanism change; "tests" are largely structural assertion
 3. **Suite green**: existing unit/e2e tests pass; tests referencing the old section/path are updated.
 
 ## Dependencies
-- **Internal**: porch prompt assembly (`buildPhasePrompt`), the spir/aspir/pir/maintain protocol definitions + prompts (both trees), the `update-arch-docs` skill (both trees), `templates.ts`, `CLAUDE.md`/`AGENTS.md`, role files.
+- **Internal**: porch prompt assembly (`buildPhasePrompt` in `packages/codev/src/commands/porch/prompts.ts`); the framework-file four-tier resolver; the spir/aspir/pir/maintain protocol definitions + prompts + templates (both trees); `porch/prompts/review.md`; the `update-arch-docs` skill (both trees); `packages/codev/src/lib/scaffold.ts` and its tests (`scaffold.test.ts`, `templates.test.ts`); `packages/codev/src/lib/templates.ts` (`USER_DATA_PATTERNS`); `CLAUDE.md`/`AGENTS.md`; role files; `arch.md` (sibling-doc pointer only).
 - **External**: none.
 - **Libraries/Frameworks**: none new.
 
@@ -196,10 +213,17 @@ This is a methodology/mechanism change; "tests" are largely structural assertion
 | Downstream adopters left with a dangling skeleton | Low | Med | Skeleton ships a seeded/example digest + routing-based review prompt, leaving a coherent model. |
 
 ## Expert Consultation
-<!-- Populated after the multi-agent consultation checkpoint. -->
-**Date**: TBD
+**Date**: 2026-06-04
 **Models Consulted**: Gemini, Codex, Claude (SPIR default)
-**Sections Updated**: TBD
+**Verdicts (iter 1)**: Gemini APPROVE (no issues) · Claude APPROVE (5 minor plan-level notes) · Codex REQUEST_CHANGES (4 concrete completeness gaps)
+
+**Sections Updated in response:**
+- **Current State**: added the verified inventory of **four** physical `lessons-learned.md` copies (resources, skeleton/templates, `codev/templates/`, maintain template); added the **scaffold/install/update** path (`scaffold.ts` copy list, `scaffold.test.ts`/`templates.test.ts`, `USER_DATA_PATTERNS`, four-tier resolver). *(Codex #1–#2, Claude #1–#2)*
+- **Success Criteria**: now delete all four copies; require scaffold + tests to copy the new file; require digest injection to resolve via the four-tier fallback chain so upgraded-but-not-yet-seeded repos still work; require a coherent `codev update` path with an orphaned-file migration-hint decision. *(Codex #2–#3, Claude #4)*
+- **Success Criteria (sweep)**: made the live-surface list explicit (protocol docs, review templates, MAINTAIN templates, PIR prompts, `porch/prompts/review.md`, arch.md pointer, skill) rather than relying on the grep criterion alone. *(Codex #4)*
+- **Dependencies**: expanded to name scaffold, its tests, the resolver, and `templates.ts`.
+
+**Considered and not actioned:** Claude #3 (an `examples/` reference) — verified there is **no** `lessons-learned` reference under `examples/`; the rg sweep covers it regardless. Claude #5 (skeleton starter content: Codev-specific vs generic heuristics) — left to the plan as flagged.
 
 ## Approval
 - [ ] Architect Review (human gate: spec-approval)

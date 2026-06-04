@@ -28,4 +28,14 @@ Mapped every framework touchpoint of `lessons-learned.md`:
 
 Principle: wisdom only changes behavior if it lives in **always-on context**, an **executed protocol step**, or an **enforced check**.
 
-### Next: asking architect 3 clarifying questions (archive disposition / injection mechanism / enforcement strength) before drafting.
+### Architect decisions (clarifying questions)
+- Archive: **Retire entirely, route everything** (delete the file).
+- Injection: **Bounded always-injected design-heuristics digest** at spec/plan time. No retrieval engine.
+- Enforcement: **Executed step, no hard consumption check.**
+
+### Spec drafted + committed (iter 1), then CMAP consultation
+- Gemini APPROVE (no issues), Claude APPROVE (5 minor plan-level notes), Codex REQUEST_CHANGES (4 concrete gaps).
+- Codex/Claude both correct: there are **4** physical `lessons-learned.md` copies (resources, skeleton/templates, codev/templates, maintain template), plus `scaffold.ts` copies it into new projects and tests assert it, plus injection must use the 4-tier resolver, plus codev-update orphan handling.
+- Incorporated all into spec (Current State inventory, Success Criteria, Dependencies, Consultation Log). examples/ ref = non-issue (verified zero hits).
+
+### Next: commit "spec with multi-agent review", porch next → likely spec-approval gate (HUMAN). Will NOT self-approve.
