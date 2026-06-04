@@ -1,7 +1,7 @@
 id: bugfix-985
 title: consult-m-claude-bills-metered
 protocol: bugfix
-phase: fix
+phase: pr
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -11,4 +11,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-04T04:10:42.581Z'
-updated_at: '2026-06-04T04:14:34.836Z'
+updated_at: '2026-06-04T04:17:40.304Z'
