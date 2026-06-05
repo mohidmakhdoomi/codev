@@ -4,6 +4,8 @@ import type { ConnectionManager } from './connection-manager.js';
 import type { OverviewCache } from './views/overview-data.js';
 import { encodeWorkspacePath } from '@cluesmith/codev-core/workspace';
 import { resolveAgentName } from '@cluesmith/codev-core/agent-names';
+import { resolveSuccessorTerminalId } from '@cluesmith/codev-core/session-successor';
+import { sessionRefFromMapKey } from './session-ref.js';
 import type { TerminalType } from '@cluesmith/codev-core/tower-client';
 
 const MAX_TERMINALS = 10;
@@ -345,7 +347,17 @@ export class TerminalManager {
     }
 
     const authKey = await this.getAuthKey();
-    const pty = new CodevPseudoterminal(wsUrl, authKey, this.outputChannel);
+    // Stable map key (computed up front so the adapter's session-gone callback
+    // can capture it). The map entry itself is registered after createTerminal.
+    const mapKey = key ?? type;
+    const pty = new CodevPseudoterminal(
+      wsUrl,
+      authKey,
+      this.outputChannel,
+      // #991: on a permanent close, re-resolve the successor id and re-point
+      // this terminal. No-op for non-persistent kinds (shell/dev).
+      () => { void this.recoverSuccessor(mapKey); },
+    );
     const position = vscode.workspace.getConfiguration('codev').get<string>('terminalPosition', 'editor');
 
     // Dev servers are long-running background logs — always the bottom panel,
@@ -363,7 +375,6 @@ export class TerminalManager {
 
     const terminal = vscode.window.createTerminal({ name, pty, location, iconPath: this.iconPath });
 
-    const mapKey = key ?? type;
     this.terminals.set(mapKey, { terminal, pty, type, id: terminalId });
 
     // Clean up when terminal is closed by user. The map-delete is guarded
@@ -390,12 +401,60 @@ export class TerminalManager {
    * a role out of the message text).
    */
   reconnectByTerminal(terminal: vscode.Terminal): void {
-    for (const managed of this.terminals.values()) {
+    for (const [mapKey, managed] of this.terminals.entries()) {
       if (managed.terminal === terminal) {
-        managed.pty.reconnect();
+        // #991: re-resolve the successor first (handles a post-restart new id);
+        // fall back to an in-place retry of the same url when there's no
+        // successor — a genuine transient give-up after the backoff budget.
+        void this.recoverSuccessor(mapKey).then((recovered) => {
+          if (!recovered) { managed.pty.reconnect(); }
+        });
         return;
       }
     }
+  }
+
+  /**
+   * Re-resolve a persistent terminal's successor session and re-point its
+   * socket in place (#991). After a Tower restart the same logical session —
+   * a builder (keyed by id) or architect (keyed by name) — comes back under a
+   * new terminal id; the old id is dead. We fetch fresh workspace state, map
+   * the terminal's stable identity to the current `terminalId`, and reconnect
+   * the existing tab's adapter at the new url (no tab churn, no replay loss).
+   *
+   * Returns `true` when a *different* successor id was found and reconnected;
+   * `false` for non-persistent kinds (shell/dev), an unreachable Tower, or when
+   * the id is unchanged/gone — letting callers fall back.
+   */
+  private async recoverSuccessor(mapKey: string): Promise<boolean> {
+    const entry = this.terminals.get(mapKey);
+    if (!entry) { return false; }
+    const ref = sessionRefFromMapKey(mapKey);
+    if (!ref) { return false; }  // shell/dev — not persistent, no successor
+
+    const client = this.connectionManager.getClient();
+    const workspacePath = this.connectionManager.getWorkspacePath();
+    if (!client || !workspacePath) { return false; }
+
+    let successorId: string | null = null;
+    try {
+      const state = await client.getWorkspaceState(workspacePath);
+      if (!state) { return false; }
+      successorId = resolveSuccessorTerminalId(state, ref);
+    } catch (err) {
+      this.log('ERROR', `recoverSuccessor(${mapKey}) failed: ${(err as Error).message}`);
+      return false;
+    }
+    if (!successorId || successorId === entry.id) { return false; }
+
+    const wsUrl = this.buildWsUrl(successorId);
+    if (!wsUrl) { return false; }
+
+    // Re-point the existing tab's socket at the successor session in place.
+    this.terminals.set(mapKey, { ...entry, id: successorId });
+    entry.pty.reconnect(wsUrl);
+    this.log('INFO', `Recovered ${mapKey} onto successor session ${successorId}`);
+    return true;
   }
 
   private buildWsUrl(terminalId: string): string | null {

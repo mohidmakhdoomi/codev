@@ -22,6 +22,9 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+// `sessionRefFromMapKey` lives in its own vscode-free module so it imports
+// cleanly here without the adapter's transport/types chain (#991).
+import { sessionRefFromMapKey } from '../session-ref.js';
 
 const TM_SRC = readFileSync(
   resolve(__dirname, '../terminal-manager.ts'),
@@ -63,5 +66,53 @@ describe('Spec 786 Phase 6 — TerminalManager per-name keying', () => {
     // UX detail: a sibling's VSCode terminal title includes its name so the
     // user can tell `main` from `ob-refine` in the terminal-list dropdown.
     expect(TM_SRC).toMatch(/Codev: Architect \(\$\{architectName\}\)/);
+  });
+});
+
+describe('#991 — successor-session recovery wiring', () => {
+  describe('sessionRefFromMapKey', () => {
+    it('maps a builder map key to a builder ref (id stripped of the prefix)', () => {
+      expect(sessionRefFromMapKey('builder-spir-153')).toEqual({ kind: 'builder', id: 'spir-153' });
+    });
+
+    it('maps an architect map key to an architect ref (name stripped of the prefix)', () => {
+      expect(sessionRefFromMapKey('architect:main')).toEqual({ kind: 'architect', name: 'main' });
+      expect(sessionRefFromMapKey('architect:ob-refine')).toEqual({ kind: 'architect', name: 'ob-refine' });
+    });
+
+    it('returns null for non-persistent kinds (shell/dev) — no successor to resolve', () => {
+      // dev keys start with `dev-`, not `builder-`, so they don't misclassify.
+      expect(sessionRefFromMapKey('shell-2')).toBeNull();
+      expect(sessionRefFromMapKey('dev-spir-153')).toBeNull();
+      expect(sessionRefFromMapKey('dev-builder-spir-1')).toBeNull();
+    });
+  });
+
+  it('recoverSuccessor resolves the successor via the shared core helper', () => {
+    // Guards the cross-cutting contract: the manager maps stable identity →
+    // current terminalId through the same core helper the dashboard's rule
+    // mirrors, not a bespoke inline lookup.
+    expect(TM_SRC).toMatch(/resolveSuccessorTerminalId\(state, ref\)/);
+    expect(TM_SRC).toMatch(/from '@cluesmith\/codev-core\/session-successor'/);
+  });
+
+  it('recoverSuccessor re-points the existing tab in place (no tab churn) only on a NEW id', () => {
+    // In-place reconnect onto the successor url; the id-unchanged guard avoids
+    // a needless reconnect when state still carries the same id.
+    expect(TM_SRC).toMatch(/successorId === entry\.id.*return false/s);
+    expect(TM_SRC).toMatch(/entry\.pty\.reconnect\(wsUrl\)/);
+  });
+
+  it('reconnectByTerminal re-resolves the successor first, falling back to a same-url retry', () => {
+    // The manual "Click here to reconnect" affordance must re-resolve (so it
+    // stops retrying a dead id post-restart) and only retry the same url when
+    // there is genuinely no successor (transient give-up).
+    const body = TM_SRC.split('reconnectByTerminal')[1] ?? '';
+    expect(body).toMatch(/recoverSuccessor\(mapKey\)/);
+    expect(body).toMatch(/if \(!recovered\) \{ managed\.pty\.reconnect\(\); \}/);
+  });
+
+  it('the adapter is constructed with an onSessionGone recovery hook', () => {
+    expect(TM_SRC).toMatch(/void this\.recoverSuccessor\(mapKey\)/);
   });
 });
