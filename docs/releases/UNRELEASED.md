@@ -43,6 +43,18 @@ One transient retry is still expected when a session is killed mid-connection: t
 
 A follow-up (#991) tracks the next layer: a stale tab on a pre-restart terminal id can't self-recover because persistent sessions return under a new id after a Tower restart. The give-up signal is now correct; the auto-remount-onto-successor-id affordance is deferred.
 
+## Codev Dev surface: bottom-panel tab + status-bar chip (#921, PR #996)
+
+Two new complementary VSCode surfaces for the single `afx dev` PTY, so a reviewer can see at a glance whether a dev server is running, for which target, and stop or restart it fast without hunting through the terminal dropdown.
+
+The **`Codev: Dev` tab** (the first real view inside #812's bottom-panel container) shows a status header: target name, live-ticking uptime, and best-effort port when derivable from `worktree.devUrls` or `worktree.devCommand`. Title-bar actions for Stop, Restart, Switch Target, and Show / Hide the Codev sidebar. When no dev is running, a placeholder row; when one was running and stopped, a brief "Stopped..." epitaph row.
+
+An **always-visible status-bar chip** (`$(server-process) Dev: <target>`) appears in the bottom bar only while a dev is running, disappearing on stop. Click it to focus the Codev Dev tab. The chip is the at-a-glance signal that survives regardless of which surface you happen to be in.
+
+Both surfaces derive from the single `TerminalManager.onDidChangeDevTerminals` event, so they stay in lockstep automatically. The native `Codev: <name> (dev)` terminal stays as the actual output surface; the new tab and chip coexist with it as status indicators rather than replacing the output. No PTY re-plumbing.
+
+Two implementation details worth a conscious nod, captured as lessons-learned: VSCode's `StatusBarItem.backgroundColor` only honors `errorBackground` / `warningBackground`, not `prominentBackground`, so a "prominent but not alarming" cue uses the foreground (`prominentForeground`) instead. And `$(zap)` now reads as the AI / sparkle glyph in VSCode, so non-AI features want a literal glyph like `$(server-process)`.
+
 ## Polish
 
 - **Guarded commands always give feedback now** (#989, PR #995). Clicking a CLI-dependent command (Spawn Builder, Approve Gate, Send Message, and 12 others) while the Codev CLI is missing or outdated used to produce a modal toast on the first click of the session, then go completely silent on every subsequent click for the rest of the session. The first-click modal is unchanged (the `Run Setup` action still works); subsequent clicks now show a brief auto-dismissing status-bar message naming the state and pointing at `Codev: Recheck CLI` as the recovery path. Once a recheck confirms `ok`, the modal-first pattern restarts the next time the state breaks. Implementation factors the feedback dispatch into a reusable `showPreflightFeedback` helper, so #983's Tower-version-divergence work can surface its own state through the same channel without reinventing the suppression logic.

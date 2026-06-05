@@ -4,6 +4,7 @@
 
 ### What's new
 
+- **Codev Dev surface: bottom-panel tab + status-bar chip.** A new `Codev: Dev` tab in the bottom panel and an always-visible status-bar chip (`$(server-process) Dev: <target>`) make the running dev server visible at a glance. The tab shows target name, live-ticking uptime, and best-effort port; title-bar actions for Stop, Restart, Switch Target, and Show / Hide the Codev sidebar. The chip appears only while a dev is running and clicks through to the tab. The native `Codev: <name> (dev)` terminal stays as the output surface, with the tab and chip layered on top as status surfaces (no PTY re-plumbing).
 - **Codev tab in the bottom panel.** A new `Codev` tab joins the bottom panel (alongside Problems / Output / Terminal) as a scaffold for upcoming view migrations (Recently Closed, Team, Status). Opens once on first activation for discoverability, then stays out of the way. The activitybar Codev sidebar is unchanged; this is purely additive. Currently shows a single placeholder row that hides itself automatically once real panel-side views start landing.
 
 ### Bug fixes
