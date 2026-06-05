@@ -1,7 +1,7 @@
 id: '971'
 title: web-terminal-adopt-session-unk
 protocol: pir
-phase: implement
+phase: review
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -19,4 +19,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-03T21:40:26.244Z'
-updated_at: '2026-06-05T09:12:02.380Z'
+updated_at: '2026-06-05T09:12:11.811Z'
