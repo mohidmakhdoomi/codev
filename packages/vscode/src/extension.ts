@@ -383,7 +383,8 @@ export async function activate(context: vscode.ExtensionContext) {
 				devChipItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
 				devChipItem.command = 'codev.devServer.focus'; // VSCode's auto view-focus command
 			}
-			devChipItem.text = `$(zap) Dev: ${target}`;
+			// server-process (a running dev server), not zap — $(zap) reads as AI/sparkle in VSCode.
+			devChipItem.text = `$(server-process) Dev: ${target}`;
 			// StatusBarItem.backgroundColor only honors error/warning backgrounds
 			// (VSCode API constraint), so the "prominent, not alarming" look
 			// (#921 design call #4) is applied via the foreground instead.
