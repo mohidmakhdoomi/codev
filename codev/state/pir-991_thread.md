@@ -48,3 +48,12 @@ Rebased onto latest main (21 commits, all PIR #989 vscode-preflight; no overlap 
 **Environmental gotcha (NOT my diff)**: `packages/types/dist` was missing in the worktree → vitest couldn't resolve `@cluesmith/codev-types`, failing terminal-adapter.test.ts even at HEAD (verified via stash). Fixed by `pnpm --filter @cluesmith/codev-types build`. Worth noting in review Lessons Learned: worktree needs types built before vscode vitest runs.
 
 Pushing + porch done → dev-approval gate.
+
+## Merged main (at dev-approval gate)
+
+Merged origin/main (35 commits, dominated by PIR #921 — VSCode dev-server surface). True file overlap: `terminal-manager.ts` + its test.
+- `terminal-manager.ts` **auto-merged cleanly**: #921's `devStartedAt` uptime map + `getDevStartedAt` + the `wasTracked` generic-close refactor sit alongside my `mapKey` hoist + `onSessionGone` closure + `recoverSuccessor`. Single `mapKey` decl (my hoist) serves both my pty closure and #921's close handler.
+- `terminal-manager.test.ts` **conflicted** (both appended a `describe` at EOF) — resolved by keeping BOTH blocks (#991 recovery wiring + #921 dev-close).
+- **No behavior interaction**: `recoverSuccessor` is a no-op for `dev-`/`shell-` keys (sessionRefFromMapKey → null), so #921's dev-uptime path is untouched; `{...entry, id}` in-place reconnect preserves the ManagedTerminal shape (#921 added no fields to it).
+
+Post-merge all green: core 30, dashboard 322 (+1 pre-existing skip), vscode 327; check-types + lint clean. Still at dev-approval gate (did not re-run porch done — gate already pending).
