@@ -25,3 +25,7 @@ Build/test: check-types ✓, lint ✓, esbuild ✓, vitest 293/293 ✓.
 Note: initial unit run had 7 failures from unbuilt `@cluesmith/codev-types` (env, not my diff); built types+core, green after. Placeholder test needed a `vi.mock('vscode')` (TreeItem/ThemeIcon) since vitest runs in node env.
 
 Committed 23cdfef9, pushed. Awaiting dev-approval gate.
+
+## dev-approval feedback: first-run reveal (2026-06-05)
+
+Reviewer noted the panel tab lands last and hides in the `...` overflow. VS Code exposes no order/position field for viewsContainers and no reposition API, so position can't be set directly. User chose: auto-reveal once on first install. Implemented in extension.ts — globalState-guarded `workbench.view.extension.codevPanel` call (key `codev.panelRevealedOnce`), fires once per profile. This intentionally reverses the issue's "don't auto-open" criterion #2; flag in PR/review. Added source-grep test for the guard. Commit f7628e50.
