@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatUptime, extractDevPort } from '../views/dev-server-format.js';
+import { formatUptime, extractDevPort, formatTargetName } from '../views/dev-server-format.js';
 
 describe('formatUptime', () => {
   it('renders sub-minute durations as seconds', () => {
@@ -59,5 +59,17 @@ describe('extractDevPort', () => {
 
   it('rejects out-of-range ports', () => {
     expect(extractDevPort({ devCommand: 'run --port 99999' })).toBeNull();
+  });
+});
+
+describe('formatTargetName', () => {
+  it('passes through already-friendly ids', () => {
+    expect(formatTargetName('main')).toBe('main');
+    expect(formatTargetName('pir-809')).toBe('pir-809');
+  });
+
+  it('strips the canonical builder- role prefix', () => {
+    expect(formatTargetName('builder-pir-809')).toBe('pir-809');
+    expect(formatTargetName('builder-spir-42')).toBe('spir-42');
   });
 });

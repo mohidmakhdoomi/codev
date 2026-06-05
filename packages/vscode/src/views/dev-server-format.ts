@@ -23,6 +23,17 @@ export function formatUptime(ms: number): string {
   return `${seconds}s`;
 }
 
+/**
+ * Friendly display name for a dev target id shown in the chip and status header.
+ * The dev-slot id is normally already friendly (`main`, or a worktree basename
+ * like `pir-809`), but a canonical role id (`builder-pir-809`) can reach here;
+ * strip that prefix so the surface never shows `builder-…`. Anything else passes
+ * through unchanged.
+ */
+export function formatTargetName(builderId: string): string {
+  return builderId.startsWith('builder-') ? builderId.slice('builder-'.length) : builderId;
+}
+
 /** Minimal view of the worktree config this module reads — see ResolvedWorktreeConfig. */
 export interface DevPortSource {
   devCommand?: string | null;

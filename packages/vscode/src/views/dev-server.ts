@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type { ConnectionManager } from '../connection-manager.js';
 import type { TerminalManager } from '../terminal-manager.js';
 import { loadWorktreeConfig } from '../load-worktree-config.js';
-import { formatUptime, extractDevPort } from './dev-server-format.js';
+import { formatUptime, extractDevPort, formatTargetName } from './dev-server-format.js';
 
 /**
  * The "Codev Dev" panel tab (#921). A status surface for the single `afx dev`
@@ -49,7 +49,7 @@ export class DevServerTreeProvider implements vscode.TreeDataProvider<vscode.Tre
   getChildren(): vscode.TreeItem[] {
     if (this.running) {
       const rows = [
-        this.row(`Target: ${this.running.builderId}`, 'server'),
+        this.row(`Target: ${formatTargetName(this.running.builderId)}`, 'server'),
         this.running.startedAt === null
           ? this.row('Running', 'watch')
           : this.row(`Running for ${formatUptime(Date.now() - this.running.startedAt)}`, 'watch'),
@@ -61,7 +61,7 @@ export class DevServerTreeProvider implements vscode.TreeDataProvider<vscode.Tre
     }
     if (this.epitaph) {
       const ran = this.epitaph.ranMs === null ? '' : `, ran ${formatUptime(this.epitaph.ranMs)}`;
-      return [this.row(`Stopped. Last target ${this.epitaph.target}${ran}`, 'circle-slash')];
+      return [this.row(`Stopped. Last target ${formatTargetName(this.epitaph.target)}${ran}`, 'circle-slash')];
     }
     return [this.row('No dev running. Start via `afx dev <target>` or the Workspace view.', 'info')];
   }
