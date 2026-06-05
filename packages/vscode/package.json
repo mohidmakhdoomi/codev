@@ -199,6 +199,30 @@
         "title": "Codev: Stop Dev Server (this workspace)"
       },
       {
+        "command": "codev.devServer.stop",
+        "title": "Stop Dev Server",
+        "category": "Codev",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "codev.devServer.restart",
+        "title": "Restart Dev Server",
+        "category": "Codev",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "codev.devServer.switchTarget",
+        "title": "Switch Target",
+        "category": "Codev",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "codev.devServer.revealInWorkspace",
+        "title": "Reveal in Workspace View",
+        "category": "Codev",
+        "icon": "$(eye)"
+      },
+      {
         "command": "codev.openDevUrl",
         "title": "Codev: Open Dev URL"
       },
@@ -335,6 +359,22 @@
         },
         {
           "command": "codev.stopWorktreeDev",
+          "when": "false"
+        },
+        {
+          "command": "codev.devServer.stop",
+          "when": "codev.devServerRunning"
+        },
+        {
+          "command": "codev.devServer.restart",
+          "when": "codev.devServerRunning"
+        },
+        {
+          "command": "codev.devServer.switchTarget",
+          "when": "codev.hasDevCommand"
+        },
+        {
+          "command": "codev.devServer.revealInWorkspace",
           "when": "false"
         }
       ],
@@ -520,6 +560,26 @@
           "command": "codev.reconnect",
           "when": "view == codev.status",
           "group": "navigation"
+        },
+        {
+          "command": "codev.devServer.stop",
+          "when": "view == codev.devServer && codev.devServerRunning",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codev.devServer.restart",
+          "when": "view == codev.devServer && codev.devServerRunning",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codev.devServer.switchTarget",
+          "when": "view == codev.devServer",
+          "group": "navigation@3"
+        },
+        {
+          "command": "codev.devServer.revealInWorkspace",
+          "when": "view == codev.devServer",
+          "group": "navigation@4"
         }
       ],
       "comments/commentThread/context": [
@@ -617,7 +677,8 @@
         { "id": "codev.status", "name": "Status" }
       ],
       "codevPanel": [
-        { "id": "codev.placeholder", "name": "Codev", "when": "codev.panelContainerEmpty", "visibility": "collapsed" }
+        { "id": "codev.placeholder", "name": "Codev", "when": "codev.panelContainerEmpty", "visibility": "collapsed" },
+        { "id": "codev.devServer", "name": "Codev Dev" }
       ]
     },
     "configuration": {
