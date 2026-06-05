@@ -42,3 +42,15 @@ Plan written to `codev/plans/921-vscode-codev-dev-surface-botto.md`. Key design 
 - Implementation gated on #812 (codevPanel container). Files-to-change is the shovel-ready spec for the implement phase post-#812.
 
 Next: commit plan, porch done/next → plan-approval gate pending, notify architect to schedule #812, then hold.
+
+## #812 landed (2026-06-05) — plan updated to active
+
+Architect: hard prerequisite #812 merged (PR #990, c21a112). codevPanel container now on main.
+Verified on origin/main:
+- `viewsContainers.panel` has `codevPanel` (title "Codev").
+- `views.codevPanel` has scaffolding `codev.placeholder` gated by context key `codev.panelContainerEmpty` (seeded true in extension.ts:363).
+- Contract (panel-placeholder.ts): a real view registering in codevPanel must flip `codev.panelContainerEmpty` false so the signpost hides. Our `codev.devServer` is the first real tab → must set that key false on register.
+
+Updated plan: removed the "HELD" framing → status now "unblocked, ready to implement"; folded in the panelContainerEmpty integration contract (extension.ts must flip it false; added a contributes test + manual placeholder check); dropped em dashes per new writing guidance.
+
+Gate state: still `plan-approval` gate_pending. I cannot self-approve (strict mode). Plan is accurate and ready; waiting on the human to approve the gate. Implementation will merge origin/main first to get codevPanel, then proceed.
