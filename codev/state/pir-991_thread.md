@@ -49,6 +49,22 @@ Rebased onto latest main (21 commits, all PIR #989 vscode-preflight; no overlap 
 
 Pushing + porch done → dev-approval gate.
 
+## Live debugging at dev-approval → recovery trigger was wrong
+
+Reviewer tested via vsix and VSCode terminals still didn't reconnect on Tower restart (had to close+reopen / restart window; terminal pane dead, no input). Long trace:
+- Confirmed vsix DID contain the fix (minified; recovery strings present). Not a stale build.
+- Confirmed sessions survive a graceful `afx tower stop` (SIGTERM → gracefulShutdown keeps shellpers alive; reconcile re-registers under new id). Successor exists (close+reopen proves it).
+- Confirmed adapter never fires onDidClose, so the pane isn't retired — reconnect-in-place is viable.
+- **Root finding**: #991's original VSCode trigger relied on EACH adapter independently hitting a dead-id 404 to fire onSessionGone → recoverSuccessor. That per-adapter detection wasn't firing reliably. Meanwhile the extension ALREADY detects Tower coming back reliably via `connectionManager.onStateChange === 'connected'` ("Connected to Tower" in logs), and nothing was re-syncing terminals off that event.
+
+**Fix (committed 395c4dc5)**: added `TerminalManager.resyncAllTerminals()` (loops `recoverSuccessor` over every open terminal) and wired it to `connectionManager.onStateChange` in extension.ts — on reconnect (gated by `hasConnectedToTower` so the initial activation connect is skipped), re-point all terminals onto their successors. This is the reliable trigger; the per-adapter onSessionGone path is kept as redundant belt-and-suspenders. vscode: 332 tests, check-types + lint green.
+
+Also added (earlier in this debugging) decision-point logging in recoverSuccessor + a permanent-close marker in the adapter (commit 4fcd4a60) for diagnosability.
+
+Spun-off #997 (Tower reconcile-before-serving) remains the deterministic root-cause for the lookup *race*, but is NOT what reconnects the pane — the resync trigger is. #997 lets the client drop the bounded poll later.
+
+Pending reviewer re-test with a freshly-built vsix (reload window once, then restart Tower only): expect Codev output `Tower reconnected — re-syncing N terminal(s)` → `recoverSuccessor(...): poll 1/5 → successor=...` → `Recovered ... onto successor session ...`.
+
 ## Merged main (at dev-approval gate)
 
 Merged origin/main (35 commits, dominated by PIR #921 — VSCode dev-server surface). True file overlap: `terminal-manager.ts` + its test.
