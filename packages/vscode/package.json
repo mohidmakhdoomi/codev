@@ -597,6 +597,13 @@
           "title": "Codev",
           "icon": "icons/codev.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "codevPanel",
+          "title": "Codev",
+          "icon": "icons/codev.svg"
+        }
       ]
     },
     "views": {
@@ -608,6 +615,9 @@
         { "id": "codev.recentlyClosed", "name": "Recently Closed" },
         { "id": "codev.team", "name": "Team", "when": "codev.teamEnabled" },
         { "id": "codev.status", "name": "Status" }
+      ],
+      "codevPanel": [
+        { "id": "codev.placeholder", "name": "Codev", "when": "codev.panelContainerEmpty", "visibility": "collapsed" }
       ]
     },
     "configuration": {

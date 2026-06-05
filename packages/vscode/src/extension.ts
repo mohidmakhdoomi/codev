@@ -38,6 +38,7 @@ import { visibleBacklogCount, formatBacklogTitle } from './views/backlog-filter.
 import { RecentlyClosedProvider } from './views/recently-closed.js';
 import { TeamProvider } from './views/team.js';
 import { StatusProvider } from './views/status.js';
+import { PanelPlaceholderProvider } from './views/panel-placeholder.js';
 import { WorkspaceProvider } from './views/workspace.js';
 import { BuilderTreeItem } from './views/builder-tree-item.js';
 import { BuilderFileTreeItem } from './views/builder-file-tree-item.js';
@@ -353,7 +354,13 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.window.registerTreeDataProvider('codev.workspace', workspaceProvider),
 		vscode.window.registerTreeDataProvider('codev.team', teamProvider),
 		vscode.window.registerTreeDataProvider('codev.status', statusProvider),
+		vscode.window.registerTreeDataProvider('codev.placeholder', new PanelPlaceholderProvider()),
 	);
+
+	// Panel container (#812) is scaffolding: the placeholder view shows only
+	// while no real panel-side view has registered. Follow-up PRs (#813/#814/
+	// #815) flip this key false as they migrate views in, hiding the signpost.
+	vscode.commands.executeCommand('setContext', 'codev.panelContainerEmpty', true);
 
 	// Builders accordion: expanding one builder auto-collapses the others so a
 	// reviewer can't have diffs from unrelated worktrees open at once. The
