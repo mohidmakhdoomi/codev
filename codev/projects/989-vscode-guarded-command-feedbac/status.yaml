@@ -1,7 +1,7 @@
 id: '989'
 title: vscode-guarded-command-feedbac
 protocol: pir
-phase: review
+phase: verified
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -21,7 +21,7 @@ iteration: 1
 build_complete: true
 history: []
 started_at: '2026-06-05T01:53:22.296Z'
-updated_at: '2026-06-05T10:28:01.084Z'
+updated_at: '2026-06-05T10:28:14.065Z'
 pr_history:
   - phase: review
     pr_number: 995
