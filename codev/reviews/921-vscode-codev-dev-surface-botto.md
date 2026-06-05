@@ -40,7 +40,7 @@ Adds two complementary VSCode surfaces for the single `afx dev` PTY so a reviewe
 - `pnpm check-types`: ✓ pass
 - `pnpm lint`: ✓ pass
 - `node esbuild.js` (bundle): ✓ pass
-- `pnpm test:unit`: ✓ pass (311 tests, ~11 new across `dev-server-format` and `contributes-dev-server`)
+- `pnpm test:unit`: ✓ pass (315 tests, ~17 new across `dev-server-format`, `contributes-dev-server`, and `terminal-manager` — includes the consultation-fix regression guards)
 - Manual verification: performed by the reviewer at the `dev-approval` gate against the running worktree — exercised the chip + panel tab, the Show/Hide sidebar toggle, and iterated on the chip icon (`$(zap)` → `$(server-process)`, since `$(zap)` reads as AI) and the toggle's label/command-id naming.
 
 ## Architecture Updates
@@ -54,6 +54,15 @@ Added two UI/UX entries to `codev/resources/lessons-learned.md`:
 - `$(zap)` now reads as the AI/sparkle glyph in VSCode — use a literal glyph (`$(server-process)`) for non-AI features.
 
 The two-command `when`-clause toggle pattern used for Show/Hide sidebar was already captured under #952, so it isn't duplicated.
+
+## 3-Way Consultation (single advisory pass) — findings and dispositions
+
+PIR runs the consultation once (`max_iterations: 1`) with no automated re-review, so each finding below is dispositioned here for the human at the `pr` gate. Verdicts: **Gemini REQUEST_CHANGES**, **Codex REQUEST_CHANGES**, **Claude APPROVE**. Full outputs in `codev/projects/921-*/921-review-iter1-*.txt`.
+
+- **[FIXED — real bug] Manual terminal-close left the surfaces stale (Codex, blocker).** Closing the dev terminal via its tab ✕ (or the dev process exiting) reached only the generic `onDidCloseTerminal` path, which unmapped the terminal but never cleared `devStartedAt` or re-fired `onDidChangeDevTerminals` — so the chip / tab / `codev.devServerRunning` stayed "running." This broke the "dev stops via terminal exit → chip disappears" acceptance criterion. Fixed in `terminal-manager.ts` (fire + clear on the generic path, guarded by `wasTracked` to avoid double-firing with the explicit Stop path). Regression guard added in `terminal-manager.test.ts` (source-level, per that file's documented harness constraint).
+- **[FIXED — real plan gap] Missing tab badge (Gemini + Codex + Claude).** The plan called for a `TreeView.badge`; the view was registered via `registerTreeDataProvider`, which yields no handle to set `.badge`. Switched to `createTreeView('codev.devServer', …)` and set `devServerView.badge` while a dev runs (cleared on stop). Contributes test updated.
+- **[FIXED — real plan gap] Target name not normalized (Codex).** `OverviewBuilder.id` can be the numeric `status.yaml` id (e.g. `921`), so the Builders-row dev path (`run-worktree-dev`) could render `Dev: 921`. Root-fixed by keying that path on the worktree basename (`pir-921`), matching the afx-dev / Workspace / Switch-Target convention; also added the plan's promised `formatTargetName` pure helper (strips a `builder-` role prefix) with tests, applied in the chip and the tab.
+- **[REBUTTED — not a defect] "Reveal in Workspace View" replaced by Show/Hide Sidebar (Codex).** This was an explicit human directive at the `dev-approval` gate (the reviewer asked to make it a toggle and rename it); the plan predates that feedback. Claude classified it as a legitimate iterated deviation. No change warranted.
 
 ## Things to Look At During PR Review
 
