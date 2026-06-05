@@ -11,6 +11,7 @@ import { viewDiff, activateDiffView, diffUrisForChange } from './commands/view-d
 import { runWorktreeDev } from './commands/run-worktree-dev.js';
 import { stopWorktreeDev } from './commands/stop-worktree-dev.js';
 import { runWorkspaceDev, stopWorkspaceDev } from './commands/run-workspace-dev.js';
+import { stopDevServer, restartDevServer, switchDevTarget, revealDevInWorkspace } from './commands/dev-server-actions.js';
 import { openDevUrl } from './commands/open-dev-url.js';
 import { pasteImage } from './commands/paste-image.js';
 import { openWorktreeFolder } from './commands/open-worktree-folder.js';
@@ -39,6 +40,7 @@ import { RecentlyClosedProvider } from './views/recently-closed.js';
 import { TeamProvider } from './views/team.js';
 import { StatusProvider } from './views/status.js';
 import { PanelPlaceholderProvider } from './views/panel-placeholder.js';
+import { DevServerTreeProvider } from './views/dev-server.js';
 import { WorkspaceProvider } from './views/workspace.js';
 import { BuilderTreeItem } from './views/builder-tree-item.js';
 import { BuilderFileTreeItem } from './views/builder-file-tree-item.js';
@@ -55,6 +57,10 @@ let connectionManager: ConnectionManager | null = null;
 let terminalManager: TerminalManager | null = null;
 let outputChannel: vscode.OutputChannel | null = null;
 let statusBarItem: vscode.StatusBarItem | null = null;
+// Always-visible chip shown only while an `afx dev` PTY is running (#921).
+// Created lazily on dev start, disposed on stop — distinct from the connection
+// status item above.
+let devChipItem: vscode.StatusBarItem | null = null;
 
 /**
  * Resolve a builder id from a command argument.
@@ -346,6 +352,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	const workspaceProvider = new WorkspaceProvider(connectionManager, terminalManager!);
 	// Holds the CLI preflight row (#791); it self-refreshes on `onPreflightChange`.
 	const statusProvider = new StatusProvider(connectionManager);
+	// Codev Dev panel tab (#921) — the first real view in #812's codevPanel.
+	const devServerProvider = new DevServerTreeProvider(connectionManager, terminalManager!);
 	context.subscriptions.push(
 		buildersView,
 		pullRequestsView,
@@ -355,12 +363,48 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.window.registerTreeDataProvider('codev.team', teamProvider),
 		vscode.window.registerTreeDataProvider('codev.status', statusProvider),
 		vscode.window.registerTreeDataProvider('codev.placeholder', new PanelPlaceholderProvider()),
+		vscode.window.registerTreeDataProvider('codev.devServer', devServerProvider),
+		{ dispose: () => devServerProvider.dispose() },
 	);
 
-	// Panel container (#812) is scaffolding: the placeholder view shows only
-	// while no real panel-side view has registered. Follow-up PRs (#813/#814/
-	// #815) flip this key false as they migrate views in, hiding the signpost.
-	vscode.commands.executeCommand('setContext', 'codev.panelContainerEmpty', true);
+	// Panel container (#812) ships a placeholder signpost gated by
+	// `codev.panelContainerEmpty`. codev.devServer (#921) is a real, always-present
+	// panel view, so the container is never empty — flip the key false to hide the
+	// signpost. (Sibling tabs #813/#814/#815 set the same key; idempotent.)
+	vscode.commands.executeCommand('setContext', 'codev.panelContainerEmpty', false);
+
+	// Status-bar chip + title-bar gating for the dev surface (#921). Both derive
+	// from the single dev-terminal source of truth, so the chip, the Codev Dev
+	// tab, and the title-bar Stop/Restart actions stay in lockstep on every
+	// start/stop/swap. One subscription, named handler (no duplicate listeners).
+	const updateDevChip = (target: string | null): void => {
+		if (target) {
+			if (!devChipItem) {
+				devChipItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+				devChipItem.command = 'codev.devServer.focus'; // VSCode's auto view-focus command
+			}
+			devChipItem.text = `$(zap) Dev: ${target}`;
+			// StatusBarItem.backgroundColor only honors error/warning backgrounds
+			// (VSCode API constraint), so the "prominent, not alarming" look
+			// (#921 design call #4) is applied via the foreground instead.
+			devChipItem.color = new vscode.ThemeColor('statusBarItem.prominentForeground');
+			devChipItem.tooltip = `Codev dev server running for ${target}. Click to focus Codev Dev panel`;
+			devChipItem.show();
+		} else if (devChipItem) {
+			devChipItem.dispose();
+			devChipItem = null;
+		}
+	};
+	const refreshDevSurface = (): void => {
+		const target = terminalManager?.listDevTerminals()[0]?.builderId ?? null;
+		updateDevChip(target);
+		vscode.commands.executeCommand('setContext', 'codev.devServerRunning', target !== null);
+	};
+	context.subscriptions.push(
+		terminalManager.onDidChangeDevTerminals(refreshDevSurface),
+		{ dispose: () => { devChipItem?.dispose(); devChipItem = null; } },
+	);
+	refreshDevSurface(); // seed from any dev already running at activation
 
 	// VSCode gives no control over a panel tab's position, so a freshly
 	// contributed container lands last and spills into the `...` overflow.
@@ -754,6 +798,14 @@ export async function activate(context: vscode.ExtensionContext) {
 			runWorkspaceDev(connectionManager!, terminalManager!)),
 		regCli('codev.stopWorkspaceDev', () =>
 			stopWorkspaceDev(connectionManager!, terminalManager!)),
+		regCli('codev.devServer.stop', () =>
+			stopDevServer(connectionManager!, terminalManager!)),
+		regCli('codev.devServer.restart', () =>
+			restartDevServer(connectionManager!, terminalManager!)),
+		regCli('codev.devServer.switchTarget', () =>
+			switchDevTarget(connectionManager!, terminalManager!)),
+		reg('codev.devServer.revealInWorkspace', () =>
+			revealDevInWorkspace()),
 		reg('codev.openDevUrl', (urlArg?: unknown) =>
 			openDevUrl(connectionManager!, typeof urlArg === 'string' ? urlArg : undefined)),
 		reg('codev.pasteImage', () =>
