@@ -1,7 +1,7 @@
 id: '967'
 title: ci-run-vscode-dashboard-vitest
 protocol: pir
-phase: plan
+phase: implement
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -17,4 +17,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-03T21:40:18.973Z'
-updated_at: '2026-06-05T01:50:44.408Z'
+updated_at: '2026-06-05T01:50:52.365Z'
