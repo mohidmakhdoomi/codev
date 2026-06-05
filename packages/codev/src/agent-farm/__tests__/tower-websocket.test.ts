@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
 import { handleTerminalWebSocket, setupUpgradeHandler } from '../servers/tower-websocket.js';
+import { WS_CLOSE_SESSION_UNKNOWN } from '@cluesmith/codev-core/reconnect-policy';
 
 // ============================================================================
 // Mocks
@@ -395,7 +396,7 @@ describe('tower-websocket', () => {
       expect(wss.handleUpgrade).toHaveBeenCalled();
     });
 
-    it('returns 404 for /ws/terminal/:id with unknown session', () => {
+    it('returns 404 for /ws/terminal/:id with unknown session (Node client, no Origin)', () => {
       const server = makeServer();
       const wss = makeWss();
       mockGetSession.mockReturnValue(null);
@@ -403,10 +404,42 @@ describe('tower-websocket', () => {
       setupUpgradeHandler(server, wss, 4100);
 
       const socket = makeSocket();
+      // No Origin header → Node `ws` client (VSCode terminal). It relies on the
+      // "Unexpected server response: 404" upgrade error (#936), so the
+      // HTTP-stage 404 must be preserved.
       server.emit('upgrade', { url: '/ws/terminal/unknown-id', headers: {} }, socket, Buffer.alloc(0));
 
       expect(socket.write).toHaveBeenCalledWith('HTTP/1.1 404 Not Found\r\n\r\n');
       expect(socket.destroy).toHaveBeenCalled();
+    });
+
+    it('closes with 4404 for /ws/terminal/:id with unknown session (browser, Origin present)', () => {
+      const server = makeServer();
+      let closedWith: [number, string] | null = null;
+      const wss: any = {
+        handleUpgrade: vi.fn((_req: unknown, _socket: unknown, _head: unknown, cb: (ws: any) => void) => {
+          const ws: any = new EventEmitter();
+          ws.close = vi.fn((code: number, reason: string) => { closedWith = [code, reason]; });
+          cb(ws);
+        }),
+      };
+      mockGetSession.mockReturnValue(null);
+
+      setupUpgradeHandler(server, wss, 4100);
+
+      const socket = makeSocket();
+      // Origin header → browser. It can't read a failed-upgrade HTTP status, so
+      // Tower accepts the upgrade and closes with the app-range session-unknown
+      // code (#971) that the dashboard reads via CloseEvent.code.
+      server.emit('upgrade', {
+        url: '/ws/terminal/unknown-id',
+        headers: { origin: 'http://localhost:5173' },
+      }, socket, Buffer.alloc(0));
+
+      expect(wss.handleUpgrade).toHaveBeenCalled();
+      expect(closedWith).toEqual([WS_CLOSE_SESSION_UNKNOWN, 'session-unknown']);
+      expect(socket.write).not.toHaveBeenCalled();
+      expect(socket.destroy).not.toHaveBeenCalled();
     });
 
     it('routes workspace-scoped /workspace/:path/ws/terminal/:id', () => {
@@ -490,7 +523,7 @@ describe('tower-websocket', () => {
       expect(socket.destroy).toHaveBeenCalled();
     });
 
-    it('returns 404 for workspace-scoped route with unknown session', () => {
+    it('returns 404 for workspace-scoped route with unknown session (Node client, no Origin)', () => {
       const server = makeServer();
       const wss = makeWss();
       mockGetSession.mockReturnValue(null);
@@ -506,6 +539,33 @@ describe('tower-websocket', () => {
 
       expect(socket.write).toHaveBeenCalledWith('HTTP/1.1 404 Not Found\r\n\r\n');
       expect(socket.destroy).toHaveBeenCalled();
+    });
+
+    it('closes with 4404 for workspace-scoped route with unknown session (browser, Origin present)', () => {
+      const server = makeServer();
+      let closedWith: [number, string] | null = null;
+      const wss: any = {
+        handleUpgrade: vi.fn((_req: unknown, _socket: unknown, _head: unknown, cb: (ws: any) => void) => {
+          const ws: any = new EventEmitter();
+          ws.close = vi.fn((code: number, reason: string) => { closedWith = [code, reason]; });
+          cb(ws);
+        }),
+      };
+      mockGetSession.mockReturnValue(null);
+
+      setupUpgradeHandler(server, wss, 4100);
+
+      const encodedPath = Buffer.from('/test/workspace').toString('base64url');
+      const socket = makeSocket();
+      server.emit('upgrade', {
+        url: `/workspace/${encodedPath}/ws/terminal/unknown`,
+        headers: { origin: 'http://localhost:5173' },
+      }, socket, Buffer.alloc(0));
+
+      expect(wss.handleUpgrade).toHaveBeenCalled();
+      expect(closedWith).toEqual([WS_CLOSE_SESSION_UNKNOWN, 'session-unknown']);
+      expect(socket.write).not.toHaveBeenCalled();
+      expect(socket.destroy).not.toHaveBeenCalled();
     });
   });
 });

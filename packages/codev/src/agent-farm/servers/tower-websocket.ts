@@ -9,6 +9,7 @@
 import http from 'node:http';
 import type net from 'node:net';
 import { WebSocketServer, WebSocket } from 'ws';
+import { WS_CLOSE_SESSION_UNKNOWN } from '@cluesmith/codev-core/reconnect-policy';
 import { encodeData, encodeControl, decodeFrame } from '../../terminal/ws-protocol.js';
 import type { PtySession } from '../../terminal/pty-session.js';
 import { getTerminalManager } from './tower-terminals.js';
@@ -140,6 +141,40 @@ export function handleTerminalWebSocket(ws: WebSocket, session: PtySession, req:
 // ============================================================================
 
 /**
+ * Reject an upgrade request that targets an unknown terminal session.
+ *
+ * Two client shapes need different signals (#971):
+ * - **Browser** clients can't read a failed *upgrade*'s HTTP status — a failed
+ *   WS handshake only surfaces as `onclose` code `1006`, indistinguishable from
+ *   a transport blip. So we accept the upgrade and immediately close with an
+ *   app-range code ({@link WS_CLOSE_SESSION_UNKNOWN}) the dashboard reads via
+ *   `CloseEvent.code` to fast-path its give-up instead of blind-retrying.
+ * - **Node `ws`** clients (the VSCode terminal) get the HTTP-stage `404`: they
+ *   rely on the `"Unexpected server response: 404"` upgrade error (#936), so
+ *   this path must stay byte-for-byte unchanged to avoid regressing them.
+ *
+ * Discriminator: the `Origin` header, which browsers always send on a WS
+ * upgrade and the Node `ws` terminal client never sets. A browser arriving
+ * without `Origin` degrades gracefully to the Node path (blind retry) — no
+ * worse than today's behavior.
+ */
+function rejectUnknownSession(
+  req: http.IncomingMessage,
+  socket: net.Socket,
+  head: Buffer,
+  wss: WebSocketServer,
+): void {
+  if (req.headers.origin) {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws.close(WS_CLOSE_SESSION_UNKNOWN, 'session-unknown');
+    });
+    return;
+  }
+  socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+  socket.destroy();
+}
+
+/**
  * Set up the WebSocket upgrade handler on the HTTP server.
  * Parses upgrade requests and routes them to the appropriate terminal session:
  * - Direct route: /ws/terminal/:id
@@ -161,8 +196,7 @@ export function setupUpgradeHandler(
       const session = manager.getSession(terminalId);
 
       if (!session) {
-        socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-        socket.destroy();
+        rejectUnknownSession(req, socket, head, wss);
         return;
       }
 
@@ -233,8 +267,7 @@ export function setupUpgradeHandler(
       const session = manager.getSession(terminalId);
 
       if (!session) {
-        socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-        socket.destroy();
+        rejectUnknownSession(req, socket, head, wss);
         return;
       }
 
