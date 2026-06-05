@@ -6,6 +6,7 @@ import {
   backoffDelayMs,
   BackoffController,
   classifyUpgradeError,
+  WS_CLOSE_SESSION_UNKNOWN,
 } from '../reconnect-policy.js';
 
 describe('backoffDelayMs', () => {
@@ -139,6 +140,19 @@ describe('classifyUpgradeError', () => {
     expect(classifyUpgradeError({ code: 1006 })).toBe('transient');
     expect(classifyUpgradeError({ code: 500 })).toBe('transient');
     expect(classifyUpgradeError({})).toBe('transient');
+  });
+
+  it('classifies the session-unknown WS close code (object form) as permanent', () => {
+    expect(WS_CLOSE_SESSION_UNKNOWN).toBe(4404);
+    expect(classifyUpgradeError({ code: WS_CLOSE_SESSION_UNKNOWN })).toBe('permanent');
+    expect(classifyUpgradeError({ code: 4404 })).toBe('permanent');
+  });
+
+  it('classifies normal / other WS close codes (object form) as transient', () => {
+    // Normal closes and other app-range codes are not session-unknown.
+    expect(classifyUpgradeError({ code: 1000 })).toBe('transient'); // normal closure
+    expect(classifyUpgradeError({ code: 1001 })).toBe('transient'); // going away
+    expect(classifyUpgradeError({ code: 4500 })).toBe('transient'); // other app-range code
   });
 
   it('falls back to the message when an object carries no permanent code', () => {

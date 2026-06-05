@@ -12,7 +12,7 @@ import { MOBILE_BREAKPOINT } from '../lib/constants.js';
 import { uploadPasteImage } from '../lib/api.js';
 import { ScrollController } from '../lib/scrollController.js';
 import { EscapeBuffer } from '../lib/escapeBuffer.js';
-import { BackoffController } from '@cluesmith/codev-core/reconnect-policy';
+import { BackoffController, classifyUpgradeError } from '@cluesmith/codev-core/reconnect-policy';
 
 /**
  * Floating controls overlay for terminal windows — refresh (re-fit + resize)
@@ -522,14 +522,20 @@ export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra }: Termi
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (rc.disposed) return;
 
-        // The web terminal stays on blind retry for stale sessions: Tower 404s
-        // an unknown session at the HTTP-upgrade stage, which a browser only
-        // sees as close code 1006 (indistinguishable from a transport blip).
-        // The session-unknown fast-path the VSCode terminal has needs a
-        // browser-visible Tower close code first — tracked in #971.
+        // Session-unknown fast-path (#971): Tower accepts a browser upgrade to a
+        // gone session and immediately closes with an app-range code (4404) the
+        // classifier marks 'permanent'. Give up at once rather than burning the
+        // full backoff budget — matching the VSCode terminal (#936). A transport
+        // blip is close 1006 ('transient') and still blind-retries below.
+        if (classifyUpgradeError({ code: event.code }) === 'permanent') {
+          setConnStatus('disconnected');
+          term.write('\r\n\x1b[31m[Codev: This terminal session no longer exists. Press the refresh button to reconnect.]\x1b[0m\r\n');
+          return;
+        }
+
         if (backoff.recordFailure() === 'give-up') {
           setConnStatus('disconnected');
           return;
