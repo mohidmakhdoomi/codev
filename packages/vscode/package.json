@@ -218,7 +218,7 @@
       },
       {
         "command": "codev.devServer.revealInWorkspace",
-        "title": "Reveal in Workspace View",
+        "title": "Show Codev Sidebar",
         "category": "Codev",
         "icon": "$(eye)"
       },
