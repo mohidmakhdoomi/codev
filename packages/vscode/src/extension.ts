@@ -168,6 +168,24 @@ export async function activate(context: vscode.ExtensionContext) {
 	terminalManager = new TerminalManager(connectionManager, outputChannel, context.extensionUri, overviewCache);
 	context.subscriptions.push({ dispose: () => terminalManager?.dispose() });
 
+	// #991: when the extension re-connects to Tower (e.g. after a Tower restart,
+	// which re-issues every persistent terminal's id), re-point every open
+	// terminal onto its successor session. This is the reliable recovery
+	// trigger — `onStateChange` fires on every reconnect — versus relying on
+	// each terminal adapter to independently detect its dead id. Gated on a
+	// prior connect so the initial activation 'connected' (no terminals open
+	// yet) doesn't trigger a spurious resync.
+	let hasConnectedToTower = false;
+	context.subscriptions.push(
+		connectionManager.onStateChange((state) => {
+			if (state !== 'connected') { return; }
+			if (hasConnectedToTower) {
+				terminalManager?.resyncAllTerminals();
+			}
+			hasConnectedToTower = true;
+		}),
+	);
+
 	// Drive the `codev.terminalFocused` context key so the Cmd/Ctrl+V image
 	// paste binding (#736) only applies when a Codev terminal is focused —
 	// it must never shadow Cmd+V anywhere else.

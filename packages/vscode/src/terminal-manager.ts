@@ -452,6 +452,27 @@ export class TerminalManager {
   }
 
   /**
+   * Re-point every open terminal onto its successor session (#991). Called when
+   * the extension reconnects to Tower — a restart re-issues every persistent
+   * terminal's id, so each open tab is holding a now-dead id.
+   *
+   * This is the *reliable* recovery trigger: it fires off
+   * `ConnectionManager.onStateChange` ('Connected to Tower'), which the
+   * extension detects on every restart, rather than waiting for each terminal
+   * adapter to independently notice its socket dropped and hit a dead-id 404.
+   * Each terminal recovers independently via {@link recoverSuccessor}, which is
+   * a no-op when the id is unchanged, so this is safe to call on any reconnect.
+   */
+  resyncAllTerminals(): void {
+    const mapKeys = [...this.terminals.keys()];
+    if (mapKeys.length === 0) { return; }
+    this.log('INFO', `Tower reconnected — re-syncing ${mapKeys.length} terminal(s) onto successor sessions`);
+    for (const mapKey of mapKeys) {
+      void this.recoverSuccessor(mapKey);
+    }
+  }
+
+  /**
    * Reconnect the adapter backing a specific VSCode terminal. Used by the
    * give-up recovery affordance (#939): the terminal-link click resolves to
    * the clicked terminal, and we map it back to its adapter by identity (works

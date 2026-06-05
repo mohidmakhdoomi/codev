@@ -129,6 +129,28 @@ describe('#991 — successor-session recovery wiring', () => {
   it('the adapter is constructed with an onSessionGone recovery hook', () => {
     expect(TM_SRC).toMatch(/void this\.recoverSuccessor\(mapKey\)/);
   });
+
+  it('resyncAllTerminals runs recoverSuccessor over every open terminal', () => {
+    // The reliable recovery trigger: on a Tower reconnect, re-point every open
+    // terminal, rather than waiting for each adapter's own dead-id 404.
+    const body = TM_SRC.split('resyncAllTerminals()')[1] ?? '';
+    expect(body).toMatch(/\[\.\.\.this\.terminals\.keys\(\)\]/);
+    expect(body).toMatch(/for \(const mapKey of mapKeys\)/);
+    expect(body).toMatch(/void this\.recoverSuccessor\(mapKey\)/);
+  });
+});
+
+describe('#991 — recovery is triggered by the Tower-reconnect event', () => {
+  const EXT_SRC = readFileSync(resolve(__dirname, '../extension.ts'), 'utf8');
+
+  it('extension re-syncs terminals on onStateChange → connected (reconnect)', () => {
+    expect(EXT_SRC).toMatch(/connectionManager\.onStateChange\(\(state\) =>/);
+    expect(EXT_SRC).toMatch(/terminalManager\?\.resyncAllTerminals\(\)/);
+  });
+
+  it("the resync is gated on a prior connect (skips the initial activation 'connected')", () => {
+    expect(EXT_SRC).toMatch(/hasConnectedToTower/);
+  });
 });
 
 describe('#921 — dev surface refresh on manual terminal close', () => {
