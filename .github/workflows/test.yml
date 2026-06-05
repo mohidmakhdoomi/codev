@@ -29,6 +29,10 @@ jobs:
         working-directory: packages/core
         run: pnpm build
 
+      - name: Build types package
+        working-directory: packages/types
+        run: pnpm build
+
       - name: Run core unit tests
         working-directory: packages/core
         run: pnpm test
@@ -57,6 +61,14 @@ jobs:
               exit $VITEST_EXIT
             fi
           fi
+
+      - name: Run dashboard unit tests
+        working-directory: packages/dashboard
+        run: pnpm test
+
+      - name: Run vscode unit tests
+        working-directory: packages/vscode
+        run: pnpm test:unit
 
   integration:
     name: Tower Integration Tests
