@@ -1,7 +1,7 @@
 id: '921'
 title: vscode-codev-dev-surface-botto
 protocol: pir
-phase: review
+phase: verified
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -21,7 +21,7 @@ iteration: 1
 build_complete: true
 history: []
 started_at: '2026-06-03T21:40:33.254Z'
-updated_at: '2026-06-05T10:54:29.965Z'
+updated_at: '2026-06-05T10:54:40.985Z'
 pr_history:
   - phase: review
     pr_number: 996
