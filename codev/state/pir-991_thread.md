@@ -57,3 +57,16 @@ Merged origin/main (35 commits, dominated by PIR #921 — VSCode dev-server surf
 - **No behavior interaction**: `recoverSuccessor` is a no-op for `dev-`/`shell-` keys (sessionRefFromMapKey → null), so #921's dev-uptime path is untouched; `{...entry, id}` in-place reconnect preserves the ManagedTerminal shape (#921 added no fields to it).
 
 Post-merge all green: core 30, dashboard 322 (+1 pre-existing skip), vscode 327; check-types + lint clean. Still at dev-approval gate (did not re-run porch done — gate already pending).
+
+## Reviewer trace (dev-approval) → found + fixed a reconcile race
+
+Reviewer challenged whether VSCode terminals actually reattach on Tower restart ("they're dead, must close+reopen"). Traced the path:
+- `getWorkspaceState` is a stateless HTTP GET → works as soon as Tower HTTP is up; `getClient`/`getWorkspacePath` survive a Tower restart. VSCode recovery chain is sound.
+- Precondition: a successor exists ONLY if the shellper process (separate PID/socket in ~/.codev/run, created unconditionally at tower-server.ts:353) survives the restart. The fact that close+reopen restores the session proves a successor exists.
+- **Real gap found**: `tower-server.ts` does `server.listen()` (:342) then `await reconcileTerminalSessions()` (:398) INSIDE the listen callback → Tower serves requests (404s the dead id, serves /api/state without successors) BEFORE reconcile registers successors. My one-shot `recoverSuccessor` raced that window → returned false → terminal stayed dead until manual reconnect. Dashboard was resilient (indefinite 1s poll); VSCode was not.
+
+**Fix (committed 18031f8d)**: bounded re-poll in `recoverSuccessor` (RECOVER_POLL_ATTEMPTS=5 × RECOVER_POLL_INTERVAL_MS=1000 ≈ 4s) + a disposed-during-poll identity guard. Constants anchored to the dashboard's existing POLL_INTERVAL_MS (1s cadence) + PERMANENT_RECOVERY_MS (4s "declare gone" window) rather than invented numbers. vscode: 329 tests, check-types + lint green.
+
+## Spun-off Tower issue (root-cause, out of scope for #991)
+
+The deterministic fix is Tower-side: reconcile-before-serving OR a readiness signal (health doesn't gate on reconcile today), so a single getWorkspaceState is deterministic and both surfaces could drop the poll. That's an area/tower change with startup risk — out of #991's client-side scope. Drafted an issue and asked the architect to add it (not self-filing, per cross-cutting-spin-off discipline). #991 keeps the bounded poll as correct client behavior for today's Tower.
