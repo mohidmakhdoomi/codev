@@ -97,3 +97,25 @@ Draft:
   `area/cross-cutting` if the VSCode-terminal affordance is folded in (single
   area/* per issue; cross-cutting used alone).
 - Tag: reference the new issue number in the #971 PR body.
+
+## Review phase (in progress)
+
+- dev-approval approved → review phase.
+- Filed follow-up issue **#991** (area/dashboard): stale-tab auto-remount onto
+  successor session id after Tower restart.
+- Wrote `codev/reviews/971-web-terminal-adopt-session-unk.md` (Fixes #971, Refs
+  #961, #991). Added 2 lessons-learned entries (Origin discriminator; id-
+  reassignment / dead-rehydration finding). No arch.md change (existing reconnect
+  arch unchanged).
+- Opened **PR #992**, recorded with porch (`--pr 992`).
+- Ran `porch done` → single-pass 3-way consultation (gemini/codex/claude) running.
+  Next: read verdicts, notify architect (lead with any REQUEST_CHANGES), wait at
+  `pr` gate. Merge only on porch `gate_status: approved`.
+
+## At pr gate (awaiting human)
+
+3-way consultation all APPROVE / HIGH confidence, no issues, no REQUEST_CHANGES.
+Verdicts in `codev/projects/971-web-terminal-adopt-session-unk/971-review-iter1-*.txt`.
+Notified architect. `pr` gate pending. Will merge ONLY after porch reports
+`gate_status: approved` for the pr gate (not pane prose), then `gh pr merge --merge`
++ `porch done --merged 992`.
