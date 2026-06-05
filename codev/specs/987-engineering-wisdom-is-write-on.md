@@ -1,236 +1,213 @@
-# Specification: Make Durable Engineering Wisdom Consumed at Decision Time (Retire `lessons-learned.md`, Route by Type)
+# Specification: Symmetric Hot/Cold Governance Docs — Make `arch.md` and `lessons-learned.md` Consumed at Decision Time
 
 ## Metadata
-- **ID**: spec-2026-06-04-987-engineering-wisdom-write-only
+- **ID**: spec-2026-06-05-987-engineering-wisdom-write-only
 - **Issue**: #987
-- **Status**: draft
-- **Created**: 2026-06-04
+- **Status**: draft (revised per architect instruction 2026-06-05)
+- **Created**: 2026-06-04 · **Revised**: 2026-06-05
 - **Protocol**: SPIR (strict)
 
 ## Clarifying Questions Asked
 
-The issue framed this as a genuine design fork and asked the spec phase to resolve it. Three forks were surfaced to the architect; answers are recorded here and are binding constraints for the rest of this spec.
+The issue framed this as a genuine design fork. An initial round of architect answers (2026-06-04) chose "retire `lessons-learned.md` + single design-heuristics digest." After the architect and Waleed worked through it at the spec-approval gate, that approach was **superseded** by the model specified below (2026-06-05). The superseding decisions are **baked** (treated as fixed; see Constraints).
 
-1. **What is the fate of the existing `lessons-learned.md` (~250 entries, mostly spec-narrow recipes)?**
-   → **Retire entirely, route everything.** Delete the file. Every lesson worth keeping migrates to a *consumed* surface (CLAUDE.md / role files, a protocol step, a porch check, or a design-time prompt). The reviews remain the historical record; git history retains the deleted file.
-
-2. **How should design-time wisdom reach the builder at spec/plan time (the "dash of A")?**
-   → **Bounded always-injected digest.** A small, curated design-heuristics surface (~1 screen) is injected into the design (specify/plan) phase context every time. No relevance-retrieval engine, no tagging/matching system — the boundedness of the set is what makes "always inject" viable.
-
-3. **Should consumption be enforced by a machine check, or be an executed protocol step?**
-   → **Executed step, no hard check.** Consumption is achieved by putting the digest into always-on design context (an executed protocol step), not by adding a brittle prose-presence porch check. (Brittle prose checks on LLM output are themselves a documented anti-pattern.)
+**Why the model changed (the reframe):** the problem is **not lessons-only**. `arch.md` is **identically write-only** — `buildPhasePrompt()` injects *neither* `arch.md` *nor* `lessons-learned.md` (verified: it injects only the GitHub/spec summary, the current plan phase, retry history, and user answers). Both governance docs are merely *written* by the review phase and *pruned* by MAINTAIN; neither is ever in context at decision time. So the fix must be **symmetric across both docs**, and retiring one of them was solving half the problem with an asymmetry. **Nothing is retired** in the new model.
 
 ## Problem Statement
 
-`codev/resources/lessons-learned.md` is **write-only**. Durable engineering wisdom accretes into it, but nothing in the framework *consumes* it at the moment a decision is being made, so it cannot change agent behavior under load.
+Codev's two durable-knowledge governance documents — `codev/resources/arch.md` (system shape) and `codev/resources/lessons-learned.md` (engineering wisdom) — are both **write-only**. Knowledge accretes into them, but nothing in the framework *consumes* either one at the moment a decision is being made, so neither can change agent behavior under load.
 
-Every framework reference to the file is producer-side or prune-side:
-- The SPIR / ASPIR / PIR **review** phase (and `porch/prompts/review.md`) **append** entries to it.
-- The **MAINTAIN** protocol + `update-arch-docs` skill **extract into / prune** it.
-- The only porch **check** enforces that the *review file* contains a `## Lessons Learned Updates` section — it does **not** enforce that anyone *reads* the lessons.
+Every framework reference to both files is producer-side or prune-side:
+- The SPIR / ASPIR / PIR **review** phase (and `porch/prompts/review.md`) **append** to both (`## Architecture Updates` → `arch.md`; `## Lessons Learned Updates` → `lessons-learned.md`).
+- **MAINTAIN** + the `update-arch-docs` skill **extract into / prune** both.
+- Porch **checks** only enforce that the *review file* contains those two sections — never that anyone *reads* the docs.
 
-**Nothing reads or injects it at design/spec time, and nothing enforces that it is read.** It is append-only accretion with no consumer: documentation that hopes to be grepped, which under load agents do not do. The concrete downstream failure cited in the issue — a boolean-vs-role auth design miss — is exactly the class of mistake a *written-but-unread* lesson can never prevent, because the file is not in context when the design is chosen.
+**Nothing reads or injects either doc at decision time, and nothing enforces that it is read.** They are append-only archives with no consumer: documentation that hopes to be grepped, which under load agents do not do. The concrete downstream failure cited in the issue — a boolean-vs-role auth design miss — is exactly the class of mistake a *written-but-unread* governance doc can never prevent, because it is not in context when the design is chosen.
 
-The governing principle (from the issue): **wisdom only changes behavior if it lives in always-on context (role / CLAUDE.md), an executed protocol step, or an enforced check.** A markdown archive nobody reads is none of those.
+The governing principle (from the issue): **knowledge only changes behavior if it lives in always-on context, an executed protocol step, or an enforced check.** A markdown archive nobody reads is none of those.
 
 ## Current State
 
-**The file.** `codev/resources/lessons-learned.md` is ~400 lines / ~250 entries across topical sections (Critical, Security, Architecture, Process, Testing, UI/UX, Documentation, 3-Way Reviews, Protocol Orchestration, Debugging). Entries are one-liners tagged only by source (`[From NNNN]`). There is **no** area/type metadata. A large majority of entries are **spec-narrow implementation recipes** ("vitest 4 constructor mocks require class syntax", "HTML-escape user content", "use `path.sep` in path checks") — precisely the content the `update-arch-docs` skill's own rules say should be pruned to the originating review, but which has accreted anyway. A genuinely durable, cross-cutting, *design-time* subset is buried inside this noise.
+**The docs (verified):**
+- `codev/resources/lessons-learned.md` — ~400 lines / ~250 one-line entries across topical sections; a large fraction are spec-narrow implementation recipes alongside a smaller set of genuinely behavior-changing, cross-cutting lessons.
+- `codev/resources/arch.md` — the system-shape governance doc, maintained by the same review/MAINTAIN machinery.
 
 **Producers (write/prune) — verified:**
-- `codev-skeleton/protocols/{spir,aspir}/prompts/review.md` (§4 "Update Architecture and Lessons Learned Documentation") and `codev-skeleton/protocols/pir/prompts/review.md`: instruct the builder to read the file and **append** generalizable lessons, then record what was added in the review's `## Lessons Learned Updates` section.
+- `codev-skeleton/protocols/{spir,aspir}/prompts/review.md` (§4 "Update Architecture and Lessons Learned Documentation") and `codev-skeleton/protocols/pir/prompts/review.md`: instruct the builder to **append** to both docs and record what was added in the review's `## Architecture Updates` / `## Lessons Learned Updates` sections.
 - `codev-skeleton/porch/prompts/review.md`: same pattern.
-- `codev-skeleton/protocols/maintain/{protocol.md,prompts/maintain.md}`: scan `codev/reviews/`, extract lessons, **add** them to the file; audit/prune via the skill.
-- `update-arch-docs` skill (`.claude/skills/...` and `codev-skeleton/.claude/skills/...`): owns the pruning discipline and the arch.md-vs-lessons-learned two-doc routing.
+- `codev-skeleton/protocols/maintain/{protocol.md,prompts/maintain.md}`: scan `codev/reviews/`, extract, and prune both docs.
+- `update-arch-docs` skill (both trees): owns the pruning discipline and the arch.md-vs-lessons-learned two-doc routing.
 
-**Enforcement — verified:** `codev-skeleton/protocols/{spir,aspir,pir}/protocol.json` define a review-phase check `review_has_lessons_updates` = `grep -q '## Lessons Learned Updates' codev/reviews/${PROJECT_TITLE}.md`. This polices the **producer** (the review file mentions lessons), never the **consumer**.
+**Enforcement — verified:** `protocol.json` for spir/aspir/pir defines review-phase checks `review_has_arch_updates` and `review_has_lessons_updates` (grep the review file for the two section headers). These police the **producer**, never the **consumer**.
 
-**Consumers (read at decision time) — verified: NONE.**
-- `packages/codev/src/commands/porch/prompts.ts` (`buildPhasePrompt()`) injects project summary, plan-phase content, user answers, and prior-iteration history into phase prompts. It **never reads `lessons-learned.md`.**
-- The `specify.md` / `plan.md` phase prompts never read it.
-- Role files (`roles/builder.md`, `roles/architect.md`) never reference it.
-- `CLAUDE.md` / `AGENTS.md` mention it only as a MAINTAIN *target* and a directory-map entry — there is no "consult before designing" instruction.
+**Consumers (read at decision time) — verified: NONE for either doc.**
+- `packages/codev/src/commands/porch/prompts.ts` (`buildPhasePrompt()`) injects the project summary, current plan-phase metadata, retry-history header, and user answers via `{{variable}}` substitution (`substituteVariables`). It **reads neither `arch.md` nor `lessons-learned.md`.**
+- The phase prompts (`specify.md`, `plan.md`, `implement.md`, …) never read either doc.
+- Role files and `CLAUDE.md` / `AGENTS.md` mention them only as MAINTAIN *targets* / directory-map entries — no "consult before deciding" instruction, and no `@import` mechanism is in use today.
 
-**Scale & shape of the change (verified):** the file/term is referenced across **both** the `codev/` instance tree **and** the `codev-skeleton/` distribution tree (mirrored protocol copies for spir/aspir/pir/maintain, the skill in two places, `CLAUDE.md`, `AGENTS.md`, `templates.ts`), plus many **historical** artifacts that must NOT be edited (`codev/maintain/*.md` run logs, `codev/plans/*`, `codev/projects/*`, `projectlist-archive.md`, `cmap-value-analysis-*.md`, prior-project rebuttals). This is a protocol-removal-scale edit (~dozens of files across two mirrored trees), with the well-known dual-directory footgun.
-
-**Physical file copies of `lessons-learned.md` (verified — there are four, not two):**
-1. `codev/resources/lessons-learned.md` — the live instance archive.
-2. `codev-skeleton/templates/lessons-learned.md` — the distribution template seeded into new projects.
-3. `codev/templates/lessons-learned.md` — the instance's template copy.
-4. `codev/protocols/maintain/templates/lessons-learned.md` — a MAINTAIN-protocol template copy.
-All four must be retired; the replacement digest template must exist wherever a starter is needed (at least the two template trees that scaffold reads).
+**Injection feasibility (verified):** prompts are markdown with `{{variable}}` placeholders filled by `substituteVariables`; framework files resolve through Codev's **four-tier fallback** (`.codev/` override → `codev/` project copy → runtime cache → installed-package skeleton). A new always-on injection can therefore be implemented as variables filled from resolver-located files.
 
 **Scaffold / install / update path (verified):**
-- `packages/codev/src/lib/scaffold.ts` copies a `templates = ['lessons-learned.md', 'arch.md', 'cheatsheet.md', 'lifecycle.md']` list into a new project's `resources/`. New adopters get `lessons-learned.md` from here.
-- `packages/codev/src/__tests__/scaffold.test.ts` asserts `lessons-learned.md` is copied into `codev/resources/` (and `templates.test.ts` references it). These tests will fail / must be updated when the copy list changes.
-- `packages/codev/src/lib/templates.ts` `USER_DATA_PATTERNS` protects `resources/lessons-learned.md` from being overwritten/updated by `codev update`.
-- Framework files (protocols, prompts, resources) resolve through Codev's **four-tier fallback** (`.codev/` override → `codev/` project copy → runtime cache → installed-package skeleton). Any new injection of the digest must resolve through this same chain, so an existing repo that upgrades the package but has not yet checked in `codev/resources/design-heuristics.md` still gets the skeleton's copy instead of failing.
+- `packages/codev/src/lib/scaffold.ts` copies `templates = ['lessons-learned.md', 'arch.md', 'cheatsheet.md', 'lifecycle.md']` into a new project's `resources/`.
+- `packages/codev/src/__tests__/scaffold.test.ts` / `templates.test.ts` assert that behavior.
+- `packages/codev/src/lib/templates.ts` `USER_DATA_PATTERNS` protects `resources/arch.md` and `resources/lessons-learned.md` from being overwritten by `codev update`.
+
+**Scale & shape (verified):** the docs/term are referenced across **both** the `codev/` instance tree and the `codev-skeleton/` distribution tree (mirrored protocol copies for spir/aspir/pir/maintain, the skill in two places, `CLAUDE.md`, `AGENTS.md`, `templates.ts`), plus **historical** artifacts that must NOT be edited (`codev/maintain/*`, `codev/plans/*`, `codev/projects/*`, archives, prior reviews, the release protocol's historical references). This is a multi-file change across two mirrored trees, with the well-known dual-directory footgun.
 
 ## Desired State
 
-`lessons-learned.md` is **gone**, and the durable wisdom it held now lives only where it is actually consumed:
+Each governance doc is split into a **two-tier (hot/cold)** pair, **symmetrically**:
 
-1. **A new bounded design-heuristics surface** (e.g. `codev/resources/design-heuristics.md`, mirrored into `codev-skeleton/templates/`) holds the small set of cross-cutting, *design-time* heuristics that would change a spec/plan decision. It is **capped** (fits in roughly one screen) and is **literally injected into the specify and plan phase prompts every time**, so it is unavoidably in context when the design is chosen — not a "please go read this file" pointer that load-shedding agents skip.
+| Tier | Files | Size | Consumed how |
+|---|---|---|---|
+| **HOT** | `arch-critical.md`, `lessons-critical.md` | **Hard-capped** — a handful of lines each | **Always injected into context** (every porch phase prompt + interactive sessions, CLAUDE.md-style). The behavior-changer. |
+| **COLD** | `arch.md`, `lessons-learned.md` | Full, may expand | **Kept** as on-demand reference (grep/read for depth). Not retired, not deleted; spec-narrow recipes stay. |
 
-2. **Behavioral rules** ("always/never X") that are general enough live as **CLAUDE.md / AGENTS.md invariants or role-file rules** — always-on context.
+1. **Two new HOT files** (`codev/resources/arch-critical.md`, `codev/resources/lessons-critical.md`, mirrored into the template trees) hold only the small set of cross-cutting facts/heuristics that should change a decision *right now*. They are **hard-capped** and **always-on**.
 
-3. **Process/protocol lessons** are folded into the relevant **protocol prompt/step** itself.
+2. **Both COLD docs are kept intact** — `arch.md` and `lessons-learned.md` continue to exist as the full reference archives. Nothing is deleted; spec-narrow content remains as honest reference. The cold tier simply stops *pretending* to change behavior — the hot tier does that.
 
-4. **Spec-narrow recipes and implementation tips** are **not migrated anywhere** — they already live in the originating review document, which is the searchable historical record. They are deliberately dropped from any always-on/consumed surface.
+3. **The hot tier reaches both consumption surfaces:**
+   - **porch-driven builders** — `buildPhasePrompt()` injects both hot files into **every** phase prompt (not design-time-only).
+   - **interactive sessions** (architect / human at the repo root) — the hot content is always-on the way `CLAUDE.md` is.
+   Both resolve through the **four-tier fallback chain**, so a repo that upgrades the package before checking in its own hot files still gets the skeleton copy rather than a failed/empty injection.
 
-5. **Producers route, not append.** At review time, a builder who captures a durable lesson **routes it by type** to the correct consumed surface (rule → CLAUDE/role; heuristic → the bounded digest, observing its cap; process → protocol step), or records that none qualified. There is no longer a "dump it into the archive" path, so the accretion failure mode cannot recur.
+4. **The hard cap is load-bearing.** It is the mechanism that makes "inject into every prompt" affordable (negligible per-prompt tokens) and that prevents re-accretion. Adding a fact to a hot file requires **demoting** a weaker fact into the corresponding cold doc (displacement discipline). The cap is policed by MAINTAIN; honored by the producer at capture time.
 
-6. **MAINTAIN polices the bound, not the archive.** MAINTAIN / `update-arch-docs` no longer generates a lessons archive. Its lessons-side responsibility becomes keeping the bounded digest *bounded* (audit for bloat / displacement) and confirming routed rules landed in the right surface. Its arch.md responsibility is unchanged.
+5. **Producers route hot-vs-cold, not append-everywhere.** At review time, each new architecture fact and each new lesson is **routed**: does it belong in the hot file (behavior-changing, earns/displaces a capped slot) or the cold doc (reference)? This replaces today's "append to the archive."
 
-The net effect: the framework stops maintaining an unread archive that *looks* like a safety net, and instead guarantees that the small amount of wisdom that actually changes design decisions is in front of the builder at the moment it matters.
+6. **MAINTAIN polices the cap (per hot file) and maintains the cold docs as reference.** It no longer treats accretion in the cold tier as the primary failure mode (the cold docs are allowed to be full reference); the discipline that matters moves to the hot-tier cap + correct hot/cold routing. The arch-vs-lessons routing the skill already owns is extended with the hot/cold axis.
+
+Net effect: the small amount of knowledge that actually changes decisions is unavoidably in front of every agent at every step, while the full reference archives remain available on demand — symmetrically for system shape and engineering wisdom.
 
 ## Stakeholders
-- **Primary Users**: Builder agents at spec/plan time (consume the digest); review-phase agents (route, don't append).
-- **Secondary Users**: Architects (curate the digest and the routed rules); MAINTAIN runs (police the bound).
+- **Primary Users**: every agent at every porch phase (consume the hot tier); interactive architect sessions (consume the hot tier); review-phase agents (route hot-vs-cold).
+- **Secondary Users**: architects (curate the hot files, set/keep the cap); MAINTAIN runs (police the cap, maintain cold docs).
 - **Technical Team**: Codev framework maintainers (this repo + downstream adopters who inherit the skeleton).
 - **Business Owners**: M Waleed Kadous (architect / decision authority).
 
 ## Success Criteria
-- [ ] **All four** physical copies of `lessons-learned.md` are **deleted**: `codev/resources/`, `codev-skeleton/templates/`, `codev/templates/`, and `codev/protocols/maintain/templates/`.
-- [ ] A bounded `design-heuristics.md` exists as the live instance file (`codev/resources/`) and as a starter template in the trees scaffold reads from (`codev-skeleton/templates/`, and `codev/templates/` to keep the instance mirror coherent), with an explicit stated cap (entry count and/or "fits one screen") and a documented displacement discipline.
-- [ ] **Scaffold copies the new file**: `scaffold.ts`'s template copy list replaces `lessons-learned.md` with `design-heuristics.md`, so new adopters receive the digest; `scaffold.test.ts` / `templates.test.ts` are updated to assert the new behavior and no longer assert the old file.
-- [ ] **Injection resolves via the four-tier fallback chain**: the digest the design prompt injects is resolved through the standard resolver (`.codev/` → `codev/` → cache → skeleton), so a repo that upgrades the package before checking in its own `design-heuristics.md` still gets the skeleton copy rather than an empty/failed injection.
-- [ ] **`codev update` upgrade path is coherent for existing adopters**: `USER_DATA_PATTERNS` no longer protects the deleted file and protects `resources/design-heuristics.md` instead; the update path does not crash on a repo that still has an orphaned `lessons-learned.md`, and (at minimum) the plan decides whether to emit a migration hint ("`lessons-learned.md` is retired; see `design-heuristics.md`") rather than silently leaving an inert orphan.
-- [ ] The digest is **seeded** by a one-time migration: the durable design-time subset of the old archive is distilled into the digest; general behavioral rules are migrated to CLAUDE/AGENTS/role files; everything else is intentionally dropped (preserved by git history + reviews).
-- [ ] The **specify** and **plan** phase prompts inject the digest content such that it is present in the assembled phase prompt **verbatim and unconditionally** (not as a pointer to read a file). Verifiable by assembling a phase prompt and confirming the heuristics text appears.
-- [ ] The **review** prompts (spir/aspir/pir + `porch/prompts/review.md`) are changed from "append to `lessons-learned.md`" to "**route the lesson to its consumed surface**," with a renamed review section (e.g. `## Wisdom Routing`) replacing `## Lessons Learned Updates`.
-- [ ] The porch `review_has_lessons_updates` check (spir/aspir/pir `protocol.json`) is updated to match the renamed review section (no new *consumption* check is added).
-- [ ] **MAINTAIN** protocol + `maintain.md` prompt + the `update-arch-docs` skill (both tree copies) no longer generate/prune a lessons archive; they instead audit the bounded digest and the routed surfaces. The skill's frontmatter `description` and registration text are updated accordingly.
-- [ ] `templates.ts` `USER_DATA` list no longer protects the deleted file and protects `resources/design-heuristics.md` instead.
-- [ ] `CLAUDE.md` and `AGENTS.md` are updated (directory map, MAINTAIN bullet) and remain byte-identical to each other; they describe the new consumption model.
-- [ ] Every **live** framework surface that references the term is explicitly updated — not left to a grep criterion alone. At minimum: the spir/aspir/pir/maintain **protocol docs** (`protocol.md`), the **review templates** (`protocols/*/templates/review.md`), the **MAINTAIN templates** (`maintenance-run.md` and the retired lessons template), the **PIR builder-prompt and implement prompt**, the `porch/prompts/review.md`, `arch.md`'s sibling-doc pointer, and the `update-arch-docs` skill (both trees) — each audited in both `codev/` and `codev-skeleton/`.
-- [ ] A full-repo `rg` for `lessons-learned` / `lessons_learned` / `Lessons Learned` then returns **zero hits in live framework files** (protocols, prompts, skills, CLAUDE/AGENTS, templates, roles, source). Hits remaining only in **historical** artifacts (`codev/maintain/*`, `codev/plans/*`, `codev/projects/*`, archives, prior reviews, the release protocol's historical references) are acceptable and must be left untouched.
-- [ ] Changes are applied in **both** the `codev/` and `codev-skeleton/` mirrored trees wherever a file exists in both.
-- [ ] All existing tests pass; any test asserting the old review section / old file path is updated.
+- [ ] **Two HOT files exist** — `codev/resources/arch-critical.md` and `codev/resources/lessons-critical.md` — as the live instance files and as starter templates in the trees scaffold reads from (`codev-skeleton/templates/` and `codev/templates/`), each with an explicit **hard cap** (stated as entry count and/or "fits in a handful of lines") and a documented **displacement discipline**.
+- [ ] **HOT files are seeded by curation** — the genuinely behavior-changing, cross-cutting subset is lifted from the cold docs into the hot files. This is curation, **not** deletion: the cold docs are unchanged in content except for any demoted/duplicated framing.
+- [ ] **Both COLD docs are KEPT** — `codev/resources/arch.md` and `codev/resources/lessons-learned.md` still exist with their reference content intact (no deletion, no wholesale gutting, spec-narrow recipes retained).
+- [ ] **porch injects both hot files into every phase prompt** — `buildPhasePrompt()` injects `arch-critical.md` and `lessons-critical.md` content into the assembled prompt for **all** phases (specify, plan, implement, defend, evaluate, review). Verifiable: assemble a phase prompt for ≥2 distinct phases and confirm both hot files' text appears **verbatim and unconditionally** (not a "go read this file" pointer).
+- [ ] **Interactive sessions get the hot tier always-on** — the hot content is present in auto-loaded context for an interactive session at the repo root, from a **single source of truth** (no hand-maintained duplicate that can drift) and in a **tool-agnostic** way (works for `CLAUDE.md` and `AGENTS.md` consumers). `CLAUDE.md` and `AGENTS.md` remain byte-identical to each other.
+- [ ] **Injection resolves via the four-tier fallback chain** — both surfaces resolve the hot files through `.codev/` → `codev/` → cache → skeleton, so an upgraded-but-not-yet-seeded repo still injects the skeleton copy rather than failing/empty.
+- [ ] **Scaffold copies the new files** — `scaffold.ts`'s copy list **adds** `arch-critical.md` and `lessons-critical.md` (while keeping `arch.md` and `lessons-learned.md`); `scaffold.test.ts` / `templates.test.ts` are updated to assert the new files are copied (and continue to assert the cold docs are copied).
+- [ ] **`codev update` coherence** — `USER_DATA_PATTERNS` protects the two new hot files (in addition to the two cold docs); the update path is coherent for existing adopters (no crash; new files created from the skeleton; cold docs preserved).
+- [ ] **Producers route hot-vs-cold** — the spir/aspir/pir + `porch/prompts/review.md` review prompts are changed from "append to `arch.md` / `lessons-learned.md`" to "**route** each new fact to the hot file (cap+displacement) or the cold doc," for **both** docs. The review sections reflect routing.
+- [ ] **Porch review checks remain valid** — the existing `review_has_arch_updates` / `review_has_lessons_updates` checks still pass on a correctly-routed review (renamed if the review section names change). **No new consumption check is added** (consumption is via always-on injection, per the principle and the prior "executed step, no hard consumption check" decision).
+- [ ] **MAINTAIN polices the cap** — the MAINTAIN protocol + `maintain.md` prompt + `update-arch-docs` skill (both trees) gain hot-tier cap-policing + displacement, and the skill's cold-tier philosophy is updated so the cold docs may retain spec-narrow reference content (the anti-accretion discipline moves to the hot cap). Arch-vs-lessons routing is extended with the hot/cold axis.
+- [ ] **Explicit live-surface sweep (both trees)** — every live surface is updated, not left to grep alone: spir/aspir/pir/maintain `protocol.md`, the `protocols/*/templates/review.md` review templates, MAINTAIN templates, the PIR builder-prompt + implement prompt, `porch/prompts/review.md`, the `update-arch-docs` skill (frontmatter + body), `CLAUDE.md`/`AGENTS.md` (directory map + the new always-on model), role files, and `templates.ts` — each audited in **both** `codev/` and `codev-skeleton/`.
+- [ ] All existing tests pass; tests referencing the old copy list / section names are updated.
 
 ## Constraints
 
-### Architect's binding decisions (from clarifying questions — treat as baked)
-- **Retire entirely, route everything** — delete `lessons-learned.md`; no "keep the archive alongside" option.
-- **Bounded always-injected digest** as the design-time mechanism — no tagging/area-matching system, no retrieval/embedding engine.
-- **Executed step, no hard consumption check** — consumption via always-on design context, not a porch prose-presence gate.
+### Architect's binding decisions (2026-06-05 — baked, treat as fixed)
+- **Symmetric two-tier (hot/cold) across BOTH `arch.md` and `lessons-learned.md`.** Not a lessons-only change.
+- **Nothing is retired / deleted.** The cold docs are kept and may expand; spec-narrow recipes stay as reference.
+- **Hot files (`arch-critical.md`, `lessons-critical.md`) are HARD-CAPPED** (a handful of lines each). The cap is load-bearing and non-negotiable; growth happens by **demotion to cold**, not by raising the cap.
+- **Injection scope = ALWAYS-ON** (every prompt, CLAUDE.md-style), not design-time-only.
+- **Hot tier must reach BOTH surfaces** — porch builders (`buildPhasePrompt()`) **and** interactive sessions (CLAUDE.md-style) — via the four-tier fallback chain.
+- **Producer = route hot-vs-cold at capture; MAINTAIN polices the cap.**
 
 ### Technical constraints
-- Dual mirrored trees (`codev/` instance + `codev-skeleton/` distribution) must be kept consistent; every edit must be audited in both locations.
-- Historical artifacts (maintain run logs, prior plans/projects/reviews, archives, the release protocol's historical references, `cmap-value-analysis`) are **read-only history** — do not rewrite them to erase the term.
-- `arch.md` and `lessons-learned.md` are sibling governance docs; any `arch.md` cross-pointer to the retired file must be updated, but `arch.md`'s own content is otherwise out of scope.
-- Downstream adopters inherit the skeleton; the skeleton change must leave a *coherent* new model (a seeded/example design-heuristics template and a routing-based review prompt), not a dangling reference.
+- Dual mirrored trees (`codev/` + `codev-skeleton/`) kept consistent; every edit audited in both.
+- Historical artifacts are read-only history — do not rewrite them.
+- Single source of truth for the hot content across the two consumption surfaces — no hand-maintained duplicate that can drift.
+- Interactive-surface mechanism must be tool-agnostic (CLAUDE.md + AGENTS.md), not Claude-only, unless the architect accepts a Claude-only mechanism at the gate.
+- Downstream adopters inherit the skeleton; it must ship a coherent hot/cold model with seeded hot-file templates and routing-based review prompts.
 
 ### Process constraints
 - No time estimates (per protocol).
-- Follow the dual-directory audit discipline; run exhaustive `rg` before claiming "all references updated."
+- Run the dual-directory audit + exhaustive `rg` before claiming "all surfaces updated."
 
 ## Assumptions
-- The bounded digest's value comes from being *small and always-present*; the cap is the mechanism that prevents re-accretion, so the cap must be explicit and the producer-side routing must honor it (add-by-displacement, not add-by-append).
-- The durable design-time subset distilled from ~250 entries is small (order ~10–25 heuristics); most of the archive is correctly dropped.
-- Reviews + git history are an adequate home for the dropped spec-narrow recipes; nothing of *consumed* value is lost by deleting them, because they were never consumed.
-- Injecting at the **design** phases (specify, plan) is the right scope; implement-phase injection is out of scope (the cited failures are design-time misses).
+- The hot files' value comes from being *tiny and always-present*; the cap is the structural guarantee against re-accretion and the reason always-on injection is affordable.
+- The behavior-changing subset distilled into each hot file is small (order a handful of entries); the bulk of each cold doc stays put as reference.
+- Injecting into **every** phase (not just design) is correct per decision A; the marginal token cost is negligible given the cap.
+- A single-source-of-truth file per hot tier can feed both the programmatic (porch) and interactive (CLAUDE/AGENTS) surfaces without a hand-maintained duplicate.
 
 ## Solution Approaches
 
-The issue named two directions. Both are weighed; the chosen direction is the architect-decided hybrid.
+### The two consumption surfaces (the meaty part)
+The hot files must be always-on for two structurally different consumers. Source of truth = the two hot files (resolved via the four-tier chain).
 
-### Approach A: Inject the whole archive at design time
-**Description**: Read `lessons-learned.md` and inject it (or a relevance-filtered slice) into the design prompt.
-**Pros**: Reuses the existing file; consumption is direct.
-**Cons**: Dumping the whole file re-creates the unbounded-accretion problem inside every design prompt (250 entries of mostly-irrelevant recipes drown the few that matter). A relevance filter (tagging by `area/*`, keyword/embedding match) is real machinery to build and maintain, and the architect explicitly rejected building a retrieval system. **Rejected** as the primary mechanism.
-**Estimated Complexity**: High (if filtered) / Low-but-ineffective (if unfiltered)
-**Risk Level**: High
+**Surface 1 — porch-driven builders.** Inject via `buildPhasePrompt()`: resolve `arch-critical.md` + `lessons-critical.md` through the four-tier resolver and substitute them into every phase prompt (e.g. new `{{arch_critical}}` / `{{lessons_critical}}` variables, or a prepended always-on context block). Low-risk, mirrors the existing `{{variable}}` mechanism. **Recommended.**
 
-### Approach B: Retire + route by type into consumed surfaces
-**Description**: Delete the archive. Route each lesson by type to the surface that consumes it: behavioral rule → CLAUDE/role; design-time heuristic → a bounded digest injected at design time; process lesson → protocol step; spec-narrow recipe → left in its review (dropped from any consumed surface).
-**Pros**: Directly implements the governing principle. Eliminates the write-only failure mode at the *producer* (no append path). The bound on the digest is a structural guarantee against re-accretion. No retrieval engine.
-**Cons**: One-time migration/curation cost. Deleting a 250-entry file is a large, cross-tree edit. Loses the *illusion* of a tips archive (mitigated: the tips live in reviews + git).
-**Estimated Complexity**: Medium
-**Risk Level**: Medium
+**Surface 2 — interactive sessions.** Candidate mechanisms:
+- **(a) Generated managed block in `CLAUDE.md` + `AGENTS.md`** mirrored from the hot files by a small sync/generation step (delimited markers prevent drift; mirrors the existing CLAUDE↔AGENTS sync discipline). *Pro:* tool-agnostic, truly always-on, single source of truth. *Con:* adds a generation/sync step + drift-guard. **Recommended.**
+- **(b) `@import` of the hot files from `CLAUDE.md`.** *Pro:* no sync. *Con:* Claude-Code-specific (AGENTS.md consumers don't honor it), and import-path resolution doesn't follow the four-tier chain. Acceptable only if the architect accepts Claude-only for interactive.
+- **(c) A "always read these" pointer.** *Rejected* — this is the exact write-only failure mode being fixed.
 
-### Chosen: Approach B with a bounded slice of A (architect-decided)
-Retire the archive (B), and for the genuinely design-sensitive subset use a **bounded** form of design-time injection (the disciplined slice of A): a small curated digest, literally injected at specify/plan time. The relevance-retrieval problem that sinks naive-A **dissolves** because the injected set is bounded small enough to always show in full. The "dash of A" is therefore not a retrieval system — it is a one-screen digest that is always on.
+The spec **requires** that Surface 2 be always-on, single-source-of-truth, and (default) tool-agnostic; the final mechanism (a vs b) is a plan-level decision confirmed at the plan-approval gate.
 
-**Key design elements:**
-- **Routing taxonomy** (used both for the one-time retirement migration and ongoing at review time):
-
-  | Lesson type | Consumed surface | Why consumed |
-  |---|---|---|
-  | General behavioral rule ("always/never X") | CLAUDE.md / AGENTS.md invariant or role file | always-on context |
-  | Design-time heuristic that changes a spec/plan decision | bounded `design-heuristics.md`, injected at specify/plan | executed step in always-on design context |
-  | Process / protocol improvement | the protocol prompt/step itself | executed step |
-  | Spec-narrow recipe / impl tip | stays in originating review only (not routed) | reviews are the searchable record |
-
-- **Bounded digest** with an explicit cap and an **add-by-displacement** rule: a new heuristic must earn its slot or displace a weaker one. The cap, not a checker, is what holds the line.
-- **Literal injection** (not a pointer): the digest text is concatenated into the specify/plan prompt (e.g. a `{{design_heuristics}}` template variable filled from the single source file, so there is one source of truth and no drift). Whether via template variable in `buildPhasePrompt()` or an equivalent assembly point is a plan-level (HOW) decision; the spec requires only that the text appear verbatim and unconditionally in the assembled design prompt.
-- **Producer becomes a router**: review prompts route by the taxonomy; the review section is renamed (`## Wisdom Routing`) and the existing porch check follows the rename. This is a producer-side section check that already exists — it is not a new consumption gate, so it honors the "no hard consumption check" decision.
-- **MAINTAIN repurposed**: police the bound + the routed surfaces instead of growing an archive.
+### Approaches considered and rejected
+- **Retire `lessons-learned.md` + single design-heuristics digest** (the prior 2026-06-04 model). Rejected by the architect because it is asymmetric — it ignores that `arch.md` is identically write-only — and because deleting reference content loses the on-demand archive. Replaced by hot/cold, which keeps the archives and fixes both docs.
+- **Inject the whole cold docs at design time.** Rejected — re-creates unbounded context cost and drowns the few behavior-changing facts; the cap-bounded hot tier is the disciplined alternative.
+- **Relevance-retrieval / tagging engine.** Rejected — the hard cap makes "always inject in full" viable, so no retrieval machinery is needed.
 
 ## Open Questions
 
 ### Critical (Blocks Progress)
-- None. The three forks are resolved by the architect's answers.
+- None — the model and its baked decisions are fixed by the architect instruction.
 
 ### Important (Affects Design)
-- [ ] **Exact cap and home of the digest.** Proposed: `codev/resources/design-heuristics.md`, capped at "fits one screen" (~20–25 single-line heuristics). Final number to be set in the plan / confirmed at the plan gate.
-- [ ] **Injection mechanism location.** Template variable filled by `buildPhasePrompt()` (one source of truth, small TS change) vs. inlining the digest into the prompt templates (no TS change but drift risk). Lean: template variable. Resolve in plan.
-- [ ] **Review-section rename vs. removal.** Keep a renamed `## Wisdom Routing` section (preserves a producer-side check and a paper trail of routing decisions) vs. drop the section entirely. Lean: rename + keep, since it is not a consumption check and provides routing evidence.
+- [ ] **Exact cap per hot file.** Proposed: each hot file ≤ ~10 single-line entries / "fits in a handful of lines at a glance." Final number set in the plan / confirmed at the plan gate.
+- [ ] **Interactive-surface mechanism** — generated managed block (tool-agnostic, recommended) vs `@import` (Claude-only). Resolve in plan.
+- [ ] **porch injection form** — `{{arch_critical}}`/`{{lessons_critical}}` template variables vs a prepended always-on block in `buildPhasePrompt()`. Lean: template variables. Resolve in plan.
+- [ ] **Review-section naming** — keep `## Architecture Updates` / `## Lessons Learned Updates` (with routing instructions inside) vs rename to signal hot/cold routing. Keeping preserves the existing porch checks with minimal churn. Lean: keep names, change the instructions. Resolve in plan.
 
 ### Nice-to-Know (Optimization)
-- [ ] Whether the implement-phase prompt should also surface the digest (currently out of scope — design-time only).
-- [ ] Whether a short "how to curate the digest" note belongs in the architect role file.
+- [ ] Whether the hot files should carry a one-line "how to curate / demote" header for architects.
+- [ ] Whether a lightweight cap-check (line count) belongs in MAINTAIN tooling vs. left to human judgment at MAINTAIN time.
 
 ## Test Scenarios
 
-This is a methodology/mechanism change; "tests" are largely structural assertions plus prompt-assembly verification.
+This is a methodology/mechanism change; "tests" are structural assertions plus prompt-assembly verification.
 
 ### Functional Tests
-1. **Injection present**: assemble a `specify` (and `plan`) phase prompt for a sample project and assert the design-heuristics text appears verbatim in the assembled prompt.
-2. **Single source of truth**: editing the digest source file changes the assembled prompt (no second copy to keep in sync).
-3. **Producer routes**: the spir/aspir/pir review prompts contain the routing taxonomy and the renamed section; no instruction to append to a lessons archive remains.
-4. **Check follows rename**: the porch `protocol.json` review check greps for the renamed section and passes on a correctly-routed review.
-5. **Deletion + zero live references**: the archive files are absent; `rg` for the term returns zero hits in live framework files (protocols/prompts/skills/CLAUDE/AGENTS/templates/roles/source), hits only in historical artifacts.
+1. **Always-on injection (porch)**: assemble phase prompts for ≥2 phases (e.g. specify and implement) and assert both `arch-critical.md` and `lessons-critical.md` text appears verbatim in each.
+2. **Single source of truth**: editing a hot file changes both the assembled porch prompt and the interactive always-on context (no second copy to hand-sync).
+3. **Four-tier resolution**: with no `codev/resources/arch-critical.md` present, injection falls back to the skeleton copy (no empty/failed injection).
+4. **Cold docs preserved**: `arch.md` and `lessons-learned.md` still exist with reference content after the change.
+5. **Producer routes**: review prompts instruct hot-vs-cold routing for both docs; no "append everything to the archive" instruction remains.
+6. **Checks valid**: porch review checks pass on a correctly-routed review.
+7. **Scaffold**: a freshly scaffolded project contains all four files (`arch.md`, `arch-critical.md`, `lessons-learned.md`, `lessons-critical.md`).
 
 ### Non-Functional Tests
-1. **Bound respected**: the seeded digest fits the stated cap.
-2. **Cross-tree consistency**: every changed file present in both `codev/` and `codev-skeleton/` is changed in both; new digest exists in both.
-3. **Suite green**: existing unit/e2e tests pass; tests referencing the old section/path are updated.
+1. **Cap respected**: each seeded hot file fits the stated cap.
+2. **Cross-tree consistency**: every changed file present in both trees is changed in both; the two new hot files exist in both template trees.
+3. **Suite green**: existing unit/e2e tests pass; tests referencing the old copy list / sections updated.
 
 ## Dependencies
-- **Internal**: porch prompt assembly (`buildPhasePrompt` in `packages/codev/src/commands/porch/prompts.ts`); the framework-file four-tier resolver; the spir/aspir/pir/maintain protocol definitions + prompts + templates (both trees); `porch/prompts/review.md`; the `update-arch-docs` skill (both trees); `packages/codev/src/lib/scaffold.ts` and its tests (`scaffold.test.ts`, `templates.test.ts`); `packages/codev/src/lib/templates.ts` (`USER_DATA_PATTERNS`); `CLAUDE.md`/`AGENTS.md`; role files; `arch.md` (sibling-doc pointer only).
+- **Internal**: `buildPhasePrompt()` + `substituteVariables` (`packages/codev/src/commands/porch/prompts.ts`); the framework-file four-tier resolver; the CLAUDE↔AGENTS sync path (if a generated managed block is used); the spir/aspir/pir/maintain protocol definitions + prompts + templates (both trees); `porch/prompts/review.md`; the `update-arch-docs` skill (both trees); `scaffold.ts` + `scaffold.test.ts` + `templates.test.ts`; `templates.ts` (`USER_DATA_PATTERNS`); `CLAUDE.md`/`AGENTS.md`; role files.
 - **External**: none.
 - **Libraries/Frameworks**: none new.
 
 ## Risks and Mitigation
 | Risk | Probability | Impact | Mitigation |
 |------|------------|--------|-------------|
-| Missed references in the dual tree (footgun) | High | Med | Exhaustive `rg` across both trees before commit; explicit both-tree audit step; CMAP reviewers historically catch this. |
-| Editing historical artifacts to "clean up" the term | Med | Med | Explicit out-of-scope list (maintain runs, plans, projects, archives, release protocol history); leave history intact. |
-| Digest silently re-accretes over time | Med | Med | Explicit cap + add-by-displacement rule + MAINTAIN bound-audit; producer prompt forbids "append, will trim later". |
-| Losing a genuinely useful recipe by deleting the archive | Low | Low | Recipes remain in their reviews + git history; only the *unread* always-on copy is removed. If one is truly load-bearing it becomes a rule/heuristic during migration. |
-| "Inject" interpreted as a weak "please read" pointer (the very failure being fixed) | Med | High | Success criterion requires the text to appear *verbatim and unconditionally* in the assembled prompt, not a file reference. |
-| Downstream adopters left with a dangling skeleton | Low | Med | Skeleton ships a seeded/example digest + routing-based review prompt, leaving a coherent model. |
+| Hot files silently grow past the cap (re-accretion) | Med | High | Explicit hard cap + demote-on-add discipline + MAINTAIN cap-policing; producer prompt forbids "append, trim later." |
+| "Inject" implemented as a weak pointer (the very failure being fixed) | Med | High | Success criterion requires verbatim, unconditional text in the assembled prompt and always-on interactive context — not a file reference. |
+| Interactive surface drifts from the source of truth | Med | Med | Single-source-of-truth requirement; generated managed block with drift-guard markers; CLAUDE≡AGENTS check. |
+| Tool-specific interactive mechanism leaves AGENTS.md consumers without the hot tier | Med | Med | Default to tool-agnostic generated block; `@import` only if architect accepts Claude-only at the gate. |
+| Missed surfaces in the dual tree (footgun) | High | Med | Explicit live-surface sweep list + exhaustive `rg` in both trees; CMAP reviewers historically catch this. |
+| Always-on injection bloats every prompt | Low | Med | The hard cap keeps per-prompt cost negligible by construction; that is the cap's primary justification. |
+| Editing historical artifacts to "tidy" them | Low | Med | Explicit out-of-scope list; leave history intact. |
+| Cold-tier philosophy change misread as "stop maintaining arch.md/lessons-learned" | Low | Med | Spec is explicit: cold docs are kept and maintained as reference; only the *anti-accretion* emphasis moves to the hot cap. |
 
 ## Expert Consultation
-**Date**: 2026-06-04
-**Models Consulted**: Gemini, Codex, Claude (SPIR default)
-**Verdicts (iter 1)**: Gemini APPROVE (no issues) · Claude APPROVE (5 minor plan-level notes) · Codex REQUEST_CHANGES (4 concrete completeness gaps)
+**Date (iter 1, prior model)**: 2026-06-04 — Gemini APPROVE, Claude APPROVE, Codex REQUEST_CHANGES (four completeness gaps, all incorporated). That round reviewed the now-superseded retire-and-route model; its surviving, still-applicable findings (four-tier resolver, scaffold + tests, explicit live-surface sweep, route-not-append, MAINTAIN cap-policing, `codev update` coherence) are carried into this revision and re-scoped to the hot/cold split.
 
-**Sections Updated in response:**
-- **Current State**: added the verified inventory of **four** physical `lessons-learned.md` copies (resources, skeleton/templates, `codev/templates/`, maintain template); added the **scaffold/install/update** path (`scaffold.ts` copy list, `scaffold.test.ts`/`templates.test.ts`, `USER_DATA_PATTERNS`, four-tier resolver). *(Codex #1–#2, Claude #1–#2)*
-- **Success Criteria**: now delete all four copies; require scaffold + tests to copy the new file; require digest injection to resolve via the four-tier fallback chain so upgraded-but-not-yet-seeded repos still work; require a coherent `codev update` path with an orphaned-file migration-hint decision. *(Codex #2–#3, Claude #4)*
-- **Success Criteria (sweep)**: made the live-surface list explicit (protocol docs, review templates, MAINTAIN templates, PIR prompts, `porch/prompts/review.md`, arch.md pointer, skill) rather than relying on the grep criterion alone. *(Codex #4)*
-- **Dependencies**: expanded to name scaffold, its tests, the resolver, and `templates.ts`.
-
-**Considered and not actioned:** Claude #3 (an `examples/` reference) — verified there is **no** `lessons-learned` reference under `examples/`; the rg sweep covers it regardless. Claude #5 (skeleton starter content: Codev-specific vs generic heuristics) — left to the plan as flagged.
+**Date (iter 2, this model)**: TBD — to be re-consulted (Gemini, Codex, Claude) after this revision.
 
 ## Approval
 - [ ] Architect Review (human gate: spec-approval)
-- [ ] Expert AI Consultation Complete
+- [ ] Expert AI Consultation Complete (iter 2, on the hot/cold model)
 
 ## Notes
-This spec deliberately keeps WHAT/WHY here and defers file-by-file mechanics (exact cap number, template-variable vs inline injection, the precise migration of each surviving heuristic) to the plan. The one-time **migration/curation** of the durable subset is itself a meaningful piece of work and should be its own plan phase, kept separate from the mechanical deletion + reference sweep.
+Spec altitude is intentionally WHAT/WHY. The two consumption surfaces and the cap value are described, but the final injection mechanism (template variable vs block; generated managed block vs `@import`), the exact cap number, and the precise seed contents of each hot file are deferred to the plan. The **one-time curation** that seeds the hot files (lifting the behavior-changing subset out of the cold docs) is meaningful work and should be its own plan phase, kept separate from the mechanical injection + scaffold + sweep changes.
 
 ---
 

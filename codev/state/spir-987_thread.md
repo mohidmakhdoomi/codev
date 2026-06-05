@@ -38,4 +38,22 @@ Principle: wisdom only changes behavior if it lives in **always-on context**, an
 - Codex/Claude both correct: there are **4** physical `lessons-learned.md` copies (resources, skeleton/templates, codev/templates, maintain template), plus `scaffold.ts` copies it into new projects and tests assert it, plus injection must use the 4-tier resolver, plus codev-update orphan handling.
 - Incorporated all into spec (Current State inventory, Success Criteria, Dependencies, Consultation Log). examples/ ref = non-issue (verified zero hits).
 
-### Next: commit "spec with multi-agent review", porch next → likely spec-approval gate (HUMAN). Will NOT self-approve.
+### Reached spec-approval gate (iter1 model: retire+route). Notified architect.
+
+## MAJOR PIVOT (architect instruction, 2026-06-05) — at the gate, before approval
+The "retire lessons-learned + single design-heuristics digest" model is **REPLACED**. New model = **symmetric two-tier (hot/cold) across BOTH arch.md AND lessons-learned.md. Nothing retired.**
+
+Reframe: `arch.md` is **identically write-only** — `buildPhasePrompt()` injects NEITHER doc (verified: it reads only summary/plan-phase/history/user-answers). Fix must be symmetric.
+
+**New model (baked):**
+- **HOT:** `arch-critical.md` + `lessons-critical.md` — tiny, **hard-capped** (handful of lines each), **ALWAYS injected** into EVERY prompt (CLAUDE.md-style, not design-time-only). The behavior-changer.
+- **COLD:** `arch.md` + `lessons-learned.md` — **KEPT/expanded**, on-demand reference. NOT deleted. Spec-narrow recipes STAY (reference, not behavior-changers).
+- Decision A: injection scope = ALWAYS-ON every prompt; viability rests on the HARD CAP; adding to hot forces DEMOTING to cold (displacement). MAINTAIN polices cap; review phase routes hot-vs-cold at capture.
+- Decision B: KEEP expanded docs intact (no deletion/dropping).
+- **Mechanism wrinkle (meaty):** hot files must reach BOTH (1) porch builders via `buildPhasePrompt()` AND (2) interactive architect sessions via CLAUDE.md-style always-on — different surfaces, both via 4-tier fallback resolver.
+
+**Keep from iter1 spec:** 4-tier resolver for injected files; scaffold.ts+tests; live-surface sweep both trees; route-not-append (now hot-vs-cold); MAINTAIN polices cap; codev-update/USER_DATA coherence.
+
+Verified: buildPhasePrompt uses `{{var}}` substitution (`substituteVariables`) → template-var injection feasible. No `@import` in CLAUDE.md today.
+
+### Next: rewrite spec to hot/cold symmetric model → re-consult (CMAP) → re-present spec-approval. Do NOT self-approve.
