@@ -34,3 +34,11 @@ needed `@cluesmith/codev-core` + `-types` built first or check-types fails on mi
 declarations (env state, not my change).
 
 Awaiting dev-approval.
+
+## Review phase
+
+dev-approval approved. Wrote `codev/reviews/989-vscode-guarded-command-feedbac.md`
+(Summary / Files / Commits / Test Results / Architecture Updates [none] / Lessons [none] /
+Things to Look At / How to Test Locally). No arch.md or lessons-learned.md changes needed.
+Opening PR with the review as body (Fixes #989), recording with porch, then porch runs the
+single-pass 3-way consult. Will lead architect notification with any REQUEST_CHANGES.
