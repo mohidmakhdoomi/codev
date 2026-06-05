@@ -1,0 +1,19 @@
+# PIR #983 — Tower version divergence probe
+
+## Builder thread
+
+### Plan phase (started 2026-06-06)
+
+Working on #983: detect when the **running** Tower process is older than the **installed** CLI / extension-expected version. The #791 preflight only inspects the on-disk binary (`codev --version`); after an `npm install -g` upgrade without a Tower restart, the running process serves stale code while the preflight reports green.
+
+**Investigation findings:**
+- Tower routes live in `packages/codev/src/agent-farm/servers/tower-routes.ts` — exact-match dispatch table `ROUTES`. `/health` already exists (unauthenticated, gated only by Host/Origin validation in `isRequestAllowed`). Adding `GET /api/version` is a one-line table entry + handler.
+- `RouteContext` (tower-routes.ts:131) is built as `routeCtx` in `tower-server.ts:296`. Need to thread `version` (from `./version.js`) + `startedAt` (stamped at server start) onto it.
+- `version` is exported from `packages/codev/src/version.ts` (reads package.json).
+- Wire types for the extension already live in `@cluesmith/codev-types` (`OverviewData`, `IssueView`, etc.) consumed via `TowerClient`. New `TowerVersionInfo` type goes in `packages/types/src/api.ts`.
+- `TowerClient` (packages/core/src/tower-client.ts) is the HTTP client; add a `getVersion()` method mirroring `getHealth()`.
+- Preflight glue: `packages/vscode/src/preflight/preflight.ts` + pure core `preflight-core.ts`. Architect heads-up: #989/PR #995 just shipped the modal-first `showPreflightFeedback`/`preflightFeedbackMessage` helpers (currently CLI-dimension only). #983 extends them to a two-dimension `PreflightState` (CLI + Tower-running).
+- `connect()` in `connection-manager.ts` already calls `getHealth()` on every connect/reconnect — natural hook point for the Tower-version probe (activation + reconnect, not per-tick).
+- Cross-machine: `getTowerAddress()` (workspace-detector.ts) yields host (default localhost); restart action is local-only, so non-local host must degrade to informational wording.
+
+Plan written to `codev/plans/983-vscode-tower-detect-installed-.md`. Awaiting `plan-approval` gate.
