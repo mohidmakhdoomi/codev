@@ -76,4 +76,12 @@ describe('extension.ts wiring (#812)', () => {
       /setContext['"],\s*['"]codev\.panelContainerEmpty['"],\s*true/,
     );
   });
+
+  it('reveals the panel once on first run, guarded by globalState', () => {
+    // The reveal must be gated on a globalState flag so it fires once per
+    // profile, not on every launch.
+    expect(EXT_SRC).toMatch(/globalState\.get\(\s*PANEL_REVEALED_KEY\s*\)/);
+    expect(EXT_SRC).toMatch(/executeCommand\(['"]workbench\.view\.extension\.codevPanel['"]\)/);
+    expect(EXT_SRC).toMatch(/globalState\.update\(\s*PANEL_REVEALED_KEY\s*,\s*true\s*\)/);
+  });
 });

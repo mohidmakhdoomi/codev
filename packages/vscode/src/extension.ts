@@ -362,6 +362,17 @@ export async function activate(context: vscode.ExtensionContext) {
 	// #815) flip this key false as they migrate views in, hiding the signpost.
 	vscode.commands.executeCommand('setContext', 'codev.panelContainerEmpty', true);
 
+	// VSCode gives no control over a panel tab's position, so a freshly
+	// contributed container lands last and spills into the `...` overflow.
+	// Reveal it exactly once (per profile) so the user discovers the tab; the
+	// globalState flag makes this a one-time nudge, not an every-launch
+	// interruption. After the reveal VSCode persists the tab as shown.
+	const PANEL_REVEALED_KEY = 'codev.panelRevealedOnce';
+	if (!context.globalState.get(PANEL_REVEALED_KEY)) {
+		vscode.commands.executeCommand('workbench.view.extension.codevPanel');
+		context.globalState.update(PANEL_REVEALED_KEY, true);
+	}
+
 	// Builders accordion: expanding one builder auto-collapses the others so a
 	// reviewer can't have diffs from unrelated worktrees open at once. The
 	// deterministic collapseAll+reveal pair (vs fighting VSCode's expansion
