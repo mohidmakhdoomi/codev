@@ -1,8 +1,13 @@
+---
+approved: 2026-06-02
+validated: [gemini, codex, claude]
+---
+
 # Specification: Migrate the Gemini consult lane to the Antigravity CLI (`agy`)
 
 ## Metadata
 - **ID**: spec-2026-06-01-778-gemini-antigravity-cli
-- **Status**: draft (rewritten to Approach B per architect directive 2026-06-02)
+- **Status**: approved (Approach B, single-agy; human-approved at the spec-approval gate 2026-06-02)
 - **Created**: 2026-06-01
 - **Issue**: #778
 - **Deadline**: 2026-06-18 (Gemini CLI subscription serving retires)
