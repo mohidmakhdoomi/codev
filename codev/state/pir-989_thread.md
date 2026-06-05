@@ -17,3 +17,20 @@ preflight-core for testability; modal-vs-ephemeral chosen by a session flag that
 on recheck→ok (unchanged semantics). Sets up #983 reuse (Tower dimension).
 
 Wrote plan to `codev/plans/989-vscode-guarded-command-feedbac.md`. Awaiting plan-approval.
+
+## Implement phase
+
+Plan approved. Implemented as planned (no deviations):
+- `preflight-core.ts`: new pure `preflightFeedbackMessage(status)` (em-dash-free copy:
+  `Codev: CLI <state>. Run "Codev: Recheck CLI" when ready.`).
+- `preflight.ts`: `showSetupRequiredToast` → `showPreflightFeedback`; flag
+  `setupToastShown` → `modalShownThisSession`; modal first, `setStatusBarMessage(..., 4000)`
+  after. Reset-on-recheck→ok unchanged.
+- `extension.ts`: import + guard call renamed; updated the stale "single toast" comment.
+- `preflight-core.test.ts`: +3 cases for the new helper.
+
+Checks: porch build ✓ (6.8s), tests ✓ (20.7s, 287 pass / +3 new). Note: fresh worktree
+needed `@cluesmith/codev-core` + `-types` built first or check-types fails on missing
+declarations (env state, not my change).
+
+Awaiting dev-approval.
