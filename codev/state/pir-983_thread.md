@@ -17,3 +17,9 @@ Working on #983: detect when the **running** Tower process is older than the **i
 - Cross-machine: `getTowerAddress()` (workspace-detector.ts) yields host (default localhost); restart action is local-only, so non-local host must degrade to informational wording.
 
 Plan written to `codev/plans/983-vscode-tower-detect-installed-.md`. Awaiting `plan-approval` gate.
+
+**Plan revision (still at gate):** Folded in the additive-`PreflightState` refinement after a blast-radius discussion with the reviewer. Key decisions now baked into the plan:
+- `PreflightState` extended **additively** (keep `status`/`cliVersion`, add `towerStatus`/`runningVersion`/`hostIsLocal`) so `views/status.ts:76` doesn't break. Nested `{cli,tower}` restructure rejected.
+- Tower-divergence toast lives on a **dedicated surface**, not by overloading no-arg `showPreflightFeedback()` (which stays the CLI command-guard path → `extension.ts:603` untouched). The helper that evolves per #989 is `preflightFeedbackMessage`.
+- Added a first-class **Blast Radius** section: 3 packages additive; only contained, compile-caught edits are the 3 `makeCtx()` test helpers (new `RouteContext` fields) + 4 `preflightFeedbackMessage` call sites.
+Scope confirmed: this addresses **only #983**. #982 is a separate bug class (shared UX echo only); #989/#995 already merged (foundation); #791 extended, not modified.

@@ -84,13 +84,13 @@ The caller distinguishes the **404 "too old"** case (`result.status === 404`) fr
 `preflight-core.ts` (pure, unit-tested):
 - Add `TowerStatus = 'ok' | 'stale' | 'too-old' | 'unreachable' | 'pending'`.
 - Add `decideTowerStatus({ runningVersion, installedCli, extVersion, probe })` returning a `TowerStatus` using the Q1 predicate + Q3 404 mapping.
-- Evolve `PreflightState` to two dimensions: `{ cli: { status, version }, tower: { status, runningVersion }, hostIsLocal: boolean }` (per the architect's note that the helper signature evolves from single-state to a combined `PreflightState`).
-- Extend `preflightFeedbackMessage` to accept the combined state and branch on the Tower dimension.
+- Extend `PreflightState` **additively** — keep the existing top-level `status` and `cliVersion` fields exactly as they are, and *add* the Tower dimension alongside: `{ status, cliVersion, towerStatus, runningVersion, hostIsLocal }`. This is the blast-radius-minimizing choice: the one external consumer, `views/status.ts:76` (`const { status, cliVersion } = getPreflightState()`), keeps compiling untouched and simply gains the option to read the new fields for its tooltip. A nested `{ cli: {...}, tower: {...} }` restructure was rejected purely because it would break that destructure for no functional gain.
+- Extend `preflightFeedbackMessage` to accept the combined state (or a `towerStatus`) and branch on the Tower dimension. This is the helper whose signature evolves per the architect's #989/PR #995 note — **not** the `showPreflightFeedback()` guard entry point, which stays no-arg (see below) so `extension.ts:603` is untouched.
 
 `preflight.ts` (vscode glue):
 - After the existing CLI probe resolves OK, fetch `client.getVersion()` (the `ConnectionManager`'s client) and run `decideTowerStatus`.
 - Cache the Tower dimension alongside the CLI dimension; `getPreflightState()` returns both; fire `onPreflightChange`.
-- On `stale` / `too-old`: show a toast. If `hostIsLocal`, action button `Restart Tower` → spawn `afx tower stop && afx tower start` (reuse the afx-path resolution from `tower-starter.ts`), then re-probe via `recheckCli`-style flow. If non-local: informational toast naming the host, no local restart button.
+- On `stale` / `too-old`: show a toast from a **dedicated Tower-divergence surface** (a new `showTowerDivergenceFeedback`-style function), *not* by overloading `showPreflightFeedback()`. The existing `showPreflightFeedback()` stays no-arg and CLI-only — it is the command-guard path called from `extension.ts:603`, so leaving its signature alone keeps `extension.ts` untouched. If `hostIsLocal`, the toast carries an action button `Restart Tower` → spawn `afx tower stop && afx tower start` (reuse the afx-path resolution from `tower-starter.ts`), then re-probe via a `recheckCli`-style flow. If non-local: informational toast naming the host, no local restart button.
 - `unreachable`: defer to the existing "Not connected to Tower" path — **no new signal**.
 - `ok`: no toast, no signal (acceptance: no false positives in healthy state).
 - Wire the probe into `ConnectionManager`'s `connected` transition (reconnect coverage), in addition to the activation-time preflight call.
@@ -124,6 +124,28 @@ Add a small `restartTower(...)` to `tower-starter.ts` (or a sibling): resolve af
 - **Alternative considered — fold `version` into `/health`** instead of a new endpoint. `connect()` already calls `/health`, so this would be zero extra round-trips and old Towers would simply omit the field (a clean "too old" signal). **Rejected as the primary surface** because (a) acceptance explicitly asks for `/api/version` *and* the response type in `@cluesmith/codev-types`, while `TowerHealth` lives in core; (b) a dedicated endpoint keeps the version-probe semantics separable from liveness. *Mitigation if the reviewer prefers minimalism:* I can additionally stamp `version`/`startedAt` onto `/health` so the connect path gets it for free — flagging this as an open option for the gate.
 - **Alternative considered — per-tick polling.** Rejected (Q4): in-memory version is restart-only; polling is waste.
 - **Alternative considered — auto-restart on divergence.** Rejected (Q2): too aggressive with in-flight builder work.
+
+## Blast Radius
+
+Four packages in dependency order `types → core → codev → vscode`. No existing route, existing wire type, or existing CLI-preflight behavior is modified. `TowerVersionInfo` is a *new* type, not a field added to a hot shape like `OverviewBuilder`, so none of the silent-undefined wire-drift the issue warns about applies to the change itself.
+
+**Purely additive (zero existing-consumer risk):**
+- `@cluesmith/codev-types` — new `TowerVersionInfo`.
+- `@cluesmith/codev-core` — new `getVersion()` method.
+- Tower — new `GET /api/version` route + handler; the new divergence toast surface; the connect-time probe hook.
+
+**Compile-time-caught, contained:**
+- `RouteContext` gains `version` + `startedAt` → 3 test `makeCtx()` helpers need a 2-line addition each (`tower-routes.test.ts:127`, `spec-761-api-state.test.ts:107`, `tower-cron-routes.test.ts:115`); one real construction site at `tower-server.ts:296`. TypeScript flags all of these; nothing reaches runtime.
+- `preflightFeedbackMessage(...)` signature change → 4 call sites (`preflight.ts:277` + 3 in `preflight-core.test.ts`).
+
+**Avoided by the additive design (no longer breaking):**
+- `PreflightState` kept additive → its one external consumer `views/status.ts:76` is untouched.
+- `showPreflightFeedback()` kept no-arg → `extension.ts:603` is untouched.
+
+**Runtime / behavioral:**
+- New endpoint shares `/health`'s trust model (localhost-bound, Host/Origin-gated, no token, low-sensitivity version string) — no new attack surface.
+- New toast only fires on genuine divergence; healthy state is silent. The one real UX risk is a false-positive toast, mitigated by the `running < max(cli, ext)` predicate (a newer-running Tower is never flagged).
+- One extra HTTP GET per connect — negligible.
 
 ## Test Plan
 
