@@ -46,7 +46,7 @@ Scope note: only **builder** and **architect** are persistent, restart-reconcile
 
 - **`terminal-adapter.ts`**: add an optional `onSessionGone?: () => void` (constructor param, defaulting undefined). In the permanent-close branch (`:185-186`), invoke `this.onSessionGone?.()` *before* falling back to the existing `giveUp(...)` message. This is the seam that lets the manager (which knows the stable identity; the adapter does not) attempt recovery. If `onSessionGone` is absent or recovery finds no successor, the current give-up link behavior is unchanged (graceful fallback).
 - **`terminal-manager.ts`**:
-  - In `openTerminal` (`:341`), pass an `onSessionGone` closure to `new CodevPseudoterminal(...)` that captures `mapKey`/`type` and calls a new `recoverSuccessor(mapKey)`.
+  - In `openTerminal` (the `new CodevPseudoterminal(...)` call, `:348`), pass an `onSessionGone` closure that captures `mapKey`/`type` and calls a new `recoverSuccessor(mapKey)`.
   - New `private async recoverSuccessor(mapKey: string)`: derive a `SessionRef` from the mapKey (`builder-<id>` → `{kind:'builder', id}`, `architect:<name>` → `{kind:'architect', name}`; other kinds → return, leave give-up message), `await client.getWorkspaceState(workspacePath)`, call `resolveSuccessorTerminalId(state, ref)`. If it returns a **new** id (different from the dead `entry.id`), reopen via the existing stale-replace method (`openBuilder`/`openArchitect`) which disposes the dead terminal and attaches to the successor. If null, do nothing (the adapter's give-up link stands).
   - Route the manual `reconnectByTerminal` (`:392-398`) through `recoverSuccessor` too, so the "Click here to reconnect" affordance **also** re-resolves the successor instead of retrying the dead id — fixing the manual path's dead-URL bug as a bonus, with a final fall-through to `pty.reconnect()` when no successor exists (genuine transient give-up).
 
@@ -66,7 +66,7 @@ Net VSCode behavior: a post-restart permanent close auto-resolves the successor 
 
 **VSCode**
 - `packages/vscode/src/terminal-adapter.ts` — add `onSessionGone?` ctor param; invoke in the permanent-close branch (`:185`).
-- `packages/vscode/src/terminal-manager.ts` — pass `onSessionGone` in `openTerminal` (`:341`); add `recoverSuccessor(mapKey)`; route `reconnectByTerminal` (`:392`) through it.
+- `packages/vscode/src/terminal-manager.ts` — pass `onSessionGone` in `openTerminal` (`:348`); add `recoverSuccessor(mapKey)`; route `reconnectByTerminal` (`:392`) through it.
 - `packages/vscode/src/__tests__/terminal-adapter.test.ts` and/or `terminal-manager` tests — cover the new seam.
 
 **Dashboard**
