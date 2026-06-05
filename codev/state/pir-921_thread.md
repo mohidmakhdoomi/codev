@@ -78,3 +78,12 @@ Reviewer feedback: "Reveal in Workspace View" had weak value (navigated from the
 - Close half = `codev.devServer.hideSidebar` → `workbench.action.closeSidebar`. Shown when it is.
 - Paired via `when` on `sideBarVisible && activeViewlet == 'workbench.view.extension.codev'`, mirroring the Backlog show-all/mine-only eye/eye-closed toggle idiom. Icons $(eye)/$(eye-closed).
 Build/lint/types ✓, 311 unit tests ✓. Gate still dev-approval (no porch done re-run; iterating in place).
+
+## Review phase (dev-approval approved)
+
+- Wrote codev/reviews/921-*.md (Summary / Files / Commits / Test Results / Arch Updates / Lessons / Things-to-look-at / How-to-test).
+- arch.md: updated #812 panel bullet (codev.devServer = first real panel view → key seeded false) + added "Codev Dev surface (#921)" key-design bullet.
+- lessons-learned.md: added StatusBarItem.backgroundColor (only error/warning honored → use prominentForeground) + $(zap)=AI-glyph gotchas. (The two-command when-clause toggle was already under #952.)
+- PR #996 opened (body = review file, Fixes #921). Recorded with porch.
+- porch structural checks ✓ (pr_exists, review_has_arch_updates, review_has_lessons_updates).
+- 3-way consultation (gemini/codex/claude, type=impl) running in background — single advisory pass (max_iterations:1). Next: read verdicts, handle any REQUEST_CHANGES (fix+regression test or rebut; escalate either way), notify architect, wait at pr gate.
