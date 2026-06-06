@@ -37,7 +37,7 @@ const WALKTHROUGH_ID = 'cluesmith.codev-vscode#codevGettingStarted';
 /** workspaceState key gating the once-per-workspace auto-open of the walkthrough. */
 const WALKTHROUGH_SHOWN_KEY = 'codev.preflight.walkthroughShown';
 /** Install docs surfaced from the outdated-CLI notification and walkthrough. */
-export const INSTALL_DOCS_URL = 'https://github.com/cluesmith/codev#installation';
+export const INSTALL_DOCS_URL = 'https://github.com/cluesmith/codev#quick-start';
 /** Hard cap on the `codev --version` probe so a hung binary can't stall startup. */
 const VERSION_TIMEOUT_MS = 400;
 /** The command users / UI invoke to re-verify after fixing the CLI. */
