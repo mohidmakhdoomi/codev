@@ -430,6 +430,24 @@ export interface TunnelStatus {
   accessUrl: string | null;
 }
 
+// --- Tower version (GET /api/version) ---
+
+/**
+ * Response of `GET /api/version` — the version of the *currently running*
+ * Tower process, read from its in-memory `package.json` at boot (#983).
+ *
+ * Distinct from the installed CLI version (`codev --version`, which inspects
+ * the on-disk binary): after an `npm install -g` upgrade without a Tower
+ * restart, the two diverge. The VS Code preflight probes this endpoint to
+ * detect that divergence and prompt a restart.
+ */
+export interface TowerVersionInfo {
+  /** Semver of the in-memory Tower process. */
+  version: string;
+  /** ISO-8601 timestamp of when this Tower process started. */
+  startedAt: string;
+}
+
 // --- Analytics (GET /api/analytics) ---
 
 export interface ProtocolStats {
