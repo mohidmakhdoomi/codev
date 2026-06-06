@@ -109,10 +109,90 @@ export function decidePreflight(input: {
  * non-ok preflight status, after the first-click modal has already fired this
  * session (see `showPreflightFeedback` in `preflight.ts`). Names the current
  * problem and the recovery command so the click reads as registered, not as a
- * silent no-op. Kept pure so the wording is unit-tested without a vscode mock;
- * #983 will extend it with a Tower-version branch.
+ * silent no-op. Kept pure so the wording is unit-tested without a vscode mock.
+ * The Tower-version dimension (#983) is a separate surface — see
+ * `towerDivergenceMessage` below — rather than an overload of this CLI helper.
  */
 export function preflightFeedbackMessage(status: PreflightStatus): string {
   const label = status === 'outdated' ? 'outdated' : 'not installed';
   return `Codev: CLI ${label}. Run "Codev: Recheck CLI" when ready.`;
+}
+
+// ---------------------------------------------------------------------------
+// Tower-version dimension (#983)
+//
+// The CLI preflight above inspects the on-disk binary. This second dimension
+// inspects the *running* Tower process via `GET /api/version`. After an
+// `npm install -g` upgrade without a Tower restart the two diverge: the disk
+// binary is current but Tower still serves the old in-memory code. These pure
+// helpers decide the divergence state and word the toast; the vscode glue in
+// `preflight.ts` owns the probe, caching, and the `Restart Tower` action.
+// ---------------------------------------------------------------------------
+
+/**
+ * The Tower-version dimension of the preflight.
+ *
+ * - `ok`          — running Tower is at least as new as both the installed CLI
+ *                   and the extension's expected version. No signal.
+ * - `stale`       — running Tower is older than the installed CLI and/or the
+ *                   extension. The user upgraded (or this build needs newer)
+ *                   but Tower is still on old in-memory code. Prompt a restart.
+ * - `too-old`     — the probe returned 404: this Tower predates the
+ *                   `/api/version` endpoint entirely. Prompt a restart, with
+ *                   stronger wording.
+ * - `unreachable` — the probe could not reach Tower. Defer to the existing
+ *                   "not connected to Tower" path; no new signal.
+ * - `pending`     — the probe has not completed yet.
+ */
+export type TowerStatus = 'ok' | 'stale' | 'too-old' | 'unreachable' | 'pending';
+
+/**
+ * Decide the Tower-version dimension from the probe outcome and the known
+ * versions. The divergence rule is `running < max(installedCli, extVersion)` —
+ * a running Tower *newer* than the installed CLI (local-dev / global-install
+ * lag) is deliberately **not** flagged, so the healthy path stays silent.
+ *
+ * `probeStatus` is the raw HTTP status from `TowerClient.getVersion()`
+ * (`0` = unreachable, `404` = endpoint absent, `200` = reported).
+ */
+export function decideTowerStatus(input: {
+  probeStatus: number;
+  runningVersion: string | null;
+  installedCli: string | null;
+  extVersion: string;
+}): TowerStatus {
+  if (input.probeStatus === 404) {
+    return 'too-old';
+  }
+  if (input.probeStatus !== 200 || !input.runningVersion) {
+    return 'unreachable';
+  }
+  const baselines = input.installedCli
+    ? [input.extVersion, input.installedCli]
+    : [input.extVersion];
+  const isStale = baselines.some((b) => compareSemver(input.runningVersion!, b) < 0);
+  return isStale ? 'stale' : 'ok';
+}
+
+/**
+ * Toast wording for a divergent Tower (`stale` / `too-old`). The action button
+ * itself is attached by the vscode glue; this is just the message body, kept
+ * pure so the wording is unit-tested without a vscode mock. When the Tower is
+ * non-local (tunnelled / remote `towerHost`) the local `Restart Tower` action
+ * would target the wrong machine, so the wording names the host instead.
+ */
+export function towerDivergenceMessage(input: {
+  status: 'stale' | 'too-old';
+  runningVersion: string | null;
+  expectedVersion: string;
+  hostIsLocal: boolean;
+  host: string;
+}): string {
+  const runningClause = input.status === 'too-old'
+    ? 'Codev Tower is running code too old to report its version'
+    : `Codev Tower is running ${input.runningVersion ?? '(unknown)'}`;
+  const restartClause = input.hostIsLocal
+    ? 'Restart Tower to load it.'
+    : `Restart the Tower on ${input.host} to load it.`;
+  return `${runningClause}, but ${input.expectedVersion} is installed. ${restartClause}`;
 }

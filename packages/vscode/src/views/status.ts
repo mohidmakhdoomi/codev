@@ -73,7 +73,7 @@ export class StatusProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
    * recheck button; `ok` carries no contextValue, so no button.
    */
   private cliRow(): vscode.TreeItem {
-    const { status, cliVersion } = getPreflightState();
+    const { status, cliVersion, towerStatus, runningVersion } = getPreflightState();
     const labelFor: Record<typeof status, string> = {
       ok: `Codev CLI: ${cliVersion ?? 'ready'}`,
       outdated: `Codev CLI: ${cliVersion ?? '?'} (outdated)`,
@@ -81,6 +81,16 @@ export class StatusProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       pending: 'Codev CLI: checking…',
     };
     const item = new vscode.TreeItem(labelFor[status]);
+    // #983: surface the running-Tower version alongside the installed CLI so a
+    // divergence (upgraded CLI, un-restarted Tower) is visible proactively.
+    const towerLine = towerStatus === 'stale' || towerStatus === 'too-old'
+      ? `Running Tower: ${runningVersion ?? 'too old to report'} (restart to update)`
+      : runningVersion
+        ? `Running Tower: ${runningVersion}`
+        : null;
+    item.tooltip = [`Installed CLI: ${cliVersion ?? 'not found'}`, towerLine]
+      .filter(Boolean)
+      .join('\n');
     switch (status) {
       case 'ok':
         item.iconPath = new vscode.ThemeIcon('check', new vscode.ThemeColor('testing.iconPassed'));

@@ -50,7 +50,7 @@ import { BuilderFileDecorationProvider } from './views/builder-file-decoration.j
 import { BacklogGroupTreeItem, BacklogTreeItem } from './views/backlog-tree-item.js';
 import { persistAreaGroupExpansion } from './views/area-group-expansion.js';
 import { buildArchitectReferenceInjection } from './architect-reference-injection.js';
-import { runPreflight, recheckCli, isCliReady, showPreflightFeedback } from './preflight/preflight.js';
+import { runPreflight, recheckCli, isCliReady, showPreflightFeedback, probeTowerVersion } from './preflight/preflight.js';
 import { detectWorkspacePath } from './workspace-detector.js';
 import { loadWorktreeConfig, hasRunnableDevCommand } from './load-worktree-config.js';
 
@@ -144,6 +144,14 @@ export async function activate(context: vscode.ExtensionContext) {
 			case 'connected':
 				statusBarItem.text = '$(server) Codev: Connected';
 				statusBarItem.color = undefined;
+				// #983: probe the running Tower's version now that we're connected.
+				// Covers activation and every reconnect (incl. after a Tower restart);
+				// the in-memory version only changes across a restart, which always
+				// severs and re-establishes this connection.
+				{
+					const client = connectionManager?.getClient();
+					if (client) { probeTowerVersion(client); }
+				}
 				break;
 			case 'connecting':
 				statusBarItem.text = '$(sync~spin) Codev: Connecting...';
