@@ -1,7 +1,7 @@
 id: '907'
 title: vscode-builder-briefly-appears
 protocol: pir
-phase: review
+phase: verified
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -21,7 +21,7 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-06T05:49:46.629Z'
-updated_at: '2026-06-06T08:51:15.774Z'
+updated_at: '2026-06-06T08:51:24.746Z'
 pr_history:
   - phase: review
     pr_number: 1003
