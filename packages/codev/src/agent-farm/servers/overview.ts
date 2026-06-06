@@ -777,6 +777,13 @@ export class OverviewCache {
   private closedCache = new Map<string, { data: ForgeIssueListItem[]; fetchedAt: number }>();
   private mergedPRCache = new Map<string, { data: ForgePR[]; fetchedAt: number }>();
   private currentUserCache = new Map<string, { data: string; fetchedAt: number }>();
+  // Last successfully-resolved area per builder (keyed by absolute worktreePath).
+  // Used to keep a builder in its real group when its issue can't be resolved
+  // this refresh — issue closed (the open-only `issue-list` drops it), torn
+  // down mid-cleanup, or a failed fetch — instead of flashing it into
+  // UNCATEGORIZED while it's still present (PIR #907). Intentionally NOT cleared
+  // by invalidate(): surviving cache invalidation is the whole point.
+  private lastKnownArea = new Map<string, string>();
   private readonly TTL = 30_000;
   private readonly USER_TTL = 3_600_000; // 1h — GitHub identity is session-stable
 
@@ -870,6 +877,13 @@ export class OverviewCache {
     let backlog: OverviewBacklogItem[] = [];
     if (issues === null) {
       errors.issues = 'GitHub CLI unavailable — could not fetch issues';
+      // Fetch failed: keep each builder's last-known area rather than the
+      // UNCATEGORIZED_AREA default, so a transient `issue-list` failure doesn't
+      // flash live builders into Uncategorized (PIR #907).
+      for (const b of builders) {
+        const prev = this.lastKnownArea.get(b.worktreePath);
+        if (prev) b.area = prev;
+      }
     } else {
       backlog = deriveBacklog(issues, workspaceRoot, activeBuilderIssues, prLinkedIssues);
 
@@ -877,15 +891,37 @@ export class OverviewCache {
       // (status.yaml stores a slug, not the human-readable title; and
       // discoverBuilders has no access to the issue payload, so area
       // starts as 'Uncategorized' and gets filled here.)
+      //
+      // `issue-list` is open-only, so a closed issue (e.g. merged via
+      // `Fixes #N`) or one torn down mid-cleanup is absent from the map. When
+      // that happens we reuse the builder's last successfully-resolved area
+      // instead of letting it fall back to the UNCATEGORIZED_AREA default,
+      // which would briefly reclassify a being-cleaned-up builder (PIR #907).
+      // We only memoize on a genuine resolve, so an issue that legitimately
+      // carries no area/* label still records and keeps 'Uncategorized'.
       const issueTitleMap = new Map(issues.map(i => [String(i.number), i.title]));
       const issueAreaMap = new Map(issues.map(i => [String(i.number), parseArea(i.labels)]));
       for (const b of builders) {
         if (b.issueId === null) continue;
         const title = issueTitleMap.get(b.issueId);
         if (title) b.issueTitle = title;
-        const area = issueAreaMap.get(b.issueId);
-        if (area) b.area = area;
+        if (issueAreaMap.has(b.issueId)) {
+          const area = issueAreaMap.get(b.issueId)!;
+          b.area = area;
+          this.lastKnownArea.set(b.worktreePath, area);
+        } else {
+          const prev = this.lastKnownArea.get(b.worktreePath);
+          if (prev) b.area = prev;
+        }
       }
+    }
+
+    // Prune last-known-area entries for builders no longer present, so the map
+    // can't grow unbounded across the Tower process lifetime. Once a builder
+    // is gone for good (dropped by the active-session filter) we forget it.
+    const liveWorktrees = new Set(builders.map(b => b.worktreePath));
+    for (const key of this.lastKnownArea.keys()) {
+      if (!liveWorktrees.has(key)) this.lastKnownArea.delete(key);
     }
 
     // 5. Process recently closed issues — enrich with artifact paths and PR URLs
@@ -947,6 +983,10 @@ export class OverviewCache {
     this.closedCache.clear();
     this.mergedPRCache.clear();
     this.currentUserCache.clear();
+    // Note: lastKnownArea is deliberately NOT cleared here. It must survive
+    // invalidation so a cleanup-triggered refresh (which calls invalidate())
+    // can still fall back to a builder's real area instead of UNCATEGORIZED
+    // (PIR #907). It self-prunes in getOverview when a builder disappears.
   }
 
   // ===========================================================================

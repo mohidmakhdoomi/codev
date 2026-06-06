@@ -1929,6 +1929,106 @@ describe('overview', () => {
       expect(data.builders[0].issueTitle).toBe('some-fix');
     });
 
+    // ------------------------------------------------------------------
+    // Area last-known-good (PIR #907)
+    //
+    // Regression coverage for the transient UNCATEGORIZED flash during
+    // cleanup. `area` is enriched from the *open*-issues list; when a
+    // builder's issue is absent from that list (closed on PR merge, torn
+    // down mid-cleanup, or a failed fetch) the record used to fall back to
+    // the UNCATEGORIZED_AREA default while the builder was still present,
+    // making it jump groups in the Builders tree. The cache now reuses the
+    // last successfully-resolved area instead.
+    // ------------------------------------------------------------------
+
+    it('keeps last-known area when the issue leaves the open list (PIR #907)', async () => {
+      createBuilderWorktree(tmpDir, 'pir-907-area-fix', [
+        "id: '0907'",
+        'protocol: pir',
+        'phase: implement',
+        'gates:',
+      ].join('\n'), '0907-area-fix');
+
+      const cache = new OverviewCache();
+
+      // First refresh: issue is open and labeled area/vscode.
+      mockFetchIssueList.mockResolvedValue([
+        issueItem(907, 'Builder flash bug', [{ name: 'area/vscode' }]),
+      ]);
+      const first = await cache.getOverview(tmpDir);
+      expect(first.builders).toHaveLength(1);
+      expect(first.builders[0].area).toBe('vscode');
+
+      // Issue closes (e.g. PR merged) → drops out of the open-issues list.
+      cache.invalidate();
+      mockFetchIssueList.mockResolvedValue([]);
+      const second = await cache.getOverview(tmpDir);
+      expect(second.builders).toHaveLength(1);
+      // Must NOT regress to 'Uncategorized' — stays in its real group until
+      // it disappears entirely.
+      expect(second.builders[0].area).toBe('vscode');
+    });
+
+    it('keeps last-known area when the issue fetch fails (PIR #907)', async () => {
+      createBuilderWorktree(tmpDir, 'pir-907-area-fetchfail', [
+        "id: '0907'",
+        'protocol: pir',
+        'phase: implement',
+        'gates:',
+      ].join('\n'), '0907-area-fetchfail');
+
+      const cache = new OverviewCache();
+
+      mockFetchIssueList.mockResolvedValue([
+        issueItem(907, 'Builder flash bug', [{ name: 'area/vscode' }]),
+      ]);
+      const first = await cache.getOverview(tmpDir);
+      expect(first.builders[0].area).toBe('vscode');
+
+      cache.invalidate();
+      mockFetchIssueList.mockResolvedValue(null);
+      const second = await cache.getOverview(tmpDir);
+      expect(second.builders[0].area).toBe('vscode');
+    });
+
+    it('still classifies a genuinely unlabeled builder as Uncategorized (PIR #907)', async () => {
+      createBuilderWorktree(tmpDir, 'pir-908-no-area', [
+        "id: '0908'",
+        'protocol: pir',
+        'phase: implement',
+        'gates:',
+      ].join('\n'), '0908-no-area');
+
+      const cache = new OverviewCache();
+
+      // Issue is present across two refreshes but carries no area/* label.
+      mockFetchIssueList.mockResolvedValue([
+        issueItem(908, 'No area label', [{ name: 'bug' }]),
+      ]);
+      const first = await cache.getOverview(tmpDir);
+      expect(first.builders[0].area).toBe('Uncategorized');
+
+      cache.invalidate();
+      const second = await cache.getOverview(tmpDir);
+      expect(second.builders[0].area).toBe('Uncategorized');
+    });
+
+    it('classifies as Uncategorized when never previously resolved (PIR #907)', async () => {
+      createBuilderWorktree(tmpDir, 'pir-909-absent', [
+        "id: '0909'",
+        'protocol: pir',
+        'phase: implement',
+        'gates:',
+      ].join('\n'), '0909-absent');
+
+      const cache = new OverviewCache();
+
+      // Issue never appears in the open list → no last-known-good to reuse.
+      mockFetchIssueList.mockResolvedValue([]);
+      const data = await cache.getOverview(tmpDir);
+      expect(data.builders[0].area).toBe('Uncategorized');
+    });
+
     it('uses separate cache per workspace (Bugfix #333)', async () => {
       mockFetchPRList.mockResolvedValue([]);
       mockFetchIssueList.mockResolvedValue([]);
