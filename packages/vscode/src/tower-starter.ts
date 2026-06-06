@@ -6,6 +6,15 @@ import { TowerClient } from '@cluesmith/codev-core/tower-client';
 import { getTowerAddress } from './workspace-detector.js';
 
 /**
+ * How long `restartTower` waits for the old Tower to release `/health` after
+ * `afx tower stop` (which only SIGTERMs and returns). Mirrors Tower's own
+ * `STARTUP_TIMEOUT_MS` (5s) so the stop window matches the start window.
+ */
+const SHUTDOWN_TIMEOUT_MS = 5000;
+/** Poll cadence while waiting for the old Tower to go down. */
+const SHUTDOWN_POLL_MS = 250;
+
+/**
  * Auto-start Tower as a detached process.
  * Resolves the afx binary path, spawns it, then polls health until ready.
  */
@@ -98,12 +107,25 @@ export async function restartTower(
     return false;
   }
 
-  // Wait for the old Tower to actually go down (max ~3s) so the subsequent
-  // start isn't short-circuited by `autoStartTower`'s already-running check.
+  // `afx tower stop` (non-force) only SIGTERMs the daemon and returns
+  // immediately — it does not wait for the process to exit, so `/health` keeps
+  // answering for a short shutdown window. Poll until it's actually down before
+  // starting, otherwise `autoStartTower`'s already-running early-return would
+  // skip the start and we'd be left stopped-but-not-restarted.
+  //
+  // If it never goes down within the window, report failure rather than letting
+  // `autoStartTower` see the still-live old process and return a misleading
+  // success — a "successful" restart that left the user on the old version is
+  // exactly the silent divergence this feature exists to surface.
   const { host, port } = getTowerAddress();
   const client = new TowerClient({ host, port });
-  for (let i = 0; i < 6 && (await client.isRunning()); i++) {
-    await sleep(500);
+  const deadline = Date.now() + SHUTDOWN_TIMEOUT_MS;
+  while (await client.isRunning()) {
+    if (Date.now() >= deadline) {
+      log('ERROR', `Old Tower still responding ${SHUTDOWN_TIMEOUT_MS}ms after stop — aborting restart`);
+      return false;
+    }
+    await sleep(SHUTDOWN_POLL_MS);
   }
 
   return autoStartTower(client, workspacePath, outputChannel);
