@@ -46,4 +46,10 @@ Architect: move the enrichment cache out of overview.ts. Extracted `ResolvedEnri
 
 VSCode extension crashed on start: esbuild "Could not resolve @cluesmith/codev-types". Root cause (environment, not the #907 code): `@cluesmith/codev-types` was never built in the worktree. `types`' `exports` has `types → ./src/index.ts` (so tsc + the codev/vite build resolve fine from source) but `default → ./dist/index.js`; esbuild (the extension bundler) uses the runtime `default` condition and needs `dist`. The root `pnpm build` is a hand-picked chain (core → codev) that omitted `types`, so a fresh worktree had no `types/dist`.
 
+## Review phase (2026-06-06)
+
+`dev-approval` granted. Wrote `codev/reviews/907-vscode-builder-briefly-appears.md`, updated arch.md (build-order line) + lessons-learned.md (2 entries). Opened **PR #1003**, recorded with porch. 3-way consult (single advisory pass): **gemini=APPROVE, codex=APPROVE, claude=APPROVE, all HIGH** (Gemini failed once on a transient API error, retried clean). No REQUEST_CHANGES. `pr` gate now pending; architect notified (all-clear). Waiting for human merge + `pr` gate approval.
+
+---
+
 Architect directed: make types part of the main build. Added `pnpm --filter @cluesmith/codev-types build` to the front of the root `build` script (types → core → codev; both core and codev depend on types). Verified full `pnpm build` runs end-to-end and the extension `compile` passes. Tooling fix bundled into #907 at architect request; will note in review's Architecture Updates.
