@@ -350,6 +350,7 @@ export async function probeTowerVersion(client: TowerClient): Promise<void> {
     probeStatus: result.status,
     runningVersion,
     installedCli: cachedVersion,
+    cliStatus: cachedStatus,
   });
 
   cachedTowerStatus = towerStatus;

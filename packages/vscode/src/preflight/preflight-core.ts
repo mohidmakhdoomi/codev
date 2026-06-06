@@ -172,13 +172,25 @@ export function decideTowerStatus(input: {
   probeStatus: number;
   runningVersion: string | null;
   installedCli: string | null;
+  cliStatus: PreflightStatus | 'pending';
 }): TowerStatus {
   if (input.probeStatus === 404) {
-    return 'too-old';
+    // Tower predates the /api/version endpoint. A restart only helps if the
+    // installed CLI is current enough to include the endpoint — otherwise it
+    // reloads the same endpoint-less code and the 404 (and prompt) recur. A
+    // stale/missing installed CLI is the #791 CLI preflight's concern (its
+    // "update the CLI" toast is the real remedy), so suppress the Tower prompt
+    // here rather than recommend a futile restart. (`cliStatus === 'ok'` means
+    // the installed CLI is >= this extension, which expects the endpoint.)
+    return input.cliStatus === 'ok' ? 'too-old' : 'ok';
   }
   if (input.probeStatus !== 200 || !input.runningVersion) {
     return 'unreachable';
   }
+  // `stale` is not gated on cliStatus: running < installedCli means a restart
+  // loads a genuinely newer (endpoint-having, since the 200 proves the older
+  // running Tower already has it) version, which is actionable even when the
+  // installed CLI is itself behind the extension.
   if (input.installedCli && compareSemver(input.runningVersion, input.installedCli) < 0) {
     return 'stale';
   }
