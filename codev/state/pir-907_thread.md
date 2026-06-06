@@ -15,3 +15,15 @@ Investigated the area-grouping / cleanup data flow.
 Acceptance criterion #1 (reproduction with logging) deferred to implement phase: temporary debug logging will confirm which sub-trigger fires before the targeted fix lands.
 
 Plan written to `codev/plans/907-vscode-builder-briefly-appears.md`. Awaiting `plan-approval`.
+
+## Implement phase (2026-06-06)
+
+`plan-approval` granted.
+
+**Reproduction with logging (criterion #1):** wrote regression tests asserting the fixed behavior and ran them against the *unfixed* code first. Output deterministically reproduced the root cause — `area` resolved to `'Uncategorized'` (Received) when the issue left the open-issues list or the `issue-list` fetch failed, while the builder was still present. Confirmed sub-triggers (a) issue closed/absent and (c) fetch failed are the live conditions; (b) soft-mode teardown still enriches when the issue is open, so it only manifests once the issue is also absent. All three funnel into the same "present but un-enrichable" defect.
+
+**Fix:** `OverviewCache.lastKnownArea` Map (keyed by `worktreePath`). Enrichment now distinguishes resolved (issue present → set + memoize, even when it's a genuine `Uncategorized`) from unresolved (issue absent / `issues === null` → reuse last-known-good, else keep default). Self-prunes to live builders each refresh; deliberately not cleared by `invalidate()`. No wire-field change.
+
+**Verification:** overview suite 162/162 green (4 new); `pnpm --filter @cluesmith/codev build` ✓; full codev suite 3233 passed / 13 skipped (skips pre-existing). Live VSCode visual verification is the dev-approval reviewer's step (criterion #4).
+
+Awaiting `dev-approval`.
