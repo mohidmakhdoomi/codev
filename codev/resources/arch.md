@@ -206,6 +206,15 @@ Shell / Claude / Builder process
 5. **Kill**: Tower sends SIGTERM via SIGNAL frame, waits 5s, SIGKILL if needed. Cleans up socket file.
 6. **Graceful degradation**: If shellper spawn fails, Tower falls back to direct node-pty (non-persistent). SQLite row has `shellper_socket = NULL`. Dashboard shows "Session persistence unavailable" warning.
 
+#### Startup Readiness Barrier (#997)
+
+Tower binds its port and starts serving immediately, but `reconcileTerminalSessions()` (which re-registers persistent sessions in the `workspaceTerminals` map) runs *after* `server.listen()`. To stop the first post-restart read from seeing a half-populated `role → terminalId` map, a monotonic settled-once barrier in `tower-terminals.ts` gates the readers of reconcile's output:
+
+- `getRehydratedTerminalsEntry()` (the shared chokepoint behind `/api/state` and `/api/overview`) and both WS terminal-upgrade routes `await whenStartupReconcileSettled()` before reading the map. The barrier is released in `reconcileTerminalSessions()`'s `finally` (and its early `!_deps` return), with a defensive per-request timeout (`CODEV_STARTUP_READY_TIMEOUT_MS`, default 10s) so a hung reconcile can't wedge serving.
+- `isStartupReconcileSettled()` is distinct from `isReconciling()` (which is false both before and after reconcile): it flips false→true once and stays true. `GET /health` exposes it as `ready` — **liveness** (`status: 'healthy'`, port up) stays separate from **readiness** (reconcile complete).
+
+**Invariant for new Tower-startup work**: any endpoint that reads `workspaceTerminals` to build a response should route through `getRehydratedTerminalsEntry` so it inherits the gate, rather than reading the map directly.
+
 #### Wire Protocol
 
 Binary frame format: `[1-byte type] [4-byte big-endian length] [payload]`
