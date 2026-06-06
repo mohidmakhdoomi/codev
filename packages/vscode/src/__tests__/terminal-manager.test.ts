@@ -66,6 +66,44 @@ describe('Spec 786 Phase 6 — TerminalManager per-name keying', () => {
   });
 });
 
+describe('PIR #982 — actionable recovery for a missing terminal', () => {
+  // Behavioral coverage of the retry/resolve itself lives in
+  // terminal-resolve.test.ts (the vscode-free helper). These source-level
+  // guards cover the vscode-side wiring that the heavy TerminalManager harness
+  // makes impractical to exercise behaviorally.
+
+  it('delegates the resolve to the bounded-retry helper', () => {
+    expect(TM_SRC).toMatch(/import \{[^}]*\bresolveBuilderTerminal\b[^}]*\} from '\.\/terminal-resolve\.js'/);
+    expect(TM_SRC).toMatch(/await resolveBuilderTerminal\(/);
+  });
+
+  it('no longer dead-ends on the bare "No active terminal" warning', () => {
+    // The old unactionable toast must be gone — replaced by the recovery prompt.
+    expect(TM_SRC).not.toMatch(/No active terminal for/);
+  });
+
+  const recoveryBody = TM_SRC.split('promptNoTerminalRecovery')[2] ?? '';
+
+  it('routes a missing terminal to the recovery prompt', () => {
+    expect(TM_SRC).toMatch(/outcome\.kind === 'missing'/);
+    expect(TM_SRC).toMatch(/this\.promptNoTerminalRecovery\(/);
+  });
+
+  it('offers Retry and Recover Builders actions', () => {
+    expect(recoveryBody).toMatch(/showWarningMessage\(/);
+    expect(recoveryBody).toMatch(/const RETRY = 'Retry'/);
+    expect(recoveryBody).toMatch(/const RECOVER = 'Recover Builders'/);
+  });
+
+  it('Retry re-attempts the open; Recover runs `afx workspace recover` at the main checkout root', () => {
+    expect(recoveryBody).toMatch(/choice === RETRY[\s\S]*openBuilderByRoleOrId\(roleOrId, focus\)/);
+    // cwd must be the main checkout root, not the raw workspace path — a
+    // worktree-rooted window would otherwise run afx in the wrong dir (#982).
+    expect(recoveryBody).toMatch(/cwd: mainCheckoutRoot\(workspacePath\)/);
+    expect(recoveryBody).toMatch(/sendText\('afx workspace recover'\)/);
+  });
+});
+
 describe('#921 — dev surface refresh on manual terminal close', () => {
   // Regression guard: a dev terminal closed via the generic onDidCloseTerminal
   // path (tab ✕ / process exit) must clear devStartedAt AND re-fire

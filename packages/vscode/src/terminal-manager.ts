@@ -5,6 +5,7 @@ import type { OverviewCache } from './views/overview-data.js';
 import { encodeWorkspacePath } from '@cluesmith/codev-core/workspace';
 import { resolveAgentName } from '@cluesmith/codev-core/agent-names';
 import type { TerminalType } from '@cluesmith/codev-core/tower-client';
+import { resolveBuilderTerminal, mainCheckoutRoot } from './terminal-resolve.js';
 
 const MAX_TERMINALS = 10;
 
@@ -182,6 +183,11 @@ export class TerminalManager {
    * Resolve a builder by `roleId` or `id` via Tower workspace state, then
    * open its terminal. Used by the sidebar tree views, terminal link
    * provider, and command palette so the lookup logic lives in one place.
+   *
+   * The resolve is retried with a short backoff (`resolveBuilderTerminal`):
+   * Tower's `/api/state` can momentarily omit a live builder while its session
+   * registry rehydrates/reconnects, and that transient miss self-heals on the
+   * next call (PIR #982). Only a persistent miss surfaces the recovery toast.
    */
   async openBuilderByRoleOrId(roleOrId: string, focus = false): Promise<void> {
     const client = this.connectionManager.getClient();
@@ -191,27 +197,85 @@ export class TerminalManager {
       return;
     }
     try {
-      const state = await client.getWorkspaceState(workspacePath);
-      const builders = state?.builders ?? [];
-      // Use resolveAgentName so the bare numeric IDs the sidebar passes
-      // (e.g. '153' from OverviewBuilder) tail-match canonical
-      // 'builder-spir-153' IDs from Tower's runtime state.
-      const { builder, ambiguous } = resolveAgentName(roleOrId, builders);
-      if (ambiguous) {
+      // resolveBuilderTerminal uses resolveAgentName internally so the bare
+      // numeric IDs the sidebar passes (e.g. '153' from OverviewBuilder)
+      // tail-match canonical 'builder-spir-153' IDs from Tower's runtime state.
+      const outcome = await resolveBuilderTerminal(
+        roleOrId,
+        async () => {
+          const state = await client.getWorkspaceState(workspacePath);
+          return state?.builders ?? [];
+        },
+        { sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)) },
+      );
+      if (outcome.kind === 'ambiguous') {
         vscode.window.showWarningMessage(
-          `Codev: Multiple builders match "${roleOrId}": ${ambiguous.map(b => b.name).join(', ')}`,
+          `Codev: Multiple builders match "${roleOrId}": ${outcome.matches.map(b => b.name).join(', ')}`,
         );
         return;
       }
-      if (!builder?.terminalId) {
-        vscode.window.showWarningMessage(`Codev: No active terminal for ${roleOrId}`);
+      if (outcome.kind === 'missing') {
+        await this.promptNoTerminalRecovery(roleOrId, workspacePath, focus);
         return;
       }
-      await this.openBuilder(builder.terminalId, builder.id, `Codev: ${builder.name}`, focus);
+      const { builder, terminalId } = outcome;
+      await this.openBuilder(terminalId, builder.id, `Codev: ${builder.name}`, focus);
     } catch (err) {
       this.log('ERROR', `Failed to open builder ${roleOrId}: ${(err as Error).message}`);
       vscode.window.showErrorMessage(`Codev: Failed to open ${roleOrId}`);
     }
+  }
+
+  /**
+   * Actionable toast for when a builder row is clicked but no live terminal
+   * resolves after the bounded retry (PIR #982). Replaces the old dead-end
+   * `No active terminal` warning. Leads with **Retry** — the common case is a
+   * session still settling (a longer startup-reconciliation window than the
+   * auto-retry budget covers) — and offers **Recover Builders** as the
+   * last-resort path for a genuinely lost session (e.g. a dead shellper).
+   *
+   * Recover opens a terminal running `afx workspace recover` (its default
+   * dry-run preview) at the main checkout root, mirroring `run-worktree-setup`.
+   * It deliberately stops at the preview rather than `--apply`: recover is
+   * workspace-wide (it can't target one builder), so the user reviews the scope
+   * before reviving. The cwd is resolved via `mainCheckoutRoot` so the command
+   * runs from the main checkout even when VSCode is rooted at a builder worktree
+   * window (where `getWorkspacePath()` resolves to the worktree, not main).
+   */
+  private async promptNoTerminalRecovery(roleOrId: string, workspacePath: string, focus: boolean): Promise<void> {
+    const RETRY = 'Retry';
+    const RECOVER = 'Recover Builders';
+    const who = this.friendlyBuilderId(roleOrId);
+    const choice = await vscode.window.showWarningMessage(
+      `Codev: ${who}'s terminal isn't available yet — it may still be starting, or its session was dropped. ` +
+        `Retry, or recover builders if it was lost.`,
+      RETRY,
+      RECOVER,
+    );
+    if (choice === RETRY) {
+      await this.openBuilderByRoleOrId(roleOrId, focus);
+    } else if (choice === RECOVER) {
+      const terminal = vscode.window.createTerminal({
+        name: 'Codev: Recover Builders',
+        cwd: mainCheckoutRoot(workspacePath),
+      });
+      terminal.show();
+      terminal.sendText('afx workspace recover');
+    }
+  }
+
+  /**
+   * A short, friendly identity for a builder (`#<issueId>`) from the overview
+   * cache, falling back to the raw `roleOrId` when no row matches. Used only
+   * for the recovery toast's prose so it names the row the user clicked.
+   */
+  private friendlyBuilderId(roleOrId: string): string {
+    const data = this.overviewCache.getData();
+    if (!data?.builders?.length) { return roleOrId; }
+    const shortId = roleOrId.split('-').pop() ?? roleOrId;
+    const { builder } = resolveAgentName(shortId, data.builders);
+    const num = builder?.issueId ?? builder?.id;
+    return num ? `#${num}` : roleOrId;
   }
 
   /**

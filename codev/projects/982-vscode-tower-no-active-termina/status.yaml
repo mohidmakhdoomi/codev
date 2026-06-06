@@ -1,0 +1,32 @@
+id: '982'
+title: vscode-tower-no-active-termina
+protocol: pir
+phase: verified
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: approved
+    requested_at: '2026-06-06T05:56:04.976Z'
+    approved_at: '2026-06-06T12:04:30.865Z'
+  dev-approval:
+    status: approved
+    requested_at: '2026-06-06T12:11:59.157Z'
+    approved_at: '2026-06-06T12:15:06.203Z'
+  pr:
+    status: approved
+    requested_at: '2026-06-06T12:25:53.858Z'
+    approved_at: '2026-06-06T12:29:16.508Z'
+iteration: 1
+build_complete: true
+history: []
+started_at: '2026-06-06T05:49:39.607Z'
+updated_at: '2026-06-06T12:29:38.161Z'
+pr_history:
+  - phase: implement
+    pr_number: 1006
+    branch: builder/pir-982
+    created_at: '2026-06-06T12:16:48.295Z'
+    merged: true
+    merged_at: '2026-06-06T12:29:38.160Z'
+pr_ready_for_human: false
