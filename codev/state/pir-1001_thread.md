@@ -18,3 +18,14 @@ vscode: reconnect notices accumulate as orphaned scrollback; not cleared on succ
 - check-types ✓, lint ✓, esbuild ✓, `vitest run` ✓ (336 tests, 6 new).
 - Pushing branch, signaling `porch done` → `dev-approval` gate.
 
+## dev-approval approved → Review phase
+
+- Human verified at `dev-approval` gate ("working as expected").
+- Wrote `codev/reviews/1001-vscode-terminal-adapter-reconn.md` (commit 2e60732e). No arch/lessons-doc changes — localized rendering fix; rationale in review sections.
+- Opened PR #1002, body = review file (contains `Fixes #1001`). Recorded with `porch done --pr 1002`.
+- Signaled `porch done` → ran single-pass 3-way consult (Gemini/Codex/Claude, type=impl).
+- Verdicts: Gemini APPROVE, Claude APPROVE, Codex COMMENT. No REQUEST_CHANGES.
+  - Codex's only point: review file said "6 new" tests but the PIR #1001 block has 5. Doc-accuracy fix (not a code defect) — corrected review file to "5 new". No code/test change.
+- Notifying architect (all-clear), waiting at `pr` gate.
+
+

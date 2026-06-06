@@ -22,7 +22,7 @@ The VSCode terminal adapter wrote a fresh `\r\n`-terminated "Connection lost —
 - `pnpm check-types`: ✓ pass
 - `pnpm lint`: ✓ pass
 - `node esbuild.js` (bundle): ✓ pass
-- `pnpm test:unit` (`vitest run`): ✓ pass (336 tests, 6 new for PIR #1001)
+- `pnpm test:unit` (`vitest run`): ✓ pass (336 tests, 5 new for PIR #1001)
 - Manual verification: human approved at the `dev-approval` gate — confirmed working as expected (single notice line ticking in place, cleared on reconnect, give-up state preserved).
 
 ## Architecture Updates
