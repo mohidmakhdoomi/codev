@@ -115,13 +115,20 @@ export class TerminalManager {
    * Create a PtySession without spawning a process.
    * Used for shellper-backed sessions where attachShellper() will be called
    * instead of spawn().
+   *
+   * `opts.id` lets a caller **reuse** an existing session id instead of minting
+   * a fresh one. Reconnect-after-restart passes the persisted id so a terminal
+   * keeps its identity across a Tower restart (#991): the client's WebSocket url
+   * (`/ws/terminal/<id>`) stays valid, so the existing reconnect machinery
+   * re-attaches transparently rather than hitting a dead id. The in-memory
+   * sessions map is empty at reconcile time, so reusing the id can't collide.
    */
-  createSessionRaw(opts: { label: string; cwd: string }): PtySessionInfo {
+  createSessionRaw(opts: { label: string; cwd: string; id?: string }): PtySessionInfo {
     if (this.sessions.size >= this.config.maxSessions) {
       throw new ManagerError('MAX_SESSIONS', `Maximum ${this.config.maxSessions} sessions reached`);
     }
 
-    const id = randomUUID();
+    const id = opts.id ?? randomUUID();
     const { cols, rows } = defaultSessionOptions();
     const sessionConfig: PtySessionConfig = {
       id,

@@ -36,10 +36,11 @@ class MockWs {
     this.readyState = 1;
     this.onopen?.(new Event('open'));
   }
-  /** Simulate connection close. */
-  simulateClose() {
+  /** Simulate connection close. Defaults to 1006 (transient); pass 4404 for
+   *  the session-unknown permanent close (#971/#991). */
+  simulateClose(code = 1006) {
     this.readyState = 3;
-    this.onclose?.({ code: 1006 } as CloseEvent);
+    this.onclose?.({ code } as CloseEvent);
   }
   /** Send a seq control frame to the client. */
   sendSeqFrame(seq: number) {
@@ -54,11 +55,15 @@ class MockWs {
 
 vi.stubGlobal('WebSocket', MockWs);
 
+// Capture xterm instances so tests can assert on what was written to the pane.
+const termInstances: { write: ReturnType<typeof vi.fn> }[] = [];
+
 vi.mock('@xterm/xterm', () => {
   class MockTerminal {
     loadAddon = vi.fn();
     open = vi.fn();
     write = vi.fn();
+    constructor() { termInstances.push(this); }
     paste = vi.fn();
     getSelection = vi.fn().mockReturnValue('');
     dispose = vi.fn();
@@ -106,6 +111,7 @@ import { Terminal } from '../src/components/Terminal.js';
 describe('Terminal WebSocket auto-reconnect (Bugfix #442)', () => {
   beforeEach(() => {
     wsInstances.length = 0;
+    termInstances.length = 0;
     vi.useFakeTimers();
   });
 
@@ -338,5 +344,91 @@ describe('Terminal WebSocket auto-reconnect (Bugfix #442)', () => {
     act(() => { vi.advanceTimersByTime(30_000); });
     // Only the initial connection, no reconnect attempts
     expect(wsInstances).toHaveLength(1);
+  });
+});
+
+// ============================================================================
+// Permanent-close self-heal onto a successor session (#991)
+// ============================================================================
+
+const SESSION_GONE = /no longer exists/;
+const wroteSessionGone = () =>
+  termInstances.some(t => t.write.mock.calls.some(([s]: [string]) => SESSION_GONE.test(s)));
+
+describe('Terminal permanent-close self-heal (#991)', () => {
+  beforeEach(() => {
+    wsInstances.length = 0;
+    termInstances.length = 0;
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('invokes onPermanentClose on a 4404 (session-unknown) close', () => {
+    const onPermanentClose = vi.fn();
+    render(<Terminal wsPath="/ws/terminal/t1" onPermanentClose={onPermanentClose} />);
+    act(() => { wsInstances[0].simulateOpen(); });
+    act(() => { wsInstances[0].simulateClose(4404); });
+    expect(onPermanentClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT invoke onPermanentClose on a transient 1006 close', () => {
+    const onPermanentClose = vi.fn();
+    render(<Terminal wsPath="/ws/terminal/t1" onPermanentClose={onPermanentClose} />);
+    act(() => { wsInstances[0].simulateOpen(); });
+    act(() => { wsInstances[0].simulateClose(1006); });
+    expect(onPermanentClose).not.toHaveBeenCalled();
+  });
+
+  it('does not blind-retry the dead id, sits in reconnecting, and defers the give-up message', () => {
+    const { container } = render(<Terminal wsPath="/ws/terminal/t1" onPermanentClose={vi.fn()} />);
+    act(() => { wsInstances[0].simulateOpen(); });
+    act(() => { wsInstances[0].simulateClose(4404); });
+
+    // No new socket to the dead id.
+    expect(wsInstances).toHaveLength(1);
+    // Status reflects an in-progress recovery, not give-up.
+    const dot = container.querySelector('.terminal-status-icon');
+    expect(dot!.classList.contains('terminal-status-reconnecting')).toBe(true);
+    // The scary message is deferred during the grace window (a heal may remount).
+    expect(wroteSessionGone()).toBe(false);
+
+    // Advance partway — still deferred, still no retry.
+    act(() => { vi.advanceTimersByTime(3999); });
+    expect(wroteSessionGone()).toBe(false);
+    expect(wsInstances).toHaveLength(1);
+  });
+
+  it('falls back to the give-up message + disconnected after the grace window', () => {
+    const { container } = render(<Terminal wsPath="/ws/terminal/t1" onPermanentClose={vi.fn()} />);
+    act(() => { wsInstances[0].simulateOpen(); });
+    act(() => { wsInstances[0].simulateClose(4404); });
+
+    act(() => { vi.advanceTimersByTime(4000); });
+
+    expect(wroteSessionGone()).toBe(true);
+    const dot = container.querySelector('.terminal-status-icon');
+    expect(dot!.classList.contains('terminal-status-disconnected')).toBe(true);
+    // Still no blind retry of the dead id.
+    expect(wsInstances).toHaveLength(1);
+  });
+
+  it('remount-before-timeout (successor arrived) never writes the give-up message', () => {
+    // Simulate the heal: the parent swaps wsPath, unmounting this instance
+    // before the grace timer fires. The deferred message must not appear.
+    const { rerender } = render(<Terminal wsPath="/ws/terminal/old" onPermanentClose={vi.fn()} />);
+    act(() => { wsInstances[0].simulateOpen(); });
+    act(() => { wsInstances[0].simulateClose(4404); });
+
+    // Successor id resolved → new wsPath → effect remounts.
+    act(() => { rerender(<Terminal wsPath="/ws/terminal/new" onPermanentClose={vi.fn()} />); });
+
+    // Past the old grace window: the torn-down instance's timer was cleared.
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(wroteSessionGone()).toBe(false);
+    // A fresh socket was opened for the successor wsPath.
+    expect(wsInstances.some(w => w.url.includes('/new'))).toBe(true);
   });
 });

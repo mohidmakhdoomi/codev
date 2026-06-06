@@ -641,9 +641,12 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
     const replayData = client.getReplayData() ?? Buffer.alloc(0);
     const label = dbSession.label || (dbSession.type === 'architect' ? 'Architect' : (dbSession.role_id || 'unknown'));
 
-    // Create a PtySession backed by the reconnected shellper client
-    // Use stored cwd (worktree path for builders) instead of workspace_path (Bugfix #506)
-    const session = manager.createSessionRaw({ label, cwd: sessionCwd });
+    // Create a PtySession backed by the reconnected shellper client.
+    // Reuse the persisted terminal id (#991) so the session keeps its identity
+    // across the restart — clients holding `/ws/terminal/<id>` reconnect to the
+    // same valid url instead of a dead one. Use stored cwd (worktree path for
+    // builders) instead of workspace_path (Bugfix #506).
+    const session = manager.createSessionRaw({ label, cwd: sessionCwd, id: dbSession.id });
     const ptySession = manager.getSession(session.id);
     if (ptySession) {
       const shellperSessId = extractShellperSessionId(dbSession.shellper_socket) ?? dbSession.id;
@@ -666,7 +669,8 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
       entry.shells.set(dbSession.role_id || dbSession.id, session.id);
     }
 
-    // Update SQLite with new terminal ID
+    // Refresh the SQLite row. The id is preserved (#991), so this re-saves the
+    // session under the same terminal id with its refreshed shellper info.
     db.prepare('DELETE FROM terminal_sessions WHERE id = ?').run(dbSession.id);
     saveTerminalSession(session.id, workspacePath, dbSession.type, dbSession.role_id, dbSession.shellper_pid,
       dbSession.shellper_socket, dbSession.shellper_pid, dbSession.shellper_start_time, dbSession.label, sessionCwd);
@@ -828,8 +832,11 @@ export async function getTerminalsForWorkspace(
         if (client) {
           const replayData = client.getReplayData() ?? Buffer.alloc(0);
           const label = dbSession.label || (dbSession.type === 'architect' ? 'Architect' : (dbSession.role_id || dbSession.id));
-          // Use stored cwd (worktree path for builders) instead of workspace_path (Bugfix #506)
-          const newSession = manager.createSessionRaw({ label, cwd: dbSession.cwd ?? dbSession.workspace_path });
+          // Reuse the persisted terminal id (#991) so the session keeps its
+          // identity across the reconnect — clients holding `/ws/terminal/<id>`
+          // stay valid. Use stored cwd (worktree path for builders) instead of
+          // workspace_path (Bugfix #506).
+          const newSession = manager.createSessionRaw({ label, cwd: dbSession.cwd ?? dbSession.workspace_path, id: dbSession.id });
           const ptySession = manager.getSession(newSession.id);
           if (ptySession) {
             const shellperSessId = extractShellperSessionId(dbSession.shellper_socket) ?? dbSession.id;
@@ -865,13 +872,13 @@ export async function getTerminalsForWorkspace(
               }
             });
           }
-          const originalSessionId = dbSession.id;
+          // Refresh the SQLite row under the same (preserved) id.
           deleteTerminalSession(dbSession.id);
           saveTerminalSession(newSession.id, dbSession.workspace_path, dbSession.type, dbSession.role_id, dbSession.shellper_pid,
             dbSession.shellper_socket, dbSession.shellper_pid, dbSession.shellper_start_time, dbSession.label, dbSession.cwd);
           dbSession.id = newSession.id;
           session = manager.getSession(newSession.id);
-          _deps.log('INFO', `On-the-fly reconnect succeeded for ${originalSessionId} → ${newSession.id}`);
+          _deps.log('INFO', `On-the-fly reconnect succeeded for ${newSession.id} (id preserved)`);
         }
       } catch (err) {
         _deps.log('WARN', `On-the-fly reconnect failed for ${dbSession.id}: ${(err as Error).message}`);

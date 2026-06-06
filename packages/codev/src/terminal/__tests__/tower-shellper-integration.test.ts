@@ -377,6 +377,29 @@ describe('TerminalManager.createSessionRaw()', () => {
     manager.shutdown();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
+
+  it('reuses a provided id instead of minting a new one (#991 id preservation)', async () => {
+    const { TerminalManager } = await import('../pty-manager.js');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-rawid-test-'));
+    const manager = new TerminalManager({ workspaceRoot: tmpDir });
+
+    // Reconnect-after-restart passes the persisted id so the terminal keeps its
+    // identity across a Tower restart — the client's `/ws/terminal/<id>` url
+    // stays valid.
+    const preserved = 'preserved-terminal-id-1234';
+    const info = manager.createSessionRaw({ label: 'Reconnected', cwd: tmpDir, id: preserved });
+
+    expect(info.id).toBe(preserved);
+    expect(manager.getSession(preserved)).toBeDefined();
+
+    // Default path (no id) still mints a fresh one.
+    const fresh = manager.createSessionRaw({ label: 'Fresh', cwd: tmpDir });
+    expect(fresh.id).not.toBe(preserved);
+    expect(fresh.id).toBeTruthy();
+
+    manager.shutdown();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
 });
 
 describe('TerminalManager.shutdown() shellper handling', () => {
