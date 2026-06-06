@@ -82,15 +82,15 @@ function currentSocket() {
   return WebSocket.instances[WebSocket.instances.length - 1];
 }
 
-function makeAdapter(onSessionGone?: () => void) {
+function makeAdapter() {
   const writes: string[] = [];
   const pty = new (CodevPseudoterminal as unknown as new (
-    url: string, authKey: string | null, ch: unknown, onSessionGone?: () => void,
+    url: string, authKey: string | null, ch: unknown,
   ) => {
     open(d: unknown): void;
     reconnect(): void;
     onDidWrite: (cb: (s: string) => void) => void;
-  })('ws://localhost:4100/x', null, fakeOutputChannel(), onSessionGone);
+  })('ws://localhost:4100/x', null, fakeOutputChannel());
   pty.onDidWrite((s: string) => { if (s) { writes.push(s); } });
   pty.open(undefined);
   return { pty, writes };
@@ -167,23 +167,6 @@ describe('PIR #936 — adapter-owned reconnect loop', () => {
     currentSocket().emit('close');
     // Transient → backoff, not give-up.
     expect(writes[0]).toContain('retrying in 1s');
-  });
-
-  it('invokes onSessionGone on a permanent (session-unknown) close (#991)', () => {
-    const onSessionGone = vi.fn();
-    makeAdapter(onSessionGone);
-    currentSocket().emit('error', new Error('Unexpected server response: 404'));
-    currentSocket().emit('close');
-    // The manager-owned recovery hook fires so it can re-resolve the successor.
-    expect(onSessionGone).toHaveBeenCalledTimes(1);
-  });
-
-  it('does NOT invoke onSessionGone on a transient error (#991)', () => {
-    const onSessionGone = vi.fn();
-    makeAdapter(onSessionGone);
-    currentSocket().emit('error', new Error('Unexpected server response: 502'));
-    currentSocket().emit('close');
-    expect(onSessionGone).not.toHaveBeenCalled();
   });
 
   it('ignores a stale socket\'s close after an intentional reconnect (identity guard)', () => {

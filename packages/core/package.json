@@ -32,10 +32,6 @@
       "types": "./dist/agent-names.d.ts",
       "default": "./dist/agent-names.js"
     },
-    "./session-successor": {
-      "types": "./dist/session-successor.d.ts",
-      "default": "./dist/session-successor.js"
-    },
     "./builder-helpers": {
       "types": "./dist/builder-helpers.d.ts",
       "default": "./dist/builder-helpers.js"

@@ -60,14 +60,6 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
     private wsUrl: string,
     private authKey: string | null,
     private outputChannel: vscode.OutputChannel,
-    /**
-     * Invoked on a permanent (session-unknown) close — the session id is gone
-     * for good (#991). The manager owns the terminal's stable identity, so it
-     * re-resolves the successor id from fresh workspace state and re-points this
-     * terminal (a persistent session that came back under a new id after a Tower
-     * restart). The adapter stays transport-only and doesn't know its identity.
-     */
-    private readonly onSessionGone?: () => void,
   ) {}
 
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
@@ -191,13 +183,6 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
       // an unknown session ID). The matching `close` fires right after; give up
       // now so the close handler's scheduleReconnect() is a no-op.
       if (this.ws === socket && classifyUpgradeError(err.message) === 'permanent') {
-        // #991: the old id is dead, but a persistent session that came back
-        // under a new id (Tower restart) can be recovered. Ask the manager to
-        // re-resolve the successor and re-point this terminal in place. giveUp()
-        // still surfaces the manual reconnect affordance as the fallback when no
-        // successor exists (genuine session death).
-        this.log('INFO', `Permanent close on ${this.wsUrl} — requesting successor recovery (#991)`);
-        this.onSessionGone?.();
         this.giveUp('this terminal session no longer exists on Tower');
       }
     });
