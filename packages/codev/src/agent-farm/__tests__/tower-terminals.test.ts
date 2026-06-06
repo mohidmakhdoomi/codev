@@ -27,6 +27,11 @@ import {
   loadFileTabsForWorkspace,
   processExists,
   getTerminalSessionsForWorkspace,
+  markStartupReconcileSettled,
+  isStartupReconcileSettled,
+  whenStartupReconcileSettled,
+  getRehydratedTerminalsEntry,
+  __resetStartupReconcileSettledForTest,
   type TerminalDeps,
 } from '../servers/tower-terminals.js';
 
@@ -85,6 +90,9 @@ describe('tower-terminals', () => {
     // Ensure module is in clean state
     shutdownTerminals();
     getWorkspaceTerminals().clear();
+    // #997: reset the startup-readiness barrier so each test starts pre-reconcile
+    // (reconcileTerminalSessions in other tests settles it as a side effect).
+    __resetStartupReconcileSettledForTest();
   });
 
   afterEach(() => {
@@ -428,6 +436,77 @@ describe('tower-terminals', () => {
   // =========================================================================
   // reconcileTerminalSessions (startup guard)
   // =========================================================================
+
+  // =========================================================================
+  // Startup-readiness barrier (#997)
+  // =========================================================================
+
+  describe('startup-readiness barrier', () => {
+    it('starts unsettled and flips on markStartupReconcileSettled', () => {
+      expect(isStartupReconcileSettled()).toBe(false);
+      markStartupReconcileSettled();
+      expect(isStartupReconcileSettled()).toBe(true);
+    });
+
+    it('whenStartupReconcileSettled stays pending until settled, then resolves', async () => {
+      let resolved = false;
+      const wait = whenStartupReconcileSettled().then(() => { resolved = true; });
+
+      // Not settled yet — must not resolve on the next microtask turn.
+      await Promise.resolve();
+      expect(resolved).toBe(false);
+
+      markStartupReconcileSettled();
+      await wait;
+      expect(resolved).toBe(true);
+    });
+
+    it('resolves immediately once already settled', async () => {
+      markStartupReconcileSettled();
+      await expect(whenStartupReconcileSettled()).resolves.toBeUndefined();
+    });
+
+    it('honors the defensive timeout and resolves even if never settled', async () => {
+      const log = vi.fn();
+      initTerminals(makeDeps({ log }));
+      // Tiny timeout: the barrier is never marked, so the timeout path fires.
+      await expect(whenStartupReconcileSettled(5)).resolves.toBeUndefined();
+      expect(isStartupReconcileSettled()).toBe(false);
+      expect(log).toHaveBeenCalledWith('WARN', expect.stringContaining('not settled'));
+    });
+
+    it('reconcileTerminalSessions settles the barrier when uninitialized', async () => {
+      // No initTerminals() → early !_deps return must still release waiters.
+      const { reconcileTerminalSessions } = await import('../servers/tower-terminals.js');
+      await reconcileTerminalSessions();
+      expect(isStartupReconcileSettled()).toBe(true);
+    });
+
+    it('reconcileTerminalSessions settles the barrier after a normal run', async () => {
+      initTerminals(makeDeps());
+      mockDbAll.mockReturnValue([]);
+      const { reconcileTerminalSessions } = await import('../servers/tower-terminals.js');
+      await reconcileTerminalSessions();
+      expect(isStartupReconcileSettled()).toBe(true);
+    });
+
+    it('getRehydratedTerminalsEntry blocks until the barrier settles', async () => {
+      initTerminals(makeDeps());
+      mockDbAll.mockReturnValue([]);
+
+      let resolved = false;
+      const pending = getRehydratedTerminalsEntry('/existing/project').then((e) => { resolved = true; return e; });
+
+      // Barrier unsettled — the read must not complete yet.
+      await Promise.resolve();
+      expect(resolved).toBe(false);
+
+      markStartupReconcileSettled();
+      const entry = await pending;
+      expect(resolved).toBe(true);
+      expect(entry).toBeDefined();
+    });
+  });
 
   describe('reconcileTerminalSessions', () => {
     // Full reconciliation tests would require complex shellper mocking.

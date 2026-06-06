@@ -25,7 +25,8 @@ const { mockGetInstances, mockGetTerminalManager, mockGetSession,
   mockOverviewGetOverview, mockOverviewInvalidate,
   mockReadCloudConfig,
   mockComputeAnalytics,
-  mockGetKnownWorkspacePaths } = vi.hoisted(() => ({
+  mockGetKnownWorkspacePaths,
+  mockIsStartupReconcileSettled } = vi.hoisted(() => ({
   mockGetInstances: vi.fn(),
   mockGetTerminalManager: vi.fn(),
   mockGetSession: vi.fn(),
@@ -49,6 +50,7 @@ const { mockGetInstances, mockGetTerminalManager, mockGetSession,
   mockReadCloudConfig: vi.fn(),
   mockComputeAnalytics: vi.fn(),
   mockGetKnownWorkspacePaths: vi.fn(() => []),
+  mockIsStartupReconcileSettled: vi.fn(() => true),
 }));
 
 vi.mock('../lib/cloud-config.js', () => ({
@@ -80,6 +82,7 @@ vi.mock('../servers/tower-terminals.js', () => ({
   deleteFileTab: vi.fn(),
   getTerminalsForWorkspace: mockGetTerminalsForWorkspace,
   getRehydratedTerminalsEntry: mockGetRehydratedTerminalsEntry,
+  isStartupReconcileSettled: mockIsStartupReconcileSettled,
 }));
 
 vi.mock('../servers/tower-tunnel.js', () => ({
@@ -266,6 +269,22 @@ describe('tower-routes', () => {
       expect(parsed.status).toBe('healthy');
       expect(parsed.activeWorkspaces).toBe(1);
       expect(parsed.totalWorkspaces).toBe(2);
+    });
+
+    it('reports readiness from the startup-reconcile barrier (#997)', async () => {
+      mockGetInstances.mockResolvedValue([]);
+
+      // Pre-reconcile: barrier not yet settled → ready:false
+      mockIsStartupReconcileSettled.mockReturnValueOnce(false);
+      const notReady = makeRes();
+      await handleRequest(makeReq('GET', '/health'), notReady.res, makeCtx());
+      expect(JSON.parse(notReady.body()).ready).toBe(false);
+
+      // Post-reconcile: barrier settled → ready:true
+      mockIsStartupReconcileSettled.mockReturnValueOnce(true);
+      const ready = makeRes();
+      await handleRequest(makeReq('GET', '/health'), ready.res, makeCtx());
+      expect(JSON.parse(ready.body()).ready).toBe(true);
     });
   });
 

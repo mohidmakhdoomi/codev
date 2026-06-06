@@ -25,6 +25,10 @@ vi.mock('../servers/tower-terminals.js', () => ({
   getTerminalManager: () => ({
     getSession: mockGetSession,
   }),
+  // #997: barrier reports settled so the upgrade handler stays on its synchronous
+  // fast-path (matches the normal post-startup case these tests exercise).
+  isStartupReconcileSettled: () => true,
+  whenStartupReconcileSettled: () => Promise.resolve(),
 }));
 
 vi.mock('../servers/tower-utils.js', () => ({
