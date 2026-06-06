@@ -216,3 +216,81 @@ describe('PIR #936 — adapter-owned reconnect loop', () => {
     expect(writes[0]).toContain('(attempt 1/6)');
   });
 });
+
+describe('PIR #1001 — reconnect notices overwrite in place and clear on success', () => {
+  const ERASE_LINE = '\r\x1b[2K'; // carriage return + erase-entire-line
+  const NOTICE_RE = /Connection lost\. retrying/;
+
+  it('overwrites the previous notice in place: each retry erases the line, none stacks', () => {
+    const { writes } = makeAdapter();
+
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      currentSocket().emit('close');
+      const notice = writes[writes.length - 1];
+      // Each notice leads with the erase-line sequence and does NOT terminate
+      // with a newline — so the next attempt rewrites the same line.
+      expect(notice.startsWith(ERASE_LINE)).toBe(true);
+      expect(notice.endsWith('\r\n')).toBe(false);
+      expect(notice).toContain(`(attempt ${attempt}/6)`);
+      vi.advanceTimersByTime(30000);
+    }
+
+    // Across the whole cycle every retry notice carried the erase prefix, so no
+    // bare (un-erased) notice was ever appended as a fresh scrollback line.
+    const retryNotices = writes.filter((w) => NOTICE_RE.test(w));
+    expect(retryNotices.length).toBe(4);
+    expect(retryNotices.every((w) => w.startsWith(ERASE_LINE))).toBe(true);
+  });
+
+  it('wipes the notice line on a successful reconnect (no orphaned scrollback)', () => {
+    const { writes } = makeAdapter();
+    currentSocket().emit('close');   // one retry notice on the line
+    expect(writes.some((w) => NOTICE_RE.test(w))).toBe(true);
+    vi.advanceTimersByTime(1000);    // opens a new socket
+    writes.length = 0;
+
+    currentSocket().emit('open');    // success → wipe
+    // Exactly one erase-line wipe fired, and no retry notice survives after it.
+    expect(writes).toContain(ERASE_LINE);
+    expect(writes.some((w) => NOTICE_RE.test(w))).toBe(false);
+  });
+
+  it('emits no cursor-control wipe on the happy-path first connect', () => {
+    const { writes } = makeAdapter();
+    writes.length = 0;
+    currentSocket().emit('open');    // first connect, no prior notice
+    // No notice was ever written, so nothing is wiped.
+    expect(writes).not.toContain(ERASE_LINE);
+  });
+
+  it('give-up overwrites the last retry notice but is itself never wiped', () => {
+    const { writes } = makeAdapter();
+    for (let i = 0; i < 6; i++) { currentSocket().emit('close'); vi.advanceTimersByTime(30000); }
+    writes.length = 0;
+
+    currentSocket().emit('close');   // 7th close → give up
+    expect(writes).toHaveLength(1);
+    const giveUp = writes[0];
+    expect(giveUp.startsWith(ERASE_LINE)).toBe(true); // overwrote the last retry notice
+    expect(giveUp).toContain(RECONNECT_LINK_TEXT);
+    expect(giveUp).toContain('\x1b[31m');             // red terminal-failure state
+
+    // A later reconnect must NOT wipe the give-up line: gaveUp blocks the loop,
+    // and the give-up cleared hadReconnectNotice. Manually re-open to be sure.
+    writes.length = 0;
+    currentSocket().emit('open');
+    expect(writes).not.toContain(ERASE_LINE);
+  });
+
+  it('immediate 4xx give-up has no erase prefix (no retry notice to overwrite)', () => {
+    const { writes } = makeAdapter();
+    writes.length = 0;
+    currentSocket().emit('error', new Error('Unexpected server response: 404'));
+    currentSocket().emit('close');
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0].startsWith(ERASE_LINE)).toBe(false); // nothing on the line to clear
+    expect(writes[0]).toContain('no longer exists');
+    expect(writes[0]).toContain(RECONNECT_LINK_TEXT);
+  });
+});
