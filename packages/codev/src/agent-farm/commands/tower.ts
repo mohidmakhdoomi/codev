@@ -92,11 +92,19 @@ async function waitForServer(port: number): Promise<boolean> {
 }
 
 /**
- * Get all PIDs of processes listening on a port
+ * Get the PID(s) of the process *listening* on a port (the server), not its
+ * clients.
+ *
+ * `-sTCP:LISTEN` is load-bearing (#991): without it, `lsof -ti :PORT` also
+ * returns every process holding an *established* client socket to the port —
+ * notably the VSCode extension host (its SSE stream + terminal WebSockets) and
+ * dashboard browsers. `afx tower stop` SIGTERMs whatever this returns, so the
+ * unfiltered form would kill the editor's extension host (and every open
+ * terminal with it), not just the Tower server.
  */
 function getProcessesOnPort(port: number): number[] {
   try {
-    const result = execSync(`lsof -ti :${port} 2>/dev/null`, { encoding: 'utf-8' });
+    const result = execSync(`lsof -ti :${port} -sTCP:LISTEN 2>/dev/null`, { encoding: 'utf-8' });
     return result
       .trim()
       .split('\n')
