@@ -22,19 +22,32 @@ No `arch.md` change required. The fix reinforces an existing invariant rather th
 - **`lsof -ti :PORT` selects clients too.** Any "what's on this port" / "kill what's on this port" logic must use `-sTCP:LISTEN` to mean *the server*. Without it, every connected client (editors, browsers, other tools) is collateral.
 - **Fix the source, not the symptom.** #936/#971/#991/#997 are all consequences of the terminal id changing on restart. Preserving the id removes the dead-id condition those work around. The cheapest fix is often upstream of where the symptom shows.
 
+*(Recorded here rather than directly in `codev/resources/lessons-learned.md`: that file's footer marks it as aggregated from `codev/reviews/` during MAINTAIN runs, so editing it per-PR would duplicate the next maintenance pass. These will be picked up from this review.)*
+
 ## Files Changed
 
+Net diff vs the merge-base (`git diff --stat`): **7 files, +204 / −23**. The client-side approaches explored mid-cycle were built and then reverted, so they **net to zero** here — `terminal-manager.ts` / `extension.ts` don't appear in the diff at all (only in the branch history).
+
 **Core fix (Tower):**
-- `packages/codev/src/agent-farm/commands/tower.ts` — `getProcessesOnPort` → `lsof -ti :PORT -sTCP:LISTEN` (+ doc comment on why it's load-bearing).
-- `packages/codev/src/terminal/pty-manager.ts` — `createSessionRaw` accepts optional `id` (`opts.id ?? randomUUID()`).
-- `packages/codev/src/agent-farm/servers/tower-terminals.ts` — both reconcile paths (startup + on-the-fly) pass `dbSession.id`; comments/log updated for id preservation.
-- `packages/codev/src/terminal/__tests__/tower-shellper-integration.test.ts` — unit test: `createSessionRaw` reuses a provided id, mints a fresh one without.
+- `packages/codev/src/agent-farm/commands/tower.ts` (+12 / −3) — `getProcessesOnPort` → `lsof -ti :PORT -sTCP:LISTEN` (+ doc comment on why it's load-bearing).
+- `packages/codev/src/terminal/pty-manager.ts` (+11 / −2) — `createSessionRaw` accepts optional `id` (`opts.id ?? randomUUID()`).
+- `packages/codev/src/agent-farm/servers/tower-terminals.ts` (+23 / −11) — both reconcile paths (startup + on-the-fly) pass `dbSession.id`; comments/log updated for id preservation.
+- `packages/codev/src/terminal/__tests__/tower-shellper-integration.test.ts` (+23 / −0) — unit test: `createSessionRaw` reuses a provided id, mints a fresh one without.
 
-**Removed (superseded client workarounds, reverted to `#921` base):**
-- `packages/vscode/src/terminal-manager.ts`, `packages/vscode/src/extension.ts`, `packages/vscode/src/__tests__/terminal-manager.test.ts`.
+**Kept (dashboard self-heal — harmless/dormant after the core fix, since the web url stays valid):**
+- `packages/dashboard/src/components/Terminal.tsx` (+54 / −4), `App.tsx` (+6 / −2), `__tests__/Terminal.reconnect.test.tsx` (+98 / −1).
 
-**Kept (dashboard self-heal, harmless/dormant after the core fix):**
-- `packages/dashboard/src/components/Terminal.tsx`, `App.tsx`, `__tests__/Terminal.reconnect.test.tsx`.
+**Net-zero in the diff (built then reverted to the `#921` base):** the VSCode successor-remount / close-on-stop / reopen-on-reconnect workarounds and the `@cluesmith/codev-core` successor helper. Preserved in history as the development record.
+
+## Commits
+
+The branch history captures the full exploration — client-side recovery built across several commits, then reverted once the Tower-level root cause was found. The net change is the core Tower fix + the kept dashboard self-heal. Key commits:
+
+- `b323ffc8` [PIR #991] Core fix: preserve terminal id across restart + stop afx tower stop killing port clients
+- `1256d684` [PIR #991] Rewrite plan + add review for the core-fix approach
+- `a9b2df56` / `862c1100` / `eba1fa86` … (client-side approaches, later reverted — see history)
+
+`git log <merge-base>..HEAD --oneline` shows the complete set; we use a regular merge (not squash) so the exploration stays in the record.
 
 ## Test Results
 
@@ -43,7 +56,7 @@ No `arch.md` change required. The fix reinforces an existing invariant rather th
 - **dashboard** **322 passed** / 1 pre-existing skip.
 - The empirical proof for fix #1 (`lsof -ti :4100` returning the VSCode `Code Helper (Plugin)` host vs. `-sTCP:LISTEN` returning only the node server) is documented in the builder thread.
 
-## Things to Look At
+## Things to Look At During PR Review
 
 - **The reconcile-gap edge:** a client reconnect that lands after Tower accepts connections but before startup reconcile re-registers the session could 404 once and recover on the next retry/click. Rare in practice; **#997 (reconcile-before-serving)** is the deterministic follow-up.
 - **Scope/area:** this PR is primarily an `area/tower` server fix, a pivot from the issue's cross-cutting client framing. The kept dashboard self-heal is the only remaining client-side piece.
