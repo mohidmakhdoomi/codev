@@ -1010,7 +1010,7 @@ codev (CLI + Tower)        vscode (extension)        dashboard (React SPA)
   imports types (dev)        imports types (dev)        imports types (dev)
 ```
 
-**Build order:** `pnpm build` from root builds core → codev (including dashboard).
+**Build order:** `pnpm build` from root builds types → core → codev (including dashboard). `codev-types` is built first because the VS Code extension's esbuild bundle resolves the package's runtime `exports.default` (`./dist/index.js`); a missing `types/dist` breaks the extension build even though tsc and vite resolve it from source via `exports.types` (`./src/index.ts`).
 
 **Publishing:** `codev-core` must be published to npm before `codev` (runtime dependency).
 
