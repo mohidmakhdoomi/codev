@@ -83,6 +83,27 @@ Multiple rounds of in-place successor-reconnect (recoverSuccessor / onSessionGon
 
 All green: core 19, dashboard 322 (+1 pre-existing skip), vscode 324; check-types + lint clean. #997 (deterministic reconcile) still the proper root-cause for the reopen race; the bounded retry covers it meanwhile.
 
+## ROOT CAUSE FOUND → pivot to core Tower fix (reviewer-directed)
+
+Live debugging (Extension Host log + Codev output) revealed the actual root cause, which NONE of the client-side approaches could ever fix:
+
+**`afx tower stop` was killing the VSCode extension host.** `getProcessesOnPort` (tower.ts) used `lsof -ti :PORT`, which returns the listener AND **every client** of the port. The VSCode extension host holds client sockets to 4100 (SSE + terminal WebSockets), so `afx tower stop` SIGTERM'd it. **Proven empirically**: `lsof -ti :4100` returned the Code Helper (Plugin) host (pid 8406, the exact pid from the user's log) + the node server; `lsof -ti :4100 -sTCP:LISTEN` returns only the server. Every restart was destroying + re-activating the whole extension host, wiping all terminal state — which is why no recovery code ran.
+
+**Second root cause**: Tower reassigns the terminal id on every reconcile (`createSessionRaw` → new UUID). That's why the old url goes dead and the whole give-up/remount chain (#936/#971/#991/#997) exists. Reviewer's insight: fix the id at the source and the client workarounds aren't needed.
+
+**Core fixes (commit b323ffc8):**
+1. `getProcessesOnPort` → `lsof -ti :PORT -sTCP:LISTEN` (listener only). afx tower stop no longer kills clients (extension host, dashboard browsers).
+2. `createSessionRaw` accepts optional `id`; both reconcile paths (startup :646 + on-the-fly :832) pass `dbSession.id` → terminal keeps its id across restart → client reconnects to the same valid `/ws/terminal/<id>` via the existing #442/#936 reconnect machinery, on BOTH surfaces.
+
+**Removed (superseded by the core fix):** the VSCode close-on-stop/reopen workaround (terminal-manager.ts/extension.ts reverted to #921 base).
+**Kept:** dashboard self-heal (per reviewer's earlier choice; now redundant-but-harmless — onPermanentClose rarely fires once ids are preserved).
+
+All green: codev typecheck 0 errors + 82 Tower tests (incl. id-reuse + reconcile); vscode 318; dashboard 322 (+1 skip).
+
+**⚠️ SCOPE/AREA PIVOT**: #991 is now primarily a Tower-server fix (area/tower) + the kept dashboard self-heal, NOT the cross-cutting client remount the approved plan described. The plan + review need rewriting to reflect the core-fix approach before PR. Reviewer directed this pivot live.
+
+**Validation (reviewer, live)**: `pnpm build && pnpm -w run local-install` to deploy the new afx (host-kill fix) + Tower server (id-preservation). Then `afx tower stop && afx tower start` — expect: extension host does NOT restart (survives), and open terminals reconnect to the same id within the normal backoff. Cannot be unit-validated (needs a real Tower bounce, which would kill this builder session).
+
 ## Merged main (at dev-approval gate)
 
 Merged origin/main (35 commits, dominated by PIR #921 — VSCode dev-server surface). True file overlap: `terminal-manager.ts` + its test.
