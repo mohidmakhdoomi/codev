@@ -88,6 +88,7 @@ import {
   saveFileTab,
   deleteFileTab,
   getRehydratedTerminalsEntry,
+  isStartupReconcileSettled,
   getTerminalSessionById,
   getActiveShellLabels,
   updateTerminalLabel,
@@ -290,6 +291,10 @@ async function handleHealthCheck(res: http.ServerResponse): Promise<void> {
   res.end(
     JSON.stringify({
       status: 'healthy',
+      // #997: `status` is liveness (process up); `ready` is readiness — true only
+      // once the startup reconcile has re-registered persistent sessions, so a
+      // client can await a deterministic state read after a Tower restart.
+      ready: isStartupReconcileSettled(),
       uptime: process.uptime(),
       activeWorkspaces: activeCount,
       totalWorkspaces: instances.length,

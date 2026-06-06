@@ -72,6 +72,14 @@ export interface TowerWorkspaceStatus {
 
 export interface TowerHealth {
   status: 'healthy' | 'degraded';
+  /**
+   * Readiness (#997): true once the startup terminal-session reconcile has
+   * completed. Distinct from `status` (process liveness) — after a Tower
+   * restart, `/api/state` only reflects the full role→terminalId mapping once
+   * `ready` is true. Optional for back-compat with older Tower builds that
+   * predate the field.
+   */
+  ready?: boolean;
   uptime: number;
   activeWorkspaces: number;
   totalWorkspaces: number;

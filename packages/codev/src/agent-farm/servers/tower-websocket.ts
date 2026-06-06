@@ -12,7 +12,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { WS_CLOSE_SESSION_UNKNOWN } from '@cluesmith/codev-core/reconnect-policy';
 import { encodeData, encodeControl, decodeFrame } from '../../terminal/ws-protocol.js';
 import type { PtySession } from '../../terminal/pty-session.js';
-import { getTerminalManager } from './tower-terminals.js';
+import { getTerminalManager, isStartupReconcileSettled, whenStartupReconcileSettled } from './tower-terminals.js';
 import { normalizeWorkspacePath } from './tower-utils.js';
 import { decodeWorkspacePath } from '../lib/tower-client.js';
 import { addSubscriber, removeSubscriber } from './tower-messages.js';
@@ -192,6 +192,11 @@ export function setupUpgradeHandler(
     const terminalMatch = reqUrl.pathname.match(/^\/ws\/terminal\/([^/]+)$/);
     if (terminalMatch) {
       const terminalId = terminalMatch[1];
+      // #997: don't reject a terminal id as unknown while the startup reconcile
+      // is still re-registering persistent sessions — wait for it to settle so a
+      // client reconnecting to its preserved id (#991) isn't spuriously 404'd.
+      // Fast-path the settled (normal post-startup) case to avoid per-upgrade overhead.
+      if (!isStartupReconcileSettled()) await whenStartupReconcileSettled();
       const manager = getTerminalManager();
       const session = manager.getSession(terminalId);
 
@@ -263,6 +268,9 @@ export function setupUpgradeHandler(
     const wsMatch = reqUrl.pathname.match(/^\/workspace\/[^/]+\/ws\/terminal\/([^/]+)$/);
     if (wsMatch) {
       const terminalId = wsMatch[1];
+      // #997: same readiness gate as the direct route above — wait out the
+      // startup reconcile window before treating an id as unknown.
+      if (!isStartupReconcileSettled()) await whenStartupReconcileSettled();
       const manager = getTerminalManager();
       const session = manager.getSession(terminalId);
 
