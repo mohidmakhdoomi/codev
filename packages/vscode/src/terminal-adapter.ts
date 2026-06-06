@@ -55,6 +55,12 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
   private readonly backoff = new BackoffController({ maxAttempts: MAX_RECONNECT_ATTEMPTS });
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private gaveUp = false;
+  // Tracks whether a wipeable in-progress retry notice currently occupies the
+  // terminal's current line (#1001). Set when scheduleReconnect writes a notice;
+  // cleared when a successful reconnect wipes it or the give-up state replaces
+  // it. Guards against emitting cursor-control sequences on the happy-path first
+  // connect, where no notice was ever written.
+  private hadReconnectNotice = false;
 
   constructor(
     private wsUrl: string,
@@ -136,6 +142,9 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
       // where the previous failure run left off.
       this.backoff.recordSuccess();
       this.gaveUp = false;
+      // Wipe any in-progress retry notice before replayed buffer / normal
+      // output resumes, so it doesn't orphan in scrollback (#1001).
+      this.clearReconnectNotice();
       // Send auth via control message (not query param)
       if (this.authKey) {
         this.sendControl({ type: 'ping', payload: { auth: this.authKey } });
@@ -201,9 +210,14 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
     }
 
     const delay = this.backoff.nextDelayMs();
+    // Overwrite the previous notice in place: leading `\r\x1b[2K` (carriage
+    // return + erase-entire-line) rewrites the same line each attempt rather
+    // than stacking a new scrollback line, so only one notice is ever visible
+    // and the attempt counter ticks 1/6 → 6/6 in place (#1001).
+    this.hadReconnectNotice = true;
     this.writeEmitter.fire(
-      `\x1b[33m[Codev: Connection lost — retrying in ${delay / 1000}s ` +
-      `(attempt ${this.backoff.attempt}/${MAX_RECONNECT_ATTEMPTS})]\x1b[0m\r\n`,
+      `\r\x1b[2K\x1b[33m[Codev: Connection lost. retrying in ${delay / 1000}s ` +
+      `(attempt ${this.backoff.attempt}/${MAX_RECONNECT_ATTEMPTS})]\x1b[0m`,
     );
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -227,9 +241,29 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
       this.reconnectTimer = null;
     }
     this.log('WARN', `Giving up reconnect: ${reason}`);
+    // When reached via the exhausted-budget path, a yellow retry notice is
+    // sitting on the current line; overwrite it in place. When reached via the
+    // immediate-4xx path, no notice exists, so don't disturb the current line.
+    // Either way the give-up notice keeps its trailing `\r\n` and is never
+    // wiped — it is the terminal failure state and must stay visible (#1001).
+    const prefix = this.hadReconnectNotice ? '\r\x1b[2K' : '';
+    this.hadReconnectNotice = false;
     this.writeEmitter.fire(
-      `\x1b[31m[Codev: Connection lost — ${reason}. ${RECONNECT_LINK_TEXT}]\x1b[0m\r\n`,
+      `${prefix}\x1b[31m[Codev: Connection lost. ${reason}. ${RECONNECT_LINK_TEXT}]\x1b[0m\r\n`,
     );
+  }
+
+  /**
+   * Wipe the single in-progress retry notice line on a successful reconnect
+   * (#1001). One `\r\x1b[2K` clears it because notices overwrite in place — only
+   * one ever occupies the current line. No-ops (emits nothing) when no notice
+   * was written, keeping the happy-path first connect silent.
+   */
+  private clearReconnectNotice(): void {
+    if (this.hadReconnectNotice) {
+      this.writeEmitter.fire('\r\x1b[2K');
+      this.hadReconnectNotice = false;
+    }
   }
 
   /** Fresh decoder + escape buffer. Shared by every (re)connect path so none
