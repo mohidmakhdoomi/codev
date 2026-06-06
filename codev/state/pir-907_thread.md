@@ -37,3 +37,7 @@ Architect feedback at the gate: (1) "last-known" is the wrong term — a builder
 Renamed field/comments/test wording off "last-known" → "resolved". Added 6 direct unit tests for the generic cache contract (availability-gate, sentinel caching, no-mask-on-change, per-builder isolation, prune).
 
 **Verification:** overview suite 168/168; build ✓; full codev suite 3239 passed / 13 skipped.
+
+## Implement phase — extract to own module (2026-06-06)
+
+Architect: move the enrichment cache out of overview.ts. Extracted `ResolvedEnrichment` + `ResolvedEnrichmentCache` to `packages/codev/src/agent-farm/servers/resolved-enrichment-cache.ts` (overview.ts now imports it); moved its 6 unit tests to a co-located `__tests__/resolved-enrichment-cache.test.ts`. Integration tests (through `getOverview`) stay in overview.test.ts. Build ✓; full suite 155 files / 3239 passed / 13 skipped.
