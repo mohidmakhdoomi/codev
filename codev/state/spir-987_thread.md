@@ -61,4 +61,11 @@ Verified: buildPhasePrompt uses `{{var}}` substitution (`substituteVariables`) �
 - Codex + Claude converged on the **interactive-session surface** (the meaty part) being underspecified. Real gap: I'd conflated runtime 4-tier resolution (works for porch via `resolveCodevFile()`) with the interactive surface (CLAUDE.md/AGENTS.md are STATIC — no runtime loader; verified `copyRootFiles()` only does new-file/`.codev-new`).
 - Fixed: porch surface = runtime resolution+inject; interactive surface = **generated managed block** (markers, replace-in-place, non-clobber, insert-at-anchor) written at **generation time** (codev init/update). Locked the mechanism (rejected `@import`), made interactive criteria testable, added tier-4 placement + codev-update file-creation. Rebuttal: 987-specify-iter2-rebuttals.md.
 
-### Next: commit iter2 revision → re-present spec-approval gate (still pending) to architect. Do NOT self-approve.
+### iter2 revision committed, re-presented at gate. Notified architect.
+
+## Architect refinement (2026-06-06) — bounded cold-doc map
+Each hot file now = **capped facts + a bounded cold-doc map** (curated top-level topics of its cold doc, each w/ "consult when…"). Rationale: "on-demand" cold reference still requires the agent to KNOW the cold doc exists/covers the topic — the always-on hot tier should carry a small map so the cold tier is genuinely discoverable. BOUNDED (top-level only, NOT a full/auto TOC — that re-accretes), counts against the cap, MAINTAIN keeps it bounded AND accurate (synced to cold doc top-level sections).
+- Amended: hot/cold model (table + item 1 two-part hot file), cap (item4 covers facts+map), MAINTAIN (item6 + criterion: bounded+accurate), new success criterion, new test scenario, cap open-question.
+- Re-consult: architect left to my discretion; judged a full 3-way re-consult unnecessary for a bounded additive model change over an already-validated model. Flagged in spec so architect can request one at the gate.
+
+### Next: commit refinement → re-present spec-approval (still pending). Do NOT self-approve.

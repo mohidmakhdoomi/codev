@@ -60,12 +60,16 @@ Each governance doc is split into a **two-tier (hot/cold)** pair, **symmetricall
 
 | Tier | Files | Size | Consumed how |
 |---|---|---|---|
-| **HOT** | `arch-critical.md`, `lessons-critical.md` | **Hard-capped** — a handful of lines each | **Always injected into context** (every porch phase prompt + interactive sessions, CLAUDE.md-style). The behavior-changer. |
-| **COLD** | `arch.md`, `lessons-learned.md` | Full, may expand | **Kept** as on-demand reference (grep/read for depth). Not retired, not deleted; spec-narrow recipes stay. |
+| **HOT** | `arch-critical.md`, `lessons-critical.md` | **Hard-capped** — a handful of lines each (capped facts **+** a bounded cold-doc map) | **Always injected into context** (every porch phase prompt + interactive sessions, CLAUDE.md-style). The behavior-changer. |
+| **COLD** | `arch.md`, `lessons-learned.md` | Full, may expand | **Kept** as on-demand reference (grep/read for depth). Not retired, not deleted; spec-narrow recipes stay. Made *discoverable* by the hot file's cold-doc map. |
 
-1. **Two new HOT files** (`codev/resources/arch-critical.md`, `codev/resources/lessons-critical.md`, mirrored into the template trees) hold only the small set of cross-cutting facts/heuristics that should change a decision *right now*. They are **hard-capped** and **always-on**.
+1. **Two new HOT files** (`codev/resources/arch-critical.md`, `codev/resources/lessons-critical.md`, mirrored into the template trees). Each hot file has **two parts**, both inside the same hard cap:
+   - **(a) Capped facts** — the small set of cross-cutting facts/heuristics that should change a decision *right now*.
+   - **(b) A bounded cold-doc map** — a terse, curated index of *its cold doc's top-level topics*, each with a one-line **"consult when…"**. E.g. `arch-critical.md` maps `arch.md`'s top-level sections (Tower, porch state machine, shellper/PTY, consult, four-tier resolver, …); `lessons-critical.md` maps `lessons-learned.md`'s top-level sections. This is the bridge that makes the always-on hot tier surface *what deeper reference exists and when to consult it* — so the cold tier is genuinely discoverable rather than write-mostly.
 
-2. **Both COLD docs are kept intact** — `arch.md` and `lessons-learned.md` continue to exist as the full reference archives. Nothing is deleted; spec-narrow content remains as honest reference. The cold tier simply stops *pretending* to change behavior — the hot tier does that.
+   The map is **bounded exactly like the facts**: top-level topic headings + when-to-consult only — **NOT** a full table of contents enumerating every cold entry, and **NOT** auto-generated from every cold line (a growing full TOC would re-accrete on the always-on surface, the very failure being fixed). The map **counts against the hot file's cap** and is subject to the same displacement + MAINTAIN-policing discipline.
+
+2. **Both COLD docs are kept intact** — `arch.md` and `lessons-learned.md` continue to exist as the full reference archives. Nothing is deleted; spec-narrow content remains as honest reference. The cold tier stops *pretending* to change behavior (the hot facts do that) and becomes *reliably discoverable* via the hot file's cold-doc map — "on-demand" no longer assumes the agent already knows the doc exists and covers the topic.
 
 3. **The hot tier reaches both consumption surfaces — but the surfaces are mechanically different and resolve the source at different times:**
    - **porch-driven builders (runtime injection)** — `buildPhasePrompt()` resolves each hot file through the **runtime four-tier resolver** (`resolveCodevFile()`, verified to exist) and injects it into **every** phase prompt. Fallback is genuine *runtime* fallback: an upgraded-but-not-yet-seeded repo gets the installed-skeleton copy at injection time.
@@ -73,11 +77,11 @@ Each governance doc is split into a **two-tier (hot/cold)** pair, **symmetricall
 
    The **single source of truth** for both surfaces is the two hot files; the interactive block is a *generated mirror*, never hand-maintained. The "four-tier" guarantee thus means **runtime resolution for the porch surface** and **generation-time resolution for the interactive surface** — these are stated separately and tested separately.
 
-4. **The hard cap is load-bearing.** It is the mechanism that makes "inject into every prompt" affordable (negligible per-prompt tokens) and that prevents re-accretion. Adding a fact to a hot file requires **demoting** a weaker fact into the corresponding cold doc (displacement discipline). The cap is policed by MAINTAIN; honored by the producer at capture time.
+4. **The hard cap is load-bearing** and covers the **whole** hot file (facts **+** cold-doc map together). It is the mechanism that makes "inject into every prompt" affordable (negligible per-prompt tokens) and that prevents re-accretion on either part. Adding a fact requires **demoting** a weaker fact into the corresponding cold doc; the map likewise stays at top-level topics only. The cap is policed by MAINTAIN; honored by the producer at capture time.
 
 5. **Producers route hot-vs-cold, not append-everywhere.** At review time, each new architecture fact and each new lesson is **routed**: does it belong in the hot file (behavior-changing, earns/displaces a capped slot) or the cold doc (reference)? This replaces today's "append to the archive."
 
-6. **MAINTAIN polices the cap (per hot file) and maintains the cold docs as reference.** It no longer treats accretion in the cold tier as the primary failure mode (the cold docs are allowed to be full reference); the discipline that matters moves to the hot-tier cap + correct hot/cold routing. The arch-vs-lessons routing the skill already owns is extended with the hot/cold axis.
+6. **MAINTAIN polices the cap (per hot file), keeps the cold-doc map bounded AND accurate, and maintains the cold docs as reference.** It no longer treats accretion in the cold tier as the primary failure mode (the cold docs are allowed to be full reference); the discipline that matters moves to the hot-tier cap + correct hot/cold routing + **map accuracy**. Specifically, as cold-doc top-level sections are added or removed, MAINTAIN updates the hot file's cold-doc map to match (kept bounded — top-level topics only). The arch-vs-lessons routing the skill already owns is extended with the hot/cold axis.
 
 Net effect: the small amount of knowledge that actually changes decisions is unavoidably in front of every agent at every step, while the full reference archives remain available on demand — symmetrically for system shape and engineering wisdom.
 
@@ -90,6 +94,7 @@ Net effect: the small amount of knowledge that actually changes decisions is una
 ## Success Criteria
 - [ ] **Two HOT files exist** — `codev/resources/arch-critical.md` and `codev/resources/lessons-critical.md` — as the live instance files and as starter templates in the trees scaffold reads from (`codev-skeleton/templates/` and `codev/templates/`), each with an explicit **hard cap** (stated as entry count and/or "fits in a handful of lines") and a documented **displacement discipline**.
 - [ ] **HOT files are seeded by curation** — the genuinely behavior-changing, cross-cutting subset is lifted from the cold docs into the hot files. This is curation, **not** deletion: the cold docs are unchanged in content except for any demoted/duplicated framing.
+- [ ] **Each HOT file carries a bounded cold-doc map** — a curated index of its cold doc's **top-level topics** with a one-line "consult when…" each, sized within the hot file's cap. It is explicitly **not** a full/auto-generated TOC of every cold entry. The map is part of the hot content that gets injected (porch) and mirrored into the managed block (interactive), so the cold tier is discoverable from always-on context.
 - [ ] **Both COLD docs are KEPT** — `codev/resources/arch.md` and `codev/resources/lessons-learned.md` still exist with their reference content intact (no deletion, no wholesale gutting, spec-narrow recipes retained).
 - [ ] **porch injects both hot files into every phase prompt** — `buildPhasePrompt()` injects `arch-critical.md` and `lessons-critical.md` content into the assembled prompt for **all** phases (specify, plan, implement, defend, evaluate, review). Verifiable: assemble a phase prompt for ≥2 distinct phases and confirm both hot files' text appears **verbatim and unconditionally** (not a "go read this file" pointer).
 - [ ] **Interactive sessions get the hot tier always-on, via a testable generated managed block** — `CLAUDE.md` and `AGENTS.md` contain a delimited managed block (explicit begin/end markers) holding the hot content, generated from the two hot files. Concretely verifiable: after `codev init`/`codev update`, the markers + hot content are present in both root docs; editing a hot file and re-running the generator updates the block; user content **outside** the markers is preserved across regeneration; the block is identical in `CLAUDE.md` and `AGENTS.md`. The block is a **generated mirror only** — never hand-edited (single source of truth = the hot files).
@@ -100,7 +105,7 @@ Net effect: the small amount of knowledge that actually changes decisions is una
 - [ ] **Cold docs preserved through update** — `codev update` keeps `arch.md` and `lessons-learned.md` intact (they remain `USER_DATA`); no crash for existing adopters. (Hot-file creation + managed-block refresh specifics are covered in the dedicated criterion below.)
 - [ ] **Producers route hot-vs-cold** — the spir/aspir/pir + `porch/prompts/review.md` review prompts are changed from "append to `arch.md` / `lessons-learned.md`" to "**route** each new fact to the hot file (cap+displacement) or the cold doc," for **both** docs. The review sections reflect routing.
 - [ ] **Porch review checks remain valid** — the existing `review_has_arch_updates` / `review_has_lessons_updates` checks still pass on a correctly-routed review (renamed if the review section names change). **No new consumption check is added** (consumption is via always-on injection, per the principle and the prior "executed step, no hard consumption check" decision).
-- [ ] **MAINTAIN polices the cap** — the MAINTAIN protocol + `maintain.md` prompt + `update-arch-docs` skill (both trees) gain hot-tier cap-policing + displacement, and the skill's cold-tier philosophy is updated so the cold docs may retain spec-narrow reference content (the anti-accretion discipline moves to the hot cap). Arch-vs-lessons routing is extended with the hot/cold axis.
+- [ ] **MAINTAIN polices the cap and the map** — the MAINTAIN protocol + `maintain.md` prompt + `update-arch-docs` skill (both trees) gain hot-tier cap-policing + displacement, **and** keep each hot file's cold-doc map **bounded and accurate**: as the cold doc's top-level sections change, the map is updated to match (top-level only — never expanded into a full TOC). The skill's cold-tier philosophy is updated so the cold docs may retain spec-narrow reference content (the anti-accretion discipline moves to the hot cap). Arch-vs-lessons routing is extended with the hot/cold axis.
 - [ ] **Explicit live-surface sweep (both trees)** — every live surface is updated, not left to grep alone: spir/aspir/pir/maintain `protocol.md`, the `protocols/*/templates/review.md` review templates, MAINTAIN templates, the PIR builder-prompt + implement prompt, `porch/prompts/review.md`, the `update-arch-docs` skill (frontmatter + body), `CLAUDE.md`/`AGENTS.md` (directory map + the new always-on model), role files, and `templates.ts` — each audited in **both** `codev/` and `codev-skeleton/`.
 - [ ] All existing tests pass; tests referencing the old copy list / section names are updated.
 
@@ -161,7 +166,7 @@ The hot files are the single source of truth. The two consumers are mechanically
 - None — the model and its baked decisions are fixed by the architect instruction.
 
 ### Important (Affects Design)
-- [ ] **Exact cap per hot file.** Proposed: each hot file ≤ ~10 single-line entries / "fits in a handful of lines at a glance." Final number set in the plan / confirmed at the plan gate.
+- [ ] **Exact cap per hot file** (covering facts **+** cold-doc map together). Proposed: each hot file ≤ ~10 single-line fact entries plus a top-level cold-doc map / "fits in a handful of lines at a glance." Final number set in the plan / confirmed at the plan gate.
 - [ ] **Review-section naming** — keep `## Architecture Updates` / `## Lessons Learned Updates` (with routing instructions inside) vs rename to signal hot/cold routing. Keeping preserves the existing porch checks with minimal churn. Lean: keep names, change the instructions. Resolve in plan.
 
 *(Resolved at spec time — no longer open:)* the interactive-surface **mechanism** is locked to the generated managed block (`@import` rejected); the porch **injection form** is locked to `{{arch_critical}}`/`{{lessons_critical}}` variables via `resolveCodevFile()`. Remaining latitude on the interactive surface is marker spelling, insertion anchor, and the exact `codev` sync entry point.
@@ -184,6 +189,7 @@ This is a methodology/mechanism change; "tests" are structural assertions plus p
 7. **Producer routes**: review prompts instruct hot-vs-cold routing for both docs; no "append everything to the archive" instruction remains.
 8. **Checks valid**: porch review checks pass on a correctly-routed review.
 9. **Scaffold**: a freshly scaffolded project contains all four files (`arch.md`, `arch-critical.md`, `lessons-learned.md`, `lessons-critical.md`); tier-4 skeleton copies exist where the runtime resolver reads them.
+10. **Bounded cold-doc map**: each hot file's map lists only top-level cold-doc topics (each with a "consult when…"), is within the cap, and is **not** a full enumeration of cold entries; the map text is part of what the porch injection and the interactive managed block carry.
 
 ### Non-Functional Tests
 1. **Cap respected**: each seeded hot file fits the stated cap.
@@ -218,6 +224,8 @@ This is a methodology/mechanism change; "tests" are structural assertions plus p
 - **Made the interactive criteria testable**: markers + content present after generation, refresh-on-edit, non-clobber, CLAUDE≡AGENTS. *(Codex #3)*
 - **Tier-4 placement**: hot files must also live where the runtime resolver reads tier-4, in addition to the `templates/` trees. *(Claude #1)*
 - **`codev update` file creation**: `UPDATABLE_PREFIXES`/copy logic must create the new hot files for existing adopters; `USER_DATA_PATTERNS` protects them once present. *(Claude #3)*
+
+**Architect refinement (2026-06-06)**: added the **bounded cold-doc map** to the hot-file model — each hot file now = capped facts + a curated top-level map of its cold doc (with "consult when…"), so the always-on hot tier makes the cold reference discoverable (closing the "agents don't grep what they don't know exists" gap that motivated the spec). Folded into the hot/cold model, the success criteria, MAINTAIN policing (bounded **and** accurate), and a test scenario. Re-consult was left to builder discretion for this bounded, additive change; given it is a self-contained model addition (not a re-architecture) over an already-validated model, a full 3-way re-consult was judged unnecessary — flagged here so the architect can request one at the gate if desired.
 
 ## Approval
 - [ ] Architect Review (human gate: spec-approval)
