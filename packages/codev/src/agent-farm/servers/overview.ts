@@ -768,6 +768,85 @@ export function deriveBacklog(
 }
 
 // =============================================================================
+// ResolvedEnrichmentCache
+// =============================================================================
+
+/**
+ * Issue-derived `OverviewBuilder` fields that are *resolved* fresh from the
+ * GitHub issue on each overview refresh and need to survive windows where the
+ * issue can't be read.
+ *
+ * To make another issue-derived field "sticky", add it here and resolve it
+ * through {@link ResolvedEnrichmentCache.resolve} at the enrichment site —
+ * nothing else changes.
+ */
+export interface ResolvedEnrichment {
+  /** Resolved `area/*` group, or the `UNCATEGORIZED_AREA` sentinel. */
+  area?: string;
+}
+
+/**
+ * Per-builder cache of {@link ResolvedEnrichment} values, keyed by the stable
+ * absolute `worktreePath`.
+ *
+ * The overview projection derives certain builder fields (today: `area`) from
+ * the GitHub issue every refresh. The issue source is open-only and transient:
+ * once an issue is closed (PR merged via `Fixes #N`), torn down mid-cleanup, or
+ * the `issue-list` fetch fails, those fields can no longer be recomputed — yet
+ * the builder may still be listed for a few refreshes while teardown finishes.
+ * Without this cache the fields snap back to their structural default (e.g.
+ * `area` → `Uncategorized`), briefly mis-rendering a builder that is merely
+ * being cleaned up (PIR #907).
+ *
+ * These values are STABLE per builder — one issue per builder, fixed for its
+ * lifetime — so this caches a fixed fact to bridge a source outage; it does not
+ * track a value that changes over time.
+ *
+ * Contract: {@link resolve} is gated on whether the *issue was reachable* this
+ * refresh (`sourceAvailable`), NOT on whether the value is non-empty. A
+ * reachable issue that genuinely resolves to a sentinel (e.g. `area` =
+ * `Uncategorized` for an unlabeled issue) is a real value and is cached as
+ * such. Only an UNREACHABLE issue replays the cached value. Gating on
+ * reachability rather than value-emptiness is what stops a legitimate change
+ * (e.g. a label edited on a still-open issue) from being masked by a stale
+ * entry.
+ */
+export class ResolvedEnrichmentCache {
+  private byBuilder = new Map<string, ResolvedEnrichment>();
+
+  /**
+   * Resolve one field for one builder. When the issue is reachable and produced
+   * a value, cache and return it. Otherwise replay the cached value (or
+   * `undefined` if the field was never resolved for this builder).
+   */
+  resolve<K extends keyof ResolvedEnrichment>(
+    builderKey: string,
+    field: K,
+    sourceAvailable: boolean,
+    freshValue: ResolvedEnrichment[K] | undefined,
+  ): ResolvedEnrichment[K] | undefined {
+    if (sourceAvailable && freshValue !== undefined) {
+      const snapshot = this.byBuilder.get(builderKey) ?? {};
+      snapshot[field] = freshValue;
+      this.byBuilder.set(builderKey, snapshot);
+      return freshValue;
+    }
+    return this.byBuilder.get(builderKey)?.[field];
+  }
+
+  /**
+   * Drop cached entries for builders no longer present, so the cache can't grow
+   * unbounded across the Tower process lifetime. Once a builder is gone for good
+   * (dropped by the active-session filter) it is forgotten.
+   */
+  prune(liveBuilderKeys: Set<string>): void {
+    for (const key of this.byBuilder.keys()) {
+      if (!liveBuilderKeys.has(key)) this.byBuilder.delete(key);
+    }
+  }
+}
+
+// =============================================================================
 // OverviewCache
 // =============================================================================
 
@@ -777,13 +856,12 @@ export class OverviewCache {
   private closedCache = new Map<string, { data: ForgeIssueListItem[]; fetchedAt: number }>();
   private mergedPRCache = new Map<string, { data: ForgePR[]; fetchedAt: number }>();
   private currentUserCache = new Map<string, { data: string; fetchedAt: number }>();
-  // Last successfully-resolved area per builder (keyed by absolute worktreePath).
-  // Used to keep a builder in its real group when its issue can't be resolved
-  // this refresh — issue closed (the open-only `issue-list` drops it), torn
-  // down mid-cleanup, or a failed fetch — instead of flashing it into
-  // UNCATEGORIZED while it's still present (PIR #907). Intentionally NOT cleared
-  // by invalidate(): surviving cache invalidation is the whole point.
-  private lastKnownArea = new Map<string, string>();
+  // Cache of issue-derived builder fields (today: `area`) keyed by worktreePath,
+  // so they survive refreshes where the source issue is unreachable rather than
+  // snapping back to their default while the builder is still listed (PIR #907).
+  // Intentionally NOT cleared by invalidate(): surviving cache invalidation is
+  // the whole point. See ResolvedEnrichmentCache.
+  private resolvedEnrichment = new ResolvedEnrichmentCache();
   private readonly TTL = 30_000;
   private readonly USER_TTL = 3_600_000; // 1h — GitHub identity is session-stable
 
@@ -875,54 +953,45 @@ export class OverviewCache {
 
     // 4. Process issues and derive backlog
     let backlog: OverviewBacklogItem[] = [];
+    // `issue-list` is open-only, so a closed issue (merged via `Fixes #N`), one
+    // torn down mid-cleanup, or a failed fetch (issues === null) is absent here.
+    const issueAreaMap = issues
+      ? new Map(issues.map(i => [String(i.number), parseArea(i.labels)]))
+      : null;
     if (issues === null) {
       errors.issues = 'GitHub CLI unavailable — could not fetch issues';
-      // Fetch failed: keep each builder's last-known area rather than the
-      // UNCATEGORIZED_AREA default, so a transient `issue-list` failure doesn't
-      // flash live builders into Uncategorized (PIR #907).
-      for (const b of builders) {
-        const prev = this.lastKnownArea.get(b.worktreePath);
-        if (prev) b.area = prev;
-      }
     } else {
       backlog = deriveBacklog(issues, workspaceRoot, activeBuilderIssues, prLinkedIssues);
 
-      // Enrich builder titles + area from the cached issue list.
-      // (status.yaml stores a slug, not the human-readable title; and
-      // discoverBuilders has no access to the issue payload, so area
-      // starts as 'Uncategorized' and gets filled here.)
-      //
-      // `issue-list` is open-only, so a closed issue (e.g. merged via
-      // `Fixes #N`) or one torn down mid-cleanup is absent from the map. When
-      // that happens we reuse the builder's last successfully-resolved area
-      // instead of letting it fall back to the UNCATEGORIZED_AREA default,
-      // which would briefly reclassify a being-cleaned-up builder (PIR #907).
-      // We only memoize on a genuine resolve, so an issue that legitimately
-      // carries no area/* label still records and keeps 'Uncategorized'.
+      // Enrich builder titles from the cached issue list. (status.yaml stores a
+      // slug, not the human-readable title.) Title keeps its own local fallback
+      // — the slug — so it doesn't need the resolved-enrichment cache.
       const issueTitleMap = new Map(issues.map(i => [String(i.number), i.title]));
-      const issueAreaMap = new Map(issues.map(i => [String(i.number), parseArea(i.labels)]));
       for (const b of builders) {
         if (b.issueId === null) continue;
         const title = issueTitleMap.get(b.issueId);
         if (title) b.issueTitle = title;
-        if (issueAreaMap.has(b.issueId)) {
-          const area = issueAreaMap.get(b.issueId)!;
-          b.area = area;
-          this.lastKnownArea.set(b.worktreePath, area);
-        } else {
-          const prev = this.lastKnownArea.get(b.worktreePath);
-          if (prev) b.area = prev;
-        }
       }
     }
 
-    // Prune last-known-area entries for builders no longer present, so the map
-    // can't grow unbounded across the Tower process lifetime. Once a builder
-    // is gone for good (dropped by the active-session filter) we forget it.
-    const liveWorktrees = new Set(builders.map(b => b.worktreePath));
-    for (const key of this.lastKnownArea.keys()) {
-      if (!liveWorktrees.has(key)) this.lastKnownArea.delete(key);
+    // Resolve issue-derived fields (today: `area`) through the enrichment cache
+    // so they survive refreshes where the issue is unreachable — instead of
+    // snapping back to the UNCATEGORIZED_AREA default while the builder is still
+    // listed during teardown (PIR #907). Gated on issue reachability, not value
+    // emptiness, so a reachable-but-unlabeled issue still resolves (and caches)
+    // a genuine `Uncategorized`.
+    for (const b of builders) {
+      if (b.issueId === null) continue;
+      const issueReachable = issueAreaMap?.has(b.issueId) ?? false;
+      const area = this.resolvedEnrichment.resolve(
+        b.worktreePath,
+        'area',
+        issueReachable,
+        issueReachable ? issueAreaMap!.get(b.issueId)! : undefined,
+      );
+      if (area) b.area = area;
     }
+    this.resolvedEnrichment.prune(new Set(builders.map(b => b.worktreePath)));
 
     // 5. Process recently closed issues — enrich with artifact paths and PR URLs
     let recentlyClosed: OverviewRecentlyClosed[] = [];
@@ -983,9 +1052,9 @@ export class OverviewCache {
     this.closedCache.clear();
     this.mergedPRCache.clear();
     this.currentUserCache.clear();
-    // Note: lastKnownArea is deliberately NOT cleared here. It must survive
-    // invalidation so a cleanup-triggered refresh (which calls invalidate())
-    // can still fall back to a builder's real area instead of UNCATEGORIZED
+    // Note: resolvedEnrichment is deliberately NOT cleared here. It must survive
+    // invalidation so a cleanup-triggered refresh (which calls invalidate()) can
+    // still fall back to a builder's resolved area instead of UNCATEGORIZED
     // (PIR #907). It self-prunes in getOverview when a builder disappears.
   }
 

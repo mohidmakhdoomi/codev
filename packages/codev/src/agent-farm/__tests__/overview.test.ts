@@ -12,6 +12,7 @@ import os from 'node:os';
 import Database from 'better-sqlite3';
 import {
   OverviewCache,
+  ResolvedEnrichmentCache,
   parseStatusYaml,
   discoverBuilders,
   deriveBacklog,
@@ -133,6 +134,54 @@ function createStateDb(
 // ============================================================================
 // Tests
 // ============================================================================
+
+describe('ResolvedEnrichmentCache (PIR #907)', () => {
+  it('returns the fresh value and caches it when the source is available', () => {
+    const cache = new ResolvedEnrichmentCache();
+    expect(cache.resolve('/wt/a', 'area', true, 'vscode')).toBe('vscode');
+    // Source now unavailable → replays the cached value.
+    expect(cache.resolve('/wt/a', 'area', false, undefined)).toBe('vscode');
+  });
+
+  it('returns undefined when the field was never resolved and the source is unavailable', () => {
+    const cache = new ResolvedEnrichmentCache();
+    expect(cache.resolve('/wt/a', 'area', false, undefined)).toBeUndefined();
+  });
+
+  it('caches a genuine sentinel value (gates on reachability, not emptiness)', () => {
+    const cache = new ResolvedEnrichmentCache();
+    // A reachable-but-unlabeled issue resolves to the Uncategorized sentinel —
+    // that is a real value and must be cached as such, not treated as "missing".
+    expect(cache.resolve('/wt/a', 'area', true, 'Uncategorized')).toBe('Uncategorized');
+    expect(cache.resolve('/wt/a', 'area', false, undefined)).toBe('Uncategorized');
+  });
+
+  it('does not mask a changed value while the source stays available', () => {
+    const cache = new ResolvedEnrichmentCache();
+    expect(cache.resolve('/wt/a', 'area', true, 'vscode')).toBe('vscode');
+    // Issue still reachable but the value changed (e.g. label edited) → the new
+    // value wins; the cache never replays a stale entry while reachable.
+    expect(cache.resolve('/wt/a', 'area', true, 'tower')).toBe('tower');
+  });
+
+  it('isolates entries per builder key', () => {
+    const cache = new ResolvedEnrichmentCache();
+    cache.resolve('/wt/a', 'area', true, 'vscode');
+    cache.resolve('/wt/b', 'area', true, 'tower');
+    expect(cache.resolve('/wt/a', 'area', false, undefined)).toBe('vscode');
+    expect(cache.resolve('/wt/b', 'area', false, undefined)).toBe('tower');
+  });
+
+  it('prunes entries for builders no longer present', () => {
+    const cache = new ResolvedEnrichmentCache();
+    cache.resolve('/wt/a', 'area', true, 'vscode');
+    cache.resolve('/wt/b', 'area', true, 'tower');
+    cache.prune(new Set(['/wt/a']));
+    expect(cache.resolve('/wt/a', 'area', false, undefined)).toBe('vscode');
+    // '/wt/b' was pruned → no cached value to replay.
+    expect(cache.resolve('/wt/b', 'area', false, undefined)).toBeUndefined();
+  });
+});
 
 describe('overview', () => {
   beforeEach(() => {
@@ -1930,18 +1979,18 @@ describe('overview', () => {
     });
 
     // ------------------------------------------------------------------
-    // Area last-known-good (PIR #907)
+    // Resolved-area enrichment cache (PIR #907)
     //
     // Regression coverage for the transient UNCATEGORIZED flash during
-    // cleanup. `area` is enriched from the *open*-issues list; when a
+    // cleanup. `area` is resolved from the *open*-issues list; when a
     // builder's issue is absent from that list (closed on PR merge, torn
     // down mid-cleanup, or a failed fetch) the record used to fall back to
     // the UNCATEGORIZED_AREA default while the builder was still present,
-    // making it jump groups in the Builders tree. The cache now reuses the
-    // last successfully-resolved area instead.
+    // making it jump groups in the Builders tree. The cache now replays the
+    // resolved area instead.
     // ------------------------------------------------------------------
 
-    it('keeps last-known area when the issue leaves the open list (PIR #907)', async () => {
+    it('keeps the resolved area when the issue leaves the open list (PIR #907)', async () => {
       createBuilderWorktree(tmpDir, 'pir-907-area-fix', [
         "id: '0907'",
         'protocol: pir',
@@ -1969,7 +2018,7 @@ describe('overview', () => {
       expect(second.builders[0].area).toBe('vscode');
     });
 
-    it('keeps last-known area when the issue fetch fails (PIR #907)', async () => {
+    it('keeps the resolved area when the issue fetch fails (PIR #907)', async () => {
       createBuilderWorktree(tmpDir, 'pir-907-area-fetchfail', [
         "id: '0907'",
         'protocol: pir',
@@ -2023,7 +2072,7 @@ describe('overview', () => {
 
       const cache = new OverviewCache();
 
-      // Issue never appears in the open list → no last-known-good to reuse.
+      // Issue never appears in the open list → no resolved area to replay.
       mockFetchIssueList.mockResolvedValue([]);
       const data = await cache.getOverview(tmpDir);
       expect(data.builders[0].area).toBe('Uncategorized');
