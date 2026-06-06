@@ -68,4 +68,17 @@ Each hot file now = **capped facts + a bounded cold-doc map** (curated top-level
 - Amended: hot/cold model (table + item 1 two-part hot file), cap (item4 covers facts+map), MAINTAIN (item6 + criterion: bounded+accurate), new success criterion, new test scenario, cap open-question.
 - Re-consult: architect left to my discretion; judged a full 3-way re-consult unnecessary for a bounded additive model change over an already-validated model. Flagged in spec so architect can request one at the gate.
 
-### Next: commit refinement → re-present spec-approval (still pending). Do NOT self-approve.
+### Refinement committed, re-presented. → SPEC APPROVED by Waleed (2026-06-06).
+
+## PLAN phase (in progress)
+Drafted `codev/plans/987-...md` on the final hot/cold model. 6 phases (porch JSON block; checks pass: plan_exists/has_phases_json/min_two_phases=6).
+
+**Pinned the open questions (architect asked):**
+- **Cap**: each hot file ≤ 35 lines; ≤ 10 fact bullets + cold-doc map ≤ 12 top-level topics. (~≤70 lines both files injected = negligible tokens.)
+- **porch injection**: PREPEND an always-on block in `buildPhasePrompt()` (more robust than per-template `{{var}}` — guarantees unconditional presence every phase). Resolves via `resolveCodevFile()`.
+- **Skeleton placement (code-audit)**: hot files needed in BOTH `codev-skeleton/templates/` (scaffold) AND `codev-skeleton/resources/` (runtime tier-4 — verified resolveCodevFile reads resources/ there; skeleton/resources exists but lacks arch/lessons today).
+- **Review sections**: keep `## Architecture Updates`/`## Lessons Learned Updates` names (porch checks stay valid); change instructions to route hot/cold.
+
+**6 phases:** 1 hot-file curation+cap+placement · 2 porch runtime injection · 3 interactive managed block (markers, non-clobber) · 4 scaffold/templates.ts/tests · 5 producer routing (review prompts both trees) · 6 MAINTAIN+skill cap/map policing + docs sweep + consistency.
+
+### Next: porch done → plan 3-way consult → incorporate → plan-approval gate (HUMAN). Do NOT self-approve.
