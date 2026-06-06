@@ -506,6 +506,71 @@ describe('tower-terminals', () => {
       expect(resolved).toBe(true);
       expect(entry).toBeDefined();
     });
+
+    // Restart-race regression (#997, plan Test Plan): with a real reconcile in
+    // flight, a SINGLE getRehydratedTerminalsEntry read must block until reconcile
+    // finishes and then reflect the fully-reconnected role→terminalId mapping —
+    // never resolve early into the incomplete startup window.
+    //
+    // The assertion is an ordering one (deterministic, not timing-sensitive): the
+    // read must resolve AFTER reconcile. Without the barrier gate the read runs
+    // mid-reconcile (the `!_reconciling` guard skips on-the-fly reconnect, and
+    // getTerminalsForWorkspace then *atomically overwrites* the cache with an
+    // empty entry) and resolves BEFORE reconcile — flipping the recorded order,
+    // which is exactly what this test pins.
+    it('a single read after a restart reflects the completed reconcile (resolves after it)', async () => {
+      mockDbRun.mockReset();
+      mockDbAll.mockReset();
+      mockDbPrepare.mockReturnValue({ run: mockDbRun, all: mockDbAll });
+
+      // Hold reconnectSession open until the test releases it, so reconcile is
+      // deterministically mid-flight when the read is issued (no timing races).
+      let releaseReconnect!: () => void;
+      const reconnectGate = new Promise<void>((r) => { releaseReconnect = r; });
+      const makeClient = () => ({
+        getReplayData: () => Buffer.alloc(0),
+        connected: true,
+        connect: vi.fn(), disconnect: vi.fn(), write: vi.fn(), resize: vi.fn(),
+        signal: vi.fn(), spawn: vi.fn(), ping: vi.fn(), setReplayData: vi.fn(),
+        on: vi.fn(), emit: vi.fn(), removeAllListeners: vi.fn(), removeListener: vi.fn(),
+        addListener: vi.fn(), once: vi.fn(), off: vi.fn(), listenerCount: vi.fn().mockReturnValue(0),
+      });
+      const mockReconnectSession = vi.fn(async () => { await reconnectGate; return makeClient(); });
+
+      const deps = makeDeps({ shellperManager: { reconnectSession: mockReconnectSession } as any });
+      initTerminals(deps);
+
+      mockDbAll.mockReturnValue([{
+        id: 'recon-builder', workspace_path: '/real/project', type: 'builder',
+        role_id: 'builder-x', pid: 7000, shellper_socket: '/tmp/shellper-recon-builder.sock',
+        shellper_pid: 8000, shellper_start_time: Date.now(), created_at: new Date().toISOString(),
+      }]);
+      vi.spyOn(fs, 'existsSync').mockImplementation((p: fs.PathLike) =>
+        String(p) === '/real/project' ? true : false);
+
+      const { reconcileTerminalSessions } = await import('../servers/tower-terminals.js');
+
+      const events: string[] = [];
+      // Reconcile parks inside reconnectSession (barrier unsettled, _reconciling=true).
+      const reconcilePromise = reconcileTerminalSessions().then(() => { events.push('reconcile'); });
+      const readPromise = getRehydratedTerminalsEntry('/real/project').then((e) => { events.push('read'); return e; });
+
+      // Give the read a full macrotask to complete early IF it were ungated.
+      await new Promise((r) => setImmediate(r));
+
+      // Now let reconcile finish; the gated read unblocks only after it settles.
+      releaseReconnect();
+      await reconcilePromise;
+      const entry = await readPromise;
+
+      // The single read resolved strictly after reconcile completed.
+      expect(events).toEqual(['reconcile', 'read']);
+      // …and reflects the fully-reconnected mapping (complete on the first read).
+      expect(entry.builders.size).toBe(1);
+      expect(entry.builders.has('builder-x')).toBe(true);
+
+      vi.restoreAllMocks();
+    });
   });
 
   describe('reconcileTerminalSessions', () => {
