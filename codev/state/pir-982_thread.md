@@ -29,4 +29,15 @@ Branch was 88 commits behind `origin/main` (based on `66144d90`; main at `586a2f
 
 Rebased onto `origin/main` (586a2fcb) cleanly (no conflicts), force-pushed. Porch state intact (still gate_pending / plan / iter 1). Post-rebase line refs re-verified: warning at `:207`, `run-worktree-setup.ts:51-56` pattern present.
 
-**Deep-dive on Tower-up causes (answered to reviewer):** `/api/state` (opener) omits a builder whose live `PtySession` is gone from `TerminalManager.sessions` (`tower-routes.ts:1834-1855` — included only `if (session)`); `/api/overview` (sidebar) is disk-sourced so still lists it. Tower-up triggers: non-shellper 5-min idle reap (`pty-session.ts:368-379`, shellper-exempt), PTY exit past 30s grace (`pty-manager.ts:97-101`), spawn race, explicit kill. For shellper-backed afx builders the dominant cause is the **shellper process dying** while Tower lives (what `afx workspace recover` targets) + the spawn race. Implication flagged: plan's toast wording "most likely Tower restarted" is too narrow — offered to broaden it.
+**Deep-dive on Tower-up causes (answered to reviewer):** `/api/state` (opener) omits a builder whose live `PtySession` is gone from `TerminalManager.sessions` (`tower-routes.ts:1834-1855` — included only `if (session)`); `/api/overview` (sidebar) is disk-sourced so still lists it. Tower-up triggers: non-shellper 5-min idle reap (`pty-session.ts:368-379`, shellper-exempt), PTY exit past 30s grace (`pty-manager.ts:97-101`), spawn race, explicit kill.
+
+## Plan REVISED after reviewer feedback (still at plan-approval)
+
+Reviewer: the case they actually hit is **transient unavailability, not session destruction** — wouldn't need afx recovery. They challenged recovery-as-primary. They're right.
+
+Mechanism confirmed: `/api/state` rehydrates + on-the-fly shellper-reconnects on every call (`tower-terminals.ts:164-168`, `:780-886`); a click landing mid-rehydration / during startup `_reconciling` (`:53`/`:780`) / in the spawn race sees a momentary miss that resolves on the next call. **There is NO retry in the open path** — `terminal-manager.ts:206-208` warns on the first miss. That missing retry is the real defect.
+
+**Reframed plan:**
+- PRIMARY: bounded silent auto-retry in `openBuilderByRoleOrId` (~3 attempts, ~400ms apart). Re-query `getWorkspaceState` (re-triggers Tower self-heal). On any hit → open, NO toast. Transient case becomes invisible (= the issue's "self-recovers on next tick" AC).
+- SECONDARY (persistent tail only): actionable toast leading with **Retry**; **Recover Builders** demoted to last-resort line (dry-run, dead-shellper case). Recovery is no longer the headline.
+- Happy path untouched (first-attempt hit returns immediately). Option 3/4/5 still deferred.
