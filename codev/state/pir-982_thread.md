@@ -47,3 +47,17 @@ Mechanism confirmed: `/api/state` rehydrates + on-the-fly shellper-reconnects on
 No — first draft's "fixed 400ms" was ad-hoc. Canonical convention is `packages/core/src/reconnect-policy.ts` (#961 consolidated 4 hand-rolled `Math.min(1000*2^attempt,cap)` copies). Exports `backoffDelayMs(attempt, opts)` (bare curve, parameterized: baseMs/capMs/maxAttempts/jitterMs/random), `BackoffController` (counter+give-up), `classifyUpgradeError` (WS close codes). Already used by `connection-manager.ts` (SSE reconnect → backoffDelayMs) and `terminal-adapter.ts` (WS reconnect → BackoffController).
 
 Catch: defaults (base 1s, cap 30s, 6 attempts) are for persistent reconnect loops — too slow for an interactive click. Fix: reuse the **bare `backoffDelayMs`** (own a local counter, like the SSE/tunnel sites) with interactive params `{ baseMs: 150, capMs: 800 }` over ~3-4 attempts (~150/300/600ms, ~1s total). Don't use BackoffController (event-driven onClose machinery we don't need) or classifyUpgradeError (WS-only). Plan + Files-to-Change updated to import `@cluesmith/codev-core/reconnect-policy`.
+
+## IMPLEMENT phase (iteration 1) — done, awaiting dev-approval
+
+plan-approval approved; advanced to implement.
+
+Changes:
+- NEW `packages/vscode/src/terminal-resolve.ts` — vscode-free `resolveBuilderTerminal(roleOrId, fetchBuilders, {sleep, attempts?})`. Retries the resolve `TERMINAL_RESOLVE_ATTEMPTS` (4) times; uses `backoffDelayMs(attempt, {baseMs:150, capMs:800})` between attempts. Returns discriminated `{kind:'ok'|'ambiguous'|'missing'}`. Ambiguity short-circuits (stable, no retry). Deps injected → behaviorally testable.
+- `terminal-manager.ts` — `openBuilderByRoleOrId` delegates to the helper; `missing` → new `promptNoTerminalRecovery` (Retry [primary] + Recover Builders [secondary, dry-run `afx workspace recover` at workspace root, mirrors run-worktree-setup]). `friendlyBuilderId` gives `#<issueId>` in the toast via overviewCache. Old bare "No active terminal" warning removed.
+- Tests: NEW `terminal-resolve.test.ts` (7 behavioral — happy path / self-heal miss-then-hit / spawn-race empty-then-hit / persistent missing / backoff-curve-matches-shared-fn / ambiguous short-circuit / attempts override). `terminal-manager.test.ts` +5 source-level (delegation, no bare warning, missing→prompt, Retry+Recover labels, recover command wiring).
+
+Verify: `pnpm --filter codev-vscode test:unit` → 27 files / 348 tests pass. `pnpm --filter codev-vscode compile` → check-types + lint + esbuild clean.
+Note: fresh worktree needed `@cluesmith/codev-core` and `@cluesmith/codev-types` built first (tsc) — their dist wasn't present, caused subpath-resolution errors in unrelated tests until built. Not a code issue.
+
+Committed (impl + tests separate). Next: push, `porch done`, sit at dev-approval.
