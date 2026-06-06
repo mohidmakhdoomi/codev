@@ -33,6 +33,33 @@
     6. Re-cp the template back to UNRELEASED.md to start the next cycle
 -->
 
+## Terminals survive Tower restarts (#991, PR #999)
+
+`afx tower stop && afx tower start` used to be disruptive in two distinct, compounding ways. Open builder and architect terminals would drop their connections; the VSCode extension host itself would restart; recovery code that was supposed to reconnect the terminals never got a chance to run because the very process running it was being killed. This release fixes both layers at the source. After a restart, open terminals reconnect to the same session within the normal backoff window, replaying any buffered output, with no dead pane, no manual reopen, and no new window.
+
+### What was actually going on
+
+Two Tower-level bugs compounded:
+
+1. **`afx tower stop` was killing more than Tower.** `getProcessesOnPort` used `lsof -ti :PORT` to find what to terminate. That selector returns both the **listener** (the Tower server) AND every **client** holding a socket to the port. The VSCode extension host holds client sockets (one for SSE, one per terminal WebSocket), so `afx tower stop` SIGTERM'd the entire VSCode extension host on every restart. Every "click here to reconnect" affordance, every backoff retry, every state-refresh loop that earlier issues shipped was being silently destroyed by the very command that should have left them alone. Fixed by restricting the selector to listening sockets: `lsof -ti :PORT -sTCP:LISTEN`.
+
+2. **Terminal ids were not preserved across restart.** When Tower came back up and reconciled persistent shellper-backed sessions, it minted a fresh `randomUUID()` for each one. The client's `/ws/terminal/<old-id>` URL went dead, even though the underlying session was alive on the other side of a new id. Fixed by threading the persisted `dbSession.id` through `createSessionRaw` and both reconcile paths, so a session keeps its identity across a restart.
+
+With both fixes in place, the existing transport-reconnect layer (`@cluesmith/codev-core/reconnect-policy`, the terminal adapters from #936 and #971) handles a Tower restart as an ordinary transient drop. No special recovery code path is needed because the URL the client was already using stays valid.
+
+### Why the cycle's earlier terminal work landed where it did
+
+#936 (VSCode terminal reconnect bounding and give-up), #971 (web terminal session-unknown fast-path), and even this issue's original client-side framing were all responses to a symptom whose root cause was upstream. Preserving the terminal id removes the dead-id condition those layers were defensively guarding against. The client-side affordances all remain in place as harmless safety nets, but the common case (a routine Tower restart on `pnpm -w run local-install` or similar) now self-recovers without ever exercising them.
+
+A small edge case remains: a client reconnect that lands after Tower accepts connections but before startup reconcile re-registers the session could 404 once and recover on the next retry or click. Rare in practice; the deterministic follow-up is tracked separately as #997 (reconcile before serving requests).
+
+### Two durable lessons recorded with this release
+
+Worth carrying forward to anyone building recovery layers on top of distributed components:
+
+- **Confirm the runtime survives the event before building recovery on top of it.** Many iterations of client-side terminal recovery had to be reverted before checking the single most important precondition (does the extension host even survive `afx tower stop`?). It did not. A one-line check at `lsof -ti :PORT` would have redirected the entire effort on day one.
+- **Fix the source, not the symptom.** Multiple cycles of work across this codebase were tracking consequences of the terminal id changing on restart. The cheapest fix is often well upstream of where the symptom shows.
+
 ## Web terminal stops on dead sessions almost instantly (#971, PR #992)
 
 When Tower restarts or otherwise loses a session, the dashboard's web terminal used to spend the full 6-attempt backoff (~60s) blindly retrying before giving up, because a browser can't read a failed WebSocket upgrade's HTTP status (it only sees close `1006`). v3.1.7's #961 narrowed the retry budget from 50 to 6 attempts but left the underlying mismatch in place. This release closes the gap: the web terminal now matches VSCode's near-instant give-up behavior.
