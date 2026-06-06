@@ -61,3 +61,13 @@ Verify: `pnpm --filter codev-vscode test:unit` → 27 files / 348 tests pass. `p
 Note: fresh worktree needed `@cluesmith/codev-core` and `@cluesmith/codev-types` built first (tsc) — their dist wasn't present, caused subpath-resolution errors in unrelated tests until built. Not a code issue.
 
 Committed (impl + tests separate). Next: push, `porch done`, sit at dev-approval.
+
+## REVIEW phase — PR + consult + pr gate
+
+dev-approval approved → review phase. Wrote `codev/reviews/982-...md` (Summary/Files/Commits/Tests/Arch[no change, server barrier already in arch.md:213]/Lessons[added sibling to From 916]/Things-to-look-at/How-to-test). Added lessons-learned.md entry [From 982]. PR #1006 opened (Fixes #982), recorded via `porch done --pr 1006`.
+
+3-way consult (single advisory pass, type=impl): **claude=APPROVE, codex=REQUEST_CHANGES (HIGH), gemini=skipped (agy CLI not installed)**.
+- Codex finding (REAL): Recover Builders used `cwd: workspacePath`; in a `.builders/<id>`-rooted VSCode window that's the worktree (detectWorkspacePath walks up to first `codev/`, worktree has its own), so `afx workspace recover` would run in the wrong dir. Fixed: new `mainCheckoutRoot(workspacePath)` helper strips trailing `/.builders/<id>`; recover cwd now uses it. +5 helper tests, source-guard updated. Pre-existing same pattern in run-worktree-setup.ts etc. = broader follow-up, out of scope.
+- Tests: 353 pass (17 new). compile clean. Documented finding+fix in review "3-Way Consultation" + "Things to Look At".
+
+Escalating REQUEST_CHANGES to architect (single-pass, won't be re-reviewed). Then wait at `pr` gate.

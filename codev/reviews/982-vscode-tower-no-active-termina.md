@@ -23,7 +23,7 @@ Clicking a builder row in the Codev sidebar could dead-end on an unactionable `C
 ## Test Results
 
 - `pnpm --filter codev-vscode compile` (check-types + lint + esbuild): ✓ pass
-- `pnpm --filter codev-vscode test:unit`: ✓ pass (27 files, 348 tests; 12 new)
+- `pnpm --filter codev-vscode test:unit`: ✓ pass (27 files, 353 tests; 17 new)
 - Porch phase checks: `build` ✓ (6.5s), `tests` ✓ (20.6s)
 - Manual verification: approved by the human at the `dev-approval` gate (running worktree).
 
@@ -34,6 +34,12 @@ No `arch.md` changes needed. The server-side resilience for this window (the sta
 ## Lessons Learned Updates
 
 Added one entry to `codev/resources/lessons-learned.md` (Debugging and Root Cause Analysis): two views backed by different freshness sources can diverge *transiently*, not only on outright failure, and a bounded retry that absorbs the self-healing window beats dead-ending on the first miss. It is filed as a sibling to `[From 916]` (same divergence class, opposite direction: there the whole shared cache nulled; here a single per-builder field is briefly stale).
+
+## 3-Way Consultation (single advisory pass)
+
+- **claude: APPROVE.**
+- **codex: REQUEST_CHANGES (HIGH) — addressed in code.** Finding: the **Recover Builders** action used `cwd: workspacePath` from `connectionManager.getWorkspacePath()`; because `detectWorkspacePath` walks up to the first `codev/` dir and a builder worktree has its own, a VSCode window *rooted at* a `.builders/<id>` worktree would run `afx workspace recover` in the worktree, not the main checkout (repo guidance: never run `afx` from inside a worktree). Real edge, confirmed. **Fix:** added a `mainCheckoutRoot(workspacePath)` helper (`terminal-resolve.ts`) that strips a trailing `/.builders/<id>` segment, and the recover terminal now uses `cwd: mainCheckoutRoot(workspacePath)`. Regression coverage: 5 behavioral tests for the helper (unchanged path, strip, trailing slash, non-leaf no-op, Windows separators) + the `terminal-manager` source-level guard now asserts `cwd: mainCheckoutRoot(workspacePath)` (would fail if it reverts to the raw path). Note: the same `cwd: workspacePath` pattern exists pre-existing in `run-worktree-setup.ts` (`afx setup`) and other afx call sites — a consistent main-root resolution across all of them is broader than #982 and worth a follow-up; this PR fixes only the affordance it introduces.
+- **gemini: skipped** (Antigravity `agy` CLI not installed in this environment) — non-blocking, no content.
 
 ## Things to Look At During PR Review
 
