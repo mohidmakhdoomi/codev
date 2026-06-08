@@ -88,6 +88,16 @@ Codev resolves protocol files, prompts, agent definitions, and roles through a f
 
 **Implication for `codev update` and CLAUDE.md / AGENTS.md merges:** when an updated template references a protocol (e.g., PIR), do NOT drop the reference because `codev/protocols/<name>/` is absent locally. The protocol resolves via the package skeleton, and dropping the reference removes the protocol from the user's available-protocol list while it's still callable from the CLI.
 
+### Framework files: never shell-fetch them by literal path
+
+Framework files (protocol docs, role docs, and the framework resources under `codev/resources/` such as `workflow-reference.md`, `risk-triage.md`, and `commands/`) ship in the package skeleton and resolve through the four-tier lookup above. They are **not guaranteed to exist on disk** in a user project, so:
+
+- **Never instruct a shell read of a framework file by literal path** — no `cat codev/protocols/<x>/protocol.md`, no `cp codev/protocols/<x>/templates/<f>`. Shell commands bypass the resolver and fail in fresh installs. Builders receive framework content through resolver-backed channels instead: `protocol.md` is inlined into the spawn prompt, and per-phase prompts plus their templates arrive via porch (`porch next`) or embedded directly in the prompt.
+- **Documentation may still mention a `codev/...` framework path** for orientation (e.g. the protocol list above) — that is fine; it resolves via the skeleton and stays callable from the CLI. The rule is about *fetching*, not *referencing*.
+- `codev/resources/arch.md` and `codev/resources/lessons-learned.md` are **user-project files** (you read and write them), not framework files — referencing them by path is correct.
+
+`codev doctor` audits the skeleton for shell-fetch violations of this rule.
+
 ### Protocol Verification (When You Don't Recognize a Protocol Name)
 
 If the user mentions a protocol name you don't immediately recognize, verify against the CLI before responding:

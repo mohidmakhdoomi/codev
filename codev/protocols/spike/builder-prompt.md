@@ -11,7 +11,7 @@ You are running in SOFT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the SPIKE protocol: `codev/protocols/spike/protocol.md`
+Follow the SPIKE protocol.
 
 {{#if task}}
 ## Spike Question

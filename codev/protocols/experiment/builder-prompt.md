@@ -24,7 +24,7 @@ You are running in STRICT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the EXPERIMENT protocol: `codev/protocols/experiment/protocol.md`
+Follow the EXPERIMENT protocol.
 
 ## EXPERIMENT Overview
 The EXPERIMENT protocol ensures disciplined experimentation:

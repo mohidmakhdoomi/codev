@@ -76,7 +76,6 @@ After completing the plan draft, signal completion. Porch will run 3-way consult
 
 Create the plan file at `codev/plans/{{artifact_name}}.md`.
 
-Use the plan template from `codev/protocols/spir/templates/plan.md` if available.
 
 ### Plan Structure
 

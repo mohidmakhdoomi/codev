@@ -1,6 +1,5 @@
 # SPIR Protocol
 
-> **Quick Reference**: See `codev/resources/workflow-reference.md` for stage diagrams and common commands.
 
 ## Prerequisites
 

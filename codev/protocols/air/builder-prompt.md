@@ -24,7 +24,7 @@ You are running in STRICT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the AIR protocol: `codev/protocols/air/protocol.md`
+Follow the AIR protocol.
 
 ## Baked Decisions
 

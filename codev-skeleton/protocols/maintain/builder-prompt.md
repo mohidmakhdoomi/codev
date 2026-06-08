@@ -23,7 +23,7 @@ You are running in STRICT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the MAINTAIN protocol: `codev/protocols/maintain/protocol.md`
+Follow the MAINTAIN protocol.
 
 ## MAINTAIN Overview
 

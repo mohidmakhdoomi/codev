@@ -19,10 +19,16 @@ describe('ASPIR builder-prompt protocol reference', () => {
     '../../../../../codev-skeleton/protocols/aspir/builder-prompt.md',
   );
 
-  it('references aspir/protocol.md, not spir/protocol.md', () => {
+  it('does not reference any protocol.md by literal path (#1011 sweep; never spir per #619)', () => {
+    // #619 originally required the ASPIR prompt to reference aspir/protocol.md
+    // rather than spir/protocol.md. #1011 (Layer 2) swept the literal protocol.md
+    // pointer out of every builder-prompt entirely — protocol.md is now inlined
+    // at spawn. So the #619 intent ("never point at spir's protocol.md") is now
+    // satisfied by referencing no protocol.md path at all.
     const content = fs.readFileSync(skeletonPrompt, 'utf-8');
     expect(content).not.toContain('codev/protocols/spir/protocol.md');
-    expect(content).toContain('codev/protocols/aspir/protocol.md');
+    expect(content).not.toContain('codev/protocols/aspir/protocol.md');
+    expect(content).not.toMatch(/protocol\.md/);
   });
 
   it('says "ASPIR protocol", not "SPIR protocol"', () => {

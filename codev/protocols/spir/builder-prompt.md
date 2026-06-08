@@ -27,8 +27,7 @@ You are running in STRICT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the SPIR protocol: `codev/protocols/spir/protocol.md`
-Read and internalize the protocol before starting any work.
+Follow the SPIR protocol.
 
 ## Baked Decisions
 

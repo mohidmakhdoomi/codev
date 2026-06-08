@@ -27,8 +27,7 @@ You are running in STRICT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the PIR protocol: `codev/protocols/pir/protocol.md`
-Read and internalize the protocol before starting any work.
+Follow the PIR protocol.
 
 PIR has three phases:
 1. **plan** (gated by `plan-approval`) — write `codev/plans/{{artifact_name}}.md`, await human review
@@ -87,6 +86,6 @@ If your Claude session crashes mid-flow, Tower's `while true` loop will relaunch
 
 ## Getting Started
 
-1. Read the PIR protocol document (`codev/protocols/pir/protocol.md`)
+1. Read the PIR protocol (provided inline in this prompt).
 2. Run `porch next {{project_id}}` to see what to do next
 3. Begin work

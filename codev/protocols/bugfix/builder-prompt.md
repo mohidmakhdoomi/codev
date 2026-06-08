@@ -25,7 +25,7 @@ You are running in STRICT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the BUGFIX protocol: `codev/protocols/bugfix/protocol.md`
+Follow the BUGFIX protocol.
 
 {{#if issue}}
 ## Issue #{{issue.number}}

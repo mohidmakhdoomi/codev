@@ -24,7 +24,7 @@ You are running in STRICT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the RESEARCH protocol: `codev/protocols/research/protocol.md`
+Follow the RESEARCH protocol.
 
 ## RESEARCH Overview
 

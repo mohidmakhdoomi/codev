@@ -4,7 +4,6 @@
 >
 > Each phase has one build-verify cycle with 3-way consultation.
 
-> **Quick Reference**: See `codev/resources/workflow-reference.md` for stage diagrams and common commands.
 
 ## Prerequisites
 
