@@ -21,3 +21,9 @@ plan-approval approved. Implemented per plan:
 - `spawn-roles.test.ts`: 2 new tests in the skeleton-fallback block — (1) inlines protocol.md under the delimiter with a sentinel body, (2) builds without error and omits the heading when protocol.md is absent.
 
 Build ✓ (root `npm run build`), full suite ✓ (3260 passed, 13 pre-existing skips — none mine). Committed + pushed. At dev-approval gate.
+
+## Scope expansion (2026-06-08, architect-driven)
+
+Architect expanded #1011 twice: first to a framework-file class fix (A.1/A.2/A.3), then to a three-layer structure (Delivery / Cleanup / Enforcement). Plan rewritten accordingly. 5 plan-gate decisions locked (delimiter; Patch2=B explicit-embed; A.3=strip; missing-file=silent-skip+debug; doctor=warn-not-error skeleton-only). Patch 1 (Layer 1/A.1) already done + at dev-approval; Patch 2 + Layer 2 sweep + Layer 3 (doctor check + AGENTS/CLAUDE convention) still to implement.
+
+bugfix sub-decision RESOLVED → drop its dead pointer, embed nothing. Evidence: bugfix builder-relevant guidance (300-LOC/escalation/regression/Fixes#) already in its phase prompts (investigate/fix/pr); the 548-line codev/ protocol.md is mostly architect-facing + partly stale (manual merge flow, deprecated projectlist) and absent from the skeleton. That doc-hygiene gap filed separately as **#1013** (area/protocols), kept out of #1011's plumbing scope.

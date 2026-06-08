@@ -72,18 +72,29 @@ Layer 2's sweep so a post-sweep skeleton is clean. Relative-path refs (`template
 `spir/protocol.md:215/301`, `experiment/protocol.md:90`) are a lower-severity class **not**
 targeted (kept out of both the sweep and the grep) — noted as observed-out-of-scope.
 
-## Open sub-decision (needs your call — finding #2)
+## bugfix sub-decision — RESOLVED: drop the dead pointer, embed nothing (finding #2)
 
-`bugfix` is the one protocol whose meta-doc isn't in the skeleton. Options:
-- **(i) Ship `bugfix/protocol.md` into the skeleton** (copy the existing 548-line `codev/` doc).
-  Makes Layer 1 cover bugfix uniformly; Layer 2 sweep then safe. *Recommended* — every other
-  protocol ships its `protocol.md`; the absence reads as an oversight. Cost: +548 lines in the
-  published skeleton.
-- **(ii) Treat bugfix as intentionally meta-doc-less**: drop the pointer (Layer 2), inline nothing,
-  rely on `builder-prompt.md` + phase prompts being self-contained. Cost: bugfix builders lose the
-  548-line protocol context that our own instance has.
-- **(iii) Split to a separate skeleton-completeness issue**; here, just don't regress bugfix.
-I'll default to **(i)** unless you say otherwise.
+`bugfix` is the one protocol whose `protocol.md` isn't in the skeleton (`codev/` has a tracked
+548-line copy that was never shipped). Layer 2 drops its `builder-prompt.md:28` pointer like the
+other 8 — and for bugfix that is correct on its own merits, **not** a content loss, because:
+
+- The pointer is a **dead path** in fresh installs regardless (no skeleton `protocol.md`).
+- The builder's actionable guidance is **already delivered** via bugfix's phase prompts
+  (`investigate.md` / `fix.md` / `pr.md`, 264 lines, porch-delivered): grep confirms the
+  300-LOC scope, escalation criteria, mandatory regression test, and `Fixes #N` / PR-body
+  structure are all present there.
+- The content **unique** to `protocol.md` is overwhelmingly *not* builder-actionable —
+  architect-facing phases (spawn / integration-review / cleanup), the ASCII workflow diagram,
+  comparison tables, plus material that's gone **stale** vs porch orchestration (manual
+  `afx send "Merge it"` merge flow, manual architect CMAP, the deprecated projectlist section).
+  Inlining it would add noise, not signal.
+
+So: **no skeleton `bugfix/protocol.md` is added here, and nothing is embedded.** The doc's
+skeleton-absence + staleness is a real but orthogonal content-hygiene gap, filed as **#1013**
+(not absorbed into this plumbing fix). This also makes visible a latent property of Layer 1 —
+protocol docs are mixed-audience (builder + architect) yet Layer 1 inlines the whole doc; for
+the 8 protocols that have one we inline as-is per the architect's design, and bugfix simply has
+nothing to inline.
 
 ## Proposed Change (three layers)
 
@@ -121,7 +132,9 @@ markdown edits in either tree.
 - `{codev-skeleton,codev}/protocols/spir/protocol.md` — strip A.3 line (Layer 2).
 - `AGENTS.md`, `CLAUDE.md` — convention section (Layer 3).
 - `packages/codev/src/commands/doctor.ts` (+ `src/__tests__/doctor.test.ts`) — audit check (Layer 3).
-- (If sub-decision (i)) `codev-skeleton/protocols/bugfix/protocol.md` — new, copied from `codev/`.
+
+(bugfix gets only the Layer 2 pointer-drop — no skeleton `protocol.md` added; see the resolved
+sub-decision above. Doc hygiene tracked in #1013.)
 
 ## Risks & Alternatives Considered
 
