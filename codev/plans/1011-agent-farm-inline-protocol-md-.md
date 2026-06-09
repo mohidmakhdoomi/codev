@@ -72,29 +72,28 @@ Layer 2's sweep so a post-sweep skeleton is clean. Relative-path refs (`template
 `spir/protocol.md:215/301`, `experiment/protocol.md:90`) are a lower-severity class **not**
 targeted (kept out of both the sweep and the grep) — noted as observed-out-of-scope.
 
-## bugfix sub-decision — RESOLVED: drop the dead pointer, embed nothing (finding #2)
+## bugfix + experiment doc hygiene — RESOLVED in this PR (was #1013, now folded in)
 
-`bugfix` is the one protocol whose `protocol.md` isn't in the skeleton (`codev/` has a tracked
-548-line copy that was never shipped). Layer 2 drops its `builder-prompt.md:28` pointer like the
-other 8 — and for bugfix that is correct on its own merits, **not** a content loss, because:
+`bugfix` was the one protocol whose `protocol.md` wasn't in the skeleton (`codev/` had a tracked
+548-line copy, never shipped). Worse, that copy was **stale** vs porch orchestration (a manual
+`afx send "Merge it"` merge handshake, a manual architect CMAP, and the deprecated projectlist
+section) — and Layer 1 now reliably **inlines** `protocol.md` into the builder's prompt wherever
+it resolves, so the stale content would land in bugfix builders' context (in this repo, and in
+any project that has a bugfix `protocol.md`). That is a correctness risk, not just hygiene.
 
-- The pointer is a **dead path** in fresh installs regardless (no skeleton `protocol.md`).
-- The builder's actionable guidance is **already delivered** via bugfix's phase prompts
-  (`investigate.md` / `fix.md` / `pr.md`, 264 lines, porch-delivered): grep confirms the
-  300-LOC scope, escalation criteria, mandatory regression test, and `Fixes #N` / PR-body
-  structure are all present there.
-- The content **unique** to `protocol.md` is overwhelmingly *not* builder-actionable —
-  architect-facing phases (spawn / integration-review / cleanup), the ASCII workflow diagram,
-  comparison tables, plus material that's gone **stale** vs porch orchestration (manual
-  `afx send "Merge it"` merge flow, manual architect CMAP, the deprecated projectlist section).
-  Inlining it would add noise, not signal.
+Resolution (folded in per "implement #1013 so the whole bug ships together"):
+- **Rewrote `bugfix/protocol.md`** as a concise (~78-line), porch-accurate doc grounded in the
+  real flow (`protocol.json` phases + the `pr` gate; `prompts/{investigate,fix,pr}.md`): the merge
+  is gated by the `pr` gate (builder runs CMAP → `porch done` → human approves the gate → porch
+  emits the merge task), not a manual handshake. Dropped the projectlist section and fixed the
+  branch-naming inconsistency. **Shipped it to the skeleton**, so fresh-install bugfix builders
+  get a correct meta-doc (consistent with the other protocols) via Layer 1.
+- **Removed `experiment/protocol.md`'s `## notes.md Template` partial copy** (a relative-ref
+  duplicate of `notes.md`); the `## Template: notes.md` fresh-include the delivery layer already
+  resolves makes it redundant. No committed template copy remains.
 
-So: **no skeleton `bugfix/protocol.md` is added here, and nothing is embedded.** The doc's
-skeleton-absence + staleness is a real but orthogonal content-hygiene gap, filed as **#1013**
-(not absorbed into this plumbing fix). This also makes visible a latent property of Layer 1 —
-protocol docs are mixed-audience (builder + architect) yet Layer 1 inlines the whole doc; for
-the 8 protocols that have one we inline as-is per the architect's design, and bugfix simply has
-nothing to inline.
+(This also retires the latent mixed-audience concern: every protocol now ships a `protocol.md`,
+and bugfix's is concise/builder-relevant rather than a stale architect-facing dump.)
 
 ## Proposed Change (three layers)
 
@@ -126,15 +125,14 @@ markdown edits in either tree.
 
 - `packages/codev/src/agent-farm/commands/spawn-roles.ts` (+ `__tests__/spawn-roles.test.ts`) — Patch 1 (done).
 - `{codev-skeleton,codev}/protocols/{spir,aspir}/prompts/plan.md` — drop redundant template pointer (Patch 2 + Layer 2).
-- `{codev-skeleton,codev}/protocols/{experiment,spike}/protocol.md` — embed template, reword (Patch 2).
-- `{codev-skeleton,codev}/protocols/*/builder-prompt.md` (all 9) — drop protocol.md pointer (Layer 2).
+- `{codev-skeleton,codev}/protocols/{experiment,spike}/protocol.md` — `{{> ...}}` template include, reword (Patch 2).
+- `{codev-skeleton,codev}/protocols/*/builder-prompt.md` (all 9) — drop protocol.md pointer; restore "Read and internalize"; add `{{protocol_reference}}` placeholder (Layer 1/2).
 - `{codev-skeleton,codev}/roles/builder.md` — fix the cat example (Layer 2).
 - `{codev-skeleton,codev}/protocols/spir/protocol.md` — strip A.3 line (Layer 2).
 - `AGENTS.md`, `CLAUDE.md` — convention section (Layer 3).
 - `packages/codev/src/commands/doctor.ts` (+ `src/__tests__/doctor.test.ts`) — audit check (Layer 3).
-
-(bugfix gets only the Layer 2 pointer-drop — no skeleton `protocol.md` added; see the resolved
-sub-decision above. Doc hygiene tracked in #1013.)
+- `{codev-skeleton,codev}/protocols/bugfix/protocol.md` — **new in skeleton**; rewritten concise + porch-accurate (was #1013, folded in).
+- `{codev-skeleton,codev}/protocols/experiment/protocol.md` — remove the redundant `## notes.md Template` partial copy (was #1013, folded in).
 
 ## Risks & Alternatives Considered
 

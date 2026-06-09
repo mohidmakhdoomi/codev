@@ -85,33 +85,6 @@ git add experiments/1_experiment_name/
 git commit -m "[Experiment 1] Brief description of findings"
 ```
 
-## notes.md Template
-
-See `templates/notes.md` for the full template. Key sections:
-
-```markdown
-# Experiment ####: Name
-
-**Status**: In Progress | Complete | Disproved | Aborted
-
-**Date**: YYYY-MM-DD
-
-## Goal
-What are you trying to learn?
-
-## Time Investment
-Wall clock time vs active developer time
-
-## Code
-- [experiment.py](experiment.py) - Brief description
-
-## Results
-What happened? What did you learn?
-
-## Next Steps
-What should be done based on findings?
-```
-
 ## Best Practices
 
 ### Keep It Simple

@@ -51,3 +51,12 @@ Reworked the whole delivery mechanism:
 - Tests: spawn-roles placeholder + include tests; framework-ref-audit drift test now asserts include-present + no static embed; baked-decisions baselines re-swept to the new `## Protocol` line.
 
 Build ✓, full suite ✓ (3271 passed, 13 skips). Still at dev-approval gate.
+
+## #1013 folded into this PR (2026-06-09)
+
+Architect: "implement 1013 as part of this session so we have a complete implementation of the whole bug." Rationale: #1011's Layer 1 now reliably inlines protocol.md into builders, so the stale bugfix doc reaching builders is a correctness risk, not just hygiene.
+
+- **bugfix**: rewrote `protocol.md` from the stale 548-line manual-flow doc to a concise ~78-line porch-accurate one, grounded in `protocol.json` (investigate/fix/pr + `pr` gate) and `prompts/pr.md` (builder CMAP → `porch done` → `pr` gate → human approves → porch merge task). Dropped the projectlist section + manual "Merge it" handshake + manual architect CMAP; fixed branch-naming. **Shipped to the skeleton** (was absent) so fresh-install bugfix builders get a correct meta-doc via Layer 1. Verified doctor-clean (no shell-fetch).
+- **experiment**: removed the redundant `## notes.md Template` partial-copy section (relative-ref duplicate of notes.md); the `## Template: notes.md` fresh-include #1011 added makes it redundant. No committed template copy remains.
+
+Build ✓, full suite ✓ (3271 passed, 13 skips). PR #1015 (draft) to be updated to also Fixes #1013. Still at dev-approval gate.
