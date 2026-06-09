@@ -1,6 +1,13 @@
 /**
- * Audit the package skeleton for resolver-bypassing shell reads of framework
- * files by literal path (issue #1011, Layer 3 — regression guard).
+ * Audit a codev root for resolver-bypassing shell reads of framework files by
+ * literal path (issue #1011, Layer 3 — regression guard).
+ *
+ * Used against two roots, for two purposes:
+ *   - the framework's `codev-skeleton/` source, in the framework's own CI/unit
+ *     test (guards what the package *ships*);
+ *   - a project's local `codev/` overrides, by `codev doctor` (guards what the
+ *     *user* customizes — the shipped skeleton is the framework's responsibility,
+ *     not the end user's).
  *
  * The bug class: a builder-side consumer instructs `cat`/`cp` of a framework
  * doc by literal `codev/...` path. Shell commands bypass the four-tier resolver
@@ -23,7 +30,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 export interface FrameworkRefFinding {
-  /** Path relative to the scanned skeleton dir. */
+  /** Path relative to the scanned codev root. */
   file: string;
   line: number;
   /** The offending line, trimmed. */
@@ -49,13 +56,15 @@ function collectMarkdown(dir: string, out: string[]): void {
 }
 
 /**
- * Scan `<skeletonDir>/{protocols,roles}` for shell-fetch-by-literal-path
- * violations. Returns one finding per offending line.
+ * Scan `<rootDir>/{protocols,roles}` for shell-fetch-by-literal-path violations.
+ * `rootDir` is a codev root: the framework's `codev-skeleton/` (CI) or a project's
+ * `codev/` (doctor). Returns one finding per offending line; empty when the
+ * protocols/roles dirs don't exist (e.g. a project with no local overrides).
  */
-export function auditFrameworkRefs(skeletonDir: string): FrameworkRefFinding[] {
+export function auditFrameworkRefs(rootDir: string): FrameworkRefFinding[] {
   const findings: FrameworkRefFinding[] = [];
   for (const sub of FRAMEWORK_DIRS) {
-    const base = join(skeletonDir, sub);
+    const base = join(rootDir, sub);
     if (!existsSync(base)) continue;
     const files: string[] = [];
     collectMarkdown(base, files);
@@ -63,7 +72,7 @@ export function auditFrameworkRefs(skeletonDir: string): FrameworkRefFinding[] {
       const lines = readFileSync(file, 'utf-8').split('\n');
       lines.forEach((text, i) => {
         if (SHELL_FETCH_RE.test(text)) {
-          findings.push({ file: relative(skeletonDir, file), line: i + 1, text: text.trim() });
+          findings.push({ file: relative(rootDir, file), line: i + 1, text: text.trim() });
         }
       });
     }

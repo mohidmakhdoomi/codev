@@ -14,7 +14,6 @@ import { executeForgeCommandSync, loadForgeConfig, validateForgeConfig, resolveA
 import { detectHarnessFromCommand } from '../agent-farm/utils/harness.js';
 import { auditPrGates, formatPrGateWarning } from '../lib/pr-gate-audit.js';
 import { auditFrameworkRefs, formatFrameworkRefFinding } from '../lib/framework-ref-audit.js';
-import { getSkeletonDir } from '../lib/skeleton.js';
 import { resolveAgyBin, AGY_OAUTH_MARKERS } from './consult/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -704,31 +703,6 @@ export async function doctor(): Promise<number> {
 
   console.log('');
 
-  // Framework-file reference audit (#1011): the skeleton must not instruct
-  // shell reads of framework docs by literal path — those bypass the resolver
-  // and fail in fresh installs. Warn-not-error; scans the skeleton only.
-  console.log(chalk.bold('Framework File References') + ' (resolver-safe delivery)');
-  console.log('');
-  try {
-    const frameworkRefs = auditFrameworkRefs(getSkeletonDir());
-    if (frameworkRefs.length === 0) {
-      console.log(`  ${chalk.green('✓')} No literal-path shell reads of framework files`);
-    } else {
-      for (const finding of frameworkRefs) {
-        console.log(`  ${chalk.yellow('⚠')} ${formatFrameworkRefFinding(finding)}`);
-        warnings++;
-        warningDetails.push({
-          name: 'Framework refs',
-          issue: formatFrameworkRefFinding(finding),
-          recommendation: 'Deliver framework content via spawn/porch inline; see the "Framework files" convention in CLAUDE.md / AGENTS.md',
-        });
-      }
-    }
-  } catch {
-    console.log(`  ${chalk.dim('○')} skeleton not found — skipped`);
-  }
-  console.log('');
-
   // Check codev directory structure (only if we're in a codev project)
   const workspaceRoot = findWorkspaceRoot();
   if (workspaceRoot && existsSync(resolve(workspaceRoot, 'codev'))) {
@@ -745,6 +719,28 @@ export async function doctor(): Promise<number> {
         warningDetails.push({
           name: 'Project structure',
           issue: warning,
+        });
+      }
+    }
+    console.log('');
+
+    // Framework-file reference audit (#1011): the user's OWN codev/ overrides
+    // (codev/protocols, codev/roles) must not instruct shell reads of framework
+    // docs by literal path — those bypass the resolver and fail in fresh installs.
+    // Scans the project's local overrides only (the shipped skeleton is the
+    // framework's responsibility, guarded by its own CI). Warn-not-error; a no-op
+    // when the project has no local protocol/role overrides.
+    const frameworkRefs = auditFrameworkRefs(resolve(workspaceRoot, 'codev'));
+    if (frameworkRefs.length === 0) {
+      console.log(`  ${chalk.green('✓')} No literal-path shell reads of framework files in codev/ overrides`);
+    } else {
+      for (const finding of frameworkRefs) {
+        console.log(`  ${chalk.yellow('⚠')} ${formatFrameworkRefFinding(finding)}`);
+        warnings++;
+        warningDetails.push({
+          name: 'Framework refs',
+          issue: `codev/${formatFrameworkRefFinding(finding)}`,
+          recommendation: 'Deliver framework content via spawn/porch inline; see the "Framework files" convention in CLAUDE.md / AGENTS.md',
         });
       }
     }

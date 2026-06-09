@@ -62,9 +62,18 @@ describe('auditFrameworkRefs (issue #1011 Layer 3)', () => {
     expect(auditFrameworkRefs(dir)).toHaveLength(0);
   });
 
-  it('the real swept skeleton is clean (no shell-fetch violations)', () => {
+  it('the real swept skeleton is clean (no shell-fetch violations) — CI/source guard', () => {
     if (!existsSync(SKELETON)) return; // resilient if layout shifts
     expect(auditFrameworkRefs(SKELETON)).toEqual([]);
+  });
+
+  it('is a no-op for a codev root with no protocol/role overrides (the doctor case)', () => {
+    // A typical end-user project resolves framework files from the package and
+    // has no local codev/protocols or codev/roles; doctor scans that root and
+    // should find nothing rather than error.
+    const bare = mkdtempSync(join(tmpdir(), 'fw-ref-bare-'));
+    mkdirSync(join(bare, 'specs'), { recursive: true }); // user dirs, no protocols/roles
+    expect(auditFrameworkRefs(bare)).toEqual([]);
   });
 });
 

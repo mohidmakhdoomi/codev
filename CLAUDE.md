@@ -94,7 +94,7 @@ Protocol docs, role docs, and the shipped `codev/resources/` reference docs (`wo
 
 So in any prompt, role doc, or instruction that drives a builder, don't `cat`/`cp` a framework file by literal `codev/...` path: a shell read bypasses the resolver and fails in fresh installs. Deliver the content instead (`protocol.md` is inlined into the spawn prompt; per-phase prompts and their templates arrive via porch). Mentioning a `codev/...` path in prose for orientation is fine; the rule is about *fetching*, not *referencing*. `codev/resources/arch.md` and `codev/resources/lessons-learned.md` are user-evolved project files, not framework files, so referencing those by path is correct too.
 
-`codev doctor` audits the skeleton for this.
+`codev doctor` audits your project's local `codev/protocols` and `codev/roles` overrides for this (the shipped skeleton is the framework's responsibility, guarded by its own CI).
 
 ### Protocol Verification (When You Don't Recognize a Protocol Name)
 

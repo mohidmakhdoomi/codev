@@ -87,14 +87,20 @@ resolve returns null and skips on every bugfix spawn (`validateProtocol` only `f
 *both* json and md are absent). A stderr warn would fire on every bugfix spawn about an
 intentionally-absent file. A.2 = embed (no runtime resolution to fail). Skip + debug it is.
 
-**5 — Doctor check semantics: warn-not-error, skeleton-only initially. [agree]**
-`codev doctor` greps for resolver-bypassing **absolute** literal paths only —
-`cat codev/(protocols|roles|resources)/…` and backtick-wrapped `` `codev/(protocols|roles|resources)/…` `` —
-and reports `status: 'warn'` (never `'fail'`) with a pointer to the convention. Skeleton dir only
-for now (user `codev/` customizations are theirs; flagging them risks noise). Scope matches
-Layer 2's sweep so a post-sweep skeleton is clean. Relative-path refs (`templates/x.md`,
-`spir/protocol.md:215/301`, `experiment/protocol.md:90`) are a lower-severity class **not**
-targeted (kept out of both the sweep and the grep) — noted as observed-out-of-scope.
+**5 — Doctor check: warn-not-error, scans the WORKSPACE `codev/` overrides. [revised — was
+"skeleton-only"]**
+`codev doctor` is an end-user tool, so its check targets what the *user* controls and could
+break: their local `codev/protocols` and `codev/roles` overrides. It scans the workspace `codev/`
+dir (not the global package skeleton) for shell-fetch verbs reading `codev/(protocols|roles)/…md`,
+reports `status: 'warn'` (never `'fail'`), and is a no-op when the project has no overrides.
+*Correction:* the original "skeleton-only" framing was wrong — auditing the shipped package
+skeleton from an end-user tool is pointless (the user can't fix it, and it's already guaranteed
+clean by the framework's own CI). The shipped-skeleton guard lives in the **unit test**
+(`framework-ref-audit.test.ts` scans `codev-skeleton/`, runs in CI); `codev doctor` guards the
+user's overrides. This matches the architect's original Layer 3 intent ("grep … and any local
+`codev/` directories"). Relative-path refs and markdown-link cross-references (`templates/x.md`,
+the intentional `aspir → spir` link) are a lower-severity class **not** targeted by the
+shell-fetch grep — handled by manual audit where they mattered, left where intentional.
 
 ## bugfix + experiment doc hygiene — RESOLVED in this PR (was #1013, now folded in)
 
@@ -182,8 +188,10 @@ markdown edits in either tree.
   static embed.
 - Layer 2 guard (new): no `builder-prompt.md` references `protocol.md`; `roles/builder.md` has no
   `cat codev/protocols/…`; `spir/protocol.md` has no `workflow-reference.md`.
-- Layer 3 doctor (new, in `doctor.test.ts`): clean skeleton → check `ok`; a fixture with a
-  deliberate literal path → check `warn` (negative test).
+- Layer 3 audit (new, in `framework-ref-audit.test.ts`): flags a shell `cat`/`cp` of a framework
+  path (positive), ignores doc references / `codev/resources` / user files (negative), the real
+  `codev-skeleton/` source is clean (CI/source guard), and a codev root with no protocol/role
+  overrides is a no-op (the `codev doctor` workspace case).
 
 **Build:** `npm run build` from worktree root.
 
