@@ -1,10 +1,13 @@
 #!/bin/sh
 # Forge concept: pr-list (GitLab via glab CLI — merge requests)
 #
-# GitLab exposes no GitHub-equivalent per-user review-request list or draft flag
-# here, so both degrade to safe defaults to honor the PrListItem contract
-# (forge-contracts.ts): reviewRequests -> [] (the VSCode sort silently skips the
-# review-requested bucket when empty), isDraft -> false. The rest of glab's
-# output is passed through unchanged.
+# Populate the two fields this concept must emit (PrListItem in
+# forge-contracts.ts) from glab's real output:
+#   reviewRequests <- [.reviewers[].username]   (glab exposes assigned reviewers)
+#   isDraft        <- .draft                     (GitLab's draft/WIP flag)
+# The rest of glab's output is passed through unchanged. (glab's base shape uses
+# `iid`/`web_url`/`created_at`/`author.username` rather than the GitHub-style
+# `number`/`url`/`createdAt`/`author.login`; normalizing that is a pre-existing
+# concern outside this concept's two-field responsibility.)
 exec glab mr list --output json \
-  | jq '[.[] | . + {reviewRequests: [], isDraft: false}]'
+  | jq '[.[] | . + {reviewRequests: [.reviewers[]?.username], isDraft: (.draft // false)}]'
