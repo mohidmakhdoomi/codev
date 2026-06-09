@@ -60,3 +60,13 @@ Architect: "implement 1013 as part of this session so we have a complete impleme
 - **experiment**: removed the redundant `## notes.md Template` partial-copy section (relative-ref duplicate of notes.md); the `## Template: notes.md` fresh-include #1011 added makes it redundant. No committed template copy remains.
 
 Build ✓, full suite ✓ (3271 passed, 13 skips). PR #1015 (draft) to be updated to also Fixes #1013. Still at dev-approval gate.
+
+## Follow-up review: spir dead template pointers + soft-mode finding (2026-06-09)
+
+Reviewer asked whether other protocols need compliance changes, then probed the experiment/spike template injection.
+
+- **spir/protocol.md dead pointers (fixed, commit 926168a5)**: the two `**Template**: templates/spec.md|plan.md` annotations + the `## Templates` section pointed builders (via inlined protocol.md) at template paths absent in fresh installs. Reworded to point at the phase prompts / describe templates as skeleton-shipped reference. (`aspir/protocol.md` `└── templates/` and `consult-types/` are ASCII directory-tree diagrams — benign, left.)
+- **Unused files**: confirmed `maintain/templates/*` are all orphaned (referenced by nothing; run-file structure is inline in maintain protocol.md). Per reviewer, NOT deleting them — added a "Unused framework files (kept for reference)" note to the PR body instead. (Reverted an earlier deletion of maintenance-run.md.)
+- **Soft-mode finding (resolves the injection inconsistency)**: `experiment`/`spike` default to **`mode: soft`** (`prompt: None` on every phase, empty `prompts/`). Soft mode = builder follows `protocol.md` directly, no porch phase prompts — so `protocol.md` is their only guidance channel, which is *why* templates are injected into it via `{{> }}` (and why strict protocols spir/aspir/bugfix, whose phase prompts carry structure, are NOT injected). So: strict → phase prompts carry structure (don't inject); soft → protocol.md is everything (inject). The `{{> }}` injection FIXES experiment/spike (their old `cp`/template path was dead in fresh installs). Retracted the earlier "give experiment/spike phase prompts" follow-up — phase prompts are a strict-mode concept; soft-mode protocols correctly live in protocol.md, so no follow-up needed.
+
+Build ✓, full suite ✓ (3271 passed, 13 skips). Still at dev-approval gate.

@@ -29,6 +29,11 @@ when the file lives only in the embedded skeleton (fresh post-618 installs). The
    installs. See "Open sub-decision" below — this needs an explicit call.
 3. **Embedded `notes.md`/`findings.md` contain zero `{{`**, so inlining them through
    `renderTemplate` (they ride inside `experiment`/`spike` `protocol.md`) is collision-safe.
+4. **`experiment`/`spike` default to `mode: soft`** (verified in `protocol.json`: every phase is
+   `prompt: None`, `prompts/` is empty). Soft mode has no porch phase orchestration — the builder
+   follows `protocol.md` directly — so `protocol.md` is their *only* guidance channel. This is the
+   reason templates are injected into `protocol.md` for these two (and not for the strict,
+   phase-prompt-driven protocols). It also means "no phase prompts" is by-design, not a defect.
 
 ## Locked Decisions (the 5 plan-gate decisions)
 
@@ -52,6 +57,25 @@ reword the cp/use-template step to point at the `## Template:` section, which ho
 include resolved fresh at delivery. Auto-detect (blanket scan) is still rejected — it would
 double-deliver a conflicting plan layout for spir/aspir. The include directive is explicit (the
 author marks exactly what to inline) so it keeps that discrimination without committing a copy.
+
+**Why inject for experiment/spike but not spir/aspir — the distinction is `mode`, not ad-hoc
+(finding #4):** `experiment` and `spike` default to **`mode: soft`** (verified in their
+`protocol.json`; every phase is `prompt: None`, `prompts/` is empty). Soft mode has **no porch
+phase-by-phase orchestration** — the builder follows `protocol.md` directly — so `protocol.md`
+is the *only* guidance channel and the template structure must ride it. The `{{> }}` include is
+therefore the correct delivery for a soft-mode protocol (fresh, no stale committed copy). By
+contrast `spir`/`aspir`/`bugfix` are **strict** (porch-orchestrated): their phase prompts carry
+the structure, so injecting a template would double-deliver — hence we drop the dead pointer
+instead. Net: strict → phase prompts carry structure (don't inject); soft → `protocol.md` is
+everything (inject). This also retires the earlier "give experiment/spike phase prompts" idea:
+phase prompts are a strict-mode concept; soft-mode protocols correctly live in `protocol.md`, so
+no such follow-up is needed.
+
+**Bug impact for experiment/spike (was real, now fixed):** before this work, a soft-mode
+experiment/spike builder following `protocol.md` in a fresh install hit a dead template path
+(`cp codev/protocols/experiment/templates/notes.md …` / "use the template at `…/findings.md`") —
+the file isn't on disk. The `{{> }}` injection delivers the template content inline at spawn, so
+the dead path / failed `cp` is gone. These protocols are fixed by this PR, not left broken.
 
 **3 — A.3 disposition: Option 2 (strip). [agree]**
 Remove the `> Quick Reference: See codev/resources/workflow-reference.md …` line from
