@@ -339,6 +339,18 @@ export function validateProtocol(config: Config, protocolName: string): void {
     const available = dirs.length > 0 ? `\n\nAvailable protocols: ${dirs.join(', ')}` : '';
     fatal(`Protocol not found: ${protocolName}${available}`);
   }
+
+  // #1011: a protocol.json without a protocol.md is permitted, but the builder
+  // prompt inlines protocol.md unconditionally — so it would spawn with an empty
+  // "## Protocol Reference (full text)" section. Shipped protocols can't hit this
+  // (a completeness test enforces every shipped protocol has a protocol.md); this
+  // warns (non-fatally) when a project's own custom/override protocol omits it.
+  if (protocolJson && !protocolMd) {
+    logger.warn(
+      `Protocol "${protocolName}" has a protocol.json but no protocol.md; builders will ` +
+      `spawn with an empty Protocol Reference section. Add protocols/${protocolName}/protocol.md.`,
+    );
+  }
 }
 
 /**

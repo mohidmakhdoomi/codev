@@ -17,6 +17,7 @@ import {
   loadProtocolRole,
 } from '../commands/spawn-roles.js';
 import type { TemplateContext } from '../commands/spawn-roles.js';
+import { logger } from '../utils/logger.js'; // mocked below; vi.fn()s for assertions
 
 // Mock dependencies
 vi.mock('../utils/logger.js', () => ({
@@ -344,6 +345,20 @@ describe('spawn-roles', () => {
       expect(() => validateProtocol(makeConfig(), 'bogus')).toThrow(
         /Protocol not found: bogus[\s\S]*Available protocols:[\s\S]*spir/,
       );
+    });
+
+    it('validateProtocol warns (non-fatally) when a protocol has protocol.json but no protocol.md (issue #1011)', () => {
+      // The beforeEach creates spir/ with protocol.json but no protocol.md.
+      expect(() => validateProtocol(makeConfig(), 'spir')).not.toThrow(); // non-fatal
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('no protocol.md'));
+    });
+
+    it('validateProtocol does NOT warn when protocol.md is present', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      fs.writeFileSync(path.join(skeletonRoot, 'protocols', 'spir', 'protocol.md'), '# SPIR');
+      validateProtocol(makeConfig(), 'spir');
+      expect(logger.warn).not.toHaveBeenCalled();
     });
 
     it('loadProtocol falls back to skeleton', () => {
