@@ -28,6 +28,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as path from 'node:path';
 import type { ConnectionManager } from '../connection-manager.js';
+import { parseUnifiedDiff } from '../diff-inject-ref.js';
+import { setDiffInjectSession, type DiffInjectSessionEntry } from '../diff-inject-codelens.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -348,10 +350,9 @@ export async function viewDiff(
     return;
   }
 
-  const resources: Array<[vscode.Uri, vscode.Uri, vscode.Uri]> = planResources(
-    changes,
-    binaryPaths,
-  ).map(plan => {
+  const plans = planResources(changes, binaryPaths);
+
+  const resources: Array<[vscode.Uri, vscode.Uri, vscode.Uri]> = plans.map(plan => {
     const { left, right } = diffUrisForChange(plan, { wt, ref: baseRef });
     return [
       vscode.Uri.file(path.join(wt, plan.resourcePath)),
@@ -359,6 +360,31 @@ export async function viewDiff(
       right,
     ];
   });
+
+  // CodeLens "Send to builder PTY" actions (#789): give the provider the
+  // right-side fs paths and new-side hunk ranges for the files just opened.
+  // One extra git call here keeps `getBuilderChanges` (shared with the
+  // Builders tree) untouched. A patch failure is non-fatal — the diff still
+  // opens, just without lenses.
+  try {
+    const { stdout: patch } = await execFileAsync(
+      'git',
+      ['-C', wt, 'diff', '-M', '--unified=3', baseRef],
+      { maxBuffer: 64 * 1024 * 1024 },
+    );
+    const hunksByPath = parseUnifiedDiff(patch);
+    const entries: DiffInjectSessionEntry[] = plans
+      .filter(plan => plan.right.kind === 'file')
+      .map(plan => ({
+        fsPath: path.join(wt, plan.resourcePath),
+        builderId: builder.id,
+        relPath: plan.resourcePath,
+        hunks: hunksByPath.get(plan.resourcePath) ?? [],
+      }));
+    setDiffInjectSession(entries);
+  } catch {
+    setDiffInjectSession([]);
+  }
 
   await vscode.commands.executeCommand(
     'vscode.changes',

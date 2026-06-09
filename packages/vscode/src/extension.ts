@@ -8,6 +8,7 @@ import { approveGate } from './commands/approve.js';
 import { cleanupBuilder } from './commands/cleanup.js';
 import { openWorktreeWindow } from './commands/open-worktree-window.js';
 import { viewDiff, activateDiffView, diffUrisForChange } from './commands/view-diff.js';
+import { activateDiffInjectCodeLens } from './diff-inject-codelens.js';
 import { runWorktreeDev } from './commands/run-worktree-dev.js';
 import { stopWorktreeDev } from './commands/stop-worktree-dev.js';
 import { runWorkspaceDev, stopWorkspaceDev } from './commands/run-workspace-dev.js';
@@ -805,6 +806,20 @@ export async function activate(context: vscode.ExtensionContext) {
 			openWorktreeWindow(connectionManager!, extractBuilderId(arg))),
 		reg('codev.viewDiff', (arg: vscode.TreeItem | string | undefined) =>
 			viewDiff(connectionManager!, extractBuilderId(arg))),
+		// CodeLens-only inject (#789): open + focus the builder terminal, then
+		// type the file/hunk reference into its prompt without submitting, so
+		// the reviewer keeps typing feedback before hitting Enter. Mirrors
+		// `codev.referenceIssueInArchitect`. Not declared in
+		// `contributes.commands` → never appears in the Command Palette.
+		reg('codev.injectBuilderFileRef', async (builderId: string, text: string) => {
+			// openBuilderByRoleOrId resolves to the canonical id and runs the
+			// no-terminal recovery flow on a miss; inject against that id so the
+			// terminal lookup hits the same key that was just opened.
+			const resolvedId = await terminalManager?.openBuilderByRoleOrId(builderId, true);
+			if (resolvedId && !terminalManager?.injectBuilderText(resolvedId, text)) {
+				vscode.window.showWarningMessage('Codev: Builder terminal not available');
+			}
+		}),
 		reg('codev.openBuilderFileDiff', async (arg: unknown) => {
 			if (!(arg instanceof BuilderFileTreeItem)) { return; }
 			const { left, right } = diffUrisForChange(arg.plan, { wt: arg.worktreePath, ref: arg.baseRef });
@@ -882,6 +897,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	// builder action — serves base-branch blob content for the diff editor
 	// without relying on the Git extension's worktree discovery.
 	activateDiffView(context);
+
+	// CodeLens "Send to builder PTY" actions inside the View Diff editor (#789).
+	// The backing command `codev.injectBuilderFileRef` is registered below and
+	// deliberately NOT declared in `contributes.commands`, so it stays out of
+	// the Command Palette (codelens-only entry point).
+	activateDiffInjectCodeLens(context);
 
 	// Review comment decorations
 	activateReviewDecorations(context);
