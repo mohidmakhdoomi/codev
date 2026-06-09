@@ -92,3 +92,27 @@ Log iter-3.
 premature gate against the pre-revision spec — being treated as effectively pending, not a
 valid sign-off. **Open:** Gemini `agy` lane is dead — restore it or run the panel as
 Codex+Claude. Next: commit iter-3, then iter-4 re-consult.
+
+## 2026-06-09 — iter-4 consult, human-override approval, advanced to PLAN
+
+iter-4 (on committed iter-3): **Claude APPROVE (HIGH); Codex REQUEST_CHANGES (HIGH, 3 small
+items); Gemini SKIPPED** (agy dead). Not a clean 2/3.
+
+The session human + architect chose to **approve over Codex's open items** (explicit override
+of the "clean re-consult" bar), with the 5 items **deferred into the plan phase as plan-gate
+acceptance criteria** (architect will review the plan against them):
+1. (Codex) D2 injectable-logger claim has no matching prop — drop or add.
+2. (Codex) ThemeAdapter.resolve token format — pin bare name vs full `--codev-canvas-*`.
+3. (Codex) sanitization test must actually exercise DOMPurify (markdown `javascript:` link).
+4. (Claude) clarify v1 marker-render fidelity vs #863.
+5. (Claude) fix `review-decorations.ts` path (it's `packages/vscode/src/`, not `comments/`).
+
+**Mechanics:** the rebases had diverged the branch from origin; porch's auto-push then failed
+(`porch next` → non-fast-forward). Force-pushed (`--force-with-lease`, user-approved) to
+reconcile → origin synced at 41bffe20. The phase-transition commit porch had written locally
+(`41bffe20 chore(porch): 945 plan phase-transition`) means **porch is now in the PLAN phase**.
+Stamped the spec YAML frontmatter honestly (approved + override note + the 5 deferred items;
+`validated: [claude]` only, not a fake 3-way). Spec phase complete.
+
+Next: draft `codev/plans/945-…md` — must resolve items 1/2/3/5 and state the deliberate
+decision for 4 (v1-vs-#863 marker boundary). Then `porch check` / `porch done` for the plan.

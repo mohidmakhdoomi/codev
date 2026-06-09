@@ -1,8 +1,24 @@
+---
+approved: 2026-06-09
+approval_note: >-
+  Human override of the "approve only on a clean re-consult" bar. iter-4 consult on the
+  committed spec was Claude APPROVE (HIGH), Codex REQUEST_CHANGES (HIGH, 3 small items),
+  Gemini lane unavailable (agy not installed). Approved by the architect + session human
+  with Codex's items deferred to the plan phase — NOT a clean 3-way pass.
+validated: [claude]   # iter-4 APPROVE; codex REQUEST_CHANGES (deferred to plan); gemini lane unavailable
+deferred_to_plan:
+  - "Codex: D2 'injectable logger' claim has no matching prop in the locked interface — drop the claim or add the prop."
+  - "Codex: ThemeAdapter.resolve token format — pin bare name (\"foreground\") vs full property (\"--codev-canvas-foreground\")."
+  - "Codex: sanitization test must actually exercise DOMPurify — html:false neutralizes <script> first; retarget at a markdown javascript: link."
+  - "Claude: clarify v1 marker-render fidelity vs #863 (what the canvas renders natively vs what #863 layers on)."
+  - "Claude: fix path reference — review-decorations.ts is at packages/vscode/src/, not under comments/."
+---
+
 # Specification: Foundational reusable package `@cluesmith/codev-artifact-canvas` for cross-surface markdown artifact review
 
 ## Metadata
 - **ID**: spec-2026-05-31-945-build-foundational-reusable-pa
-- **Status**: draft
+- **Status**: approved 2026-06-09 (human override; see YAML frontmatter; 5 items deferred to the plan phase)
 - **Created**: 2026-05-31
 - **GitHub Issue**: [#945](https://github.com/cluesmith/codev/issues/945)
 - **Protocol**: SPIR
