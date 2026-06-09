@@ -36,12 +36,14 @@ Markdown (skeleton + mirrored `codev/`): 9 builder-prompts, spir/aspir `prompts/
 - `4cfa872c` [PIR #1011] Rework delivery: fresh-at-spawn placeholder substitution
 - `282bca0f` [PIR #1011] Layer 2 sweep + Patch 2 embeds + Layer 3 (convention + doctor audit)
 - `d814851f` [PIR #1011] Inline protocol.md into builder spawn prompt
+- `81d45d00` [PIR #1011] Review + retrospective
+- (latest) [PIR #1011] Fail-fast on missing builder-prompt.md (Codex REQUEST_CHANGES iter-1)
 - (plus `[PIR #1011] Plan draft` and the porch phase-transition chore commits)
 
 ## Test Results
 
 - `pnpm build`: ✓ pass (core then codev, including dashboard + copy-skeleton)
-- `pnpm test`: ✓ 3277 passed / 13 pre-existing skips on a clean run. New tests cover the `{{protocol_reference}}` fill, `{{> }}` include resolution on both spawn and porch channels, the plan template's phases JSON reaching the builder, the doctor audit (positive/negative/no-op), the protocol.md completeness check, the `validateProtocol` json-without-md warning, and the skeleton sweep.
+- `pnpm test`: ✓ 3278 passed / 13 pre-existing skips on a clean run. New tests cover the `{{protocol_reference}}` fill, `{{> }}` include resolution on both spawn and porch channels, the plan template's phases JSON reaching the builder, the doctor audit (positive/negative/no-op), the protocol.md completeness check, the `validateProtocol` json-without-md warning, the skeleton sweep, and the fail-fast behaviour when a protocol ships no `builder-prompt.md` (the Codex disposition).
 - Manual verification: the human reviewed the running worktree at the `dev-approval` gate and approved. End-to-end against the real skeleton: `protocol.md` inlines fresh under "Protocol Reference (full text)", "Read and internalize" restored, `{{> }}` expands, zero handlebar residue.
 
 ## Architecture Updates
@@ -54,6 +56,7 @@ Added three bullets to `codev/resources/lessons-learned.md` (Protocol Orchestrat
 
 ## Things to Look At During PR Review
 
+- **Consultation disposition (Codex REQUEST_CHANGES, iter-1, addressed).** Codex flagged that the no-`builder-prompt.md` fallback in `spawn-roles.ts` still pointed the builder at `codev/protocols/...` by literal path, re-introducing the bug class for custom protocols. Real finding. Disposition: rather than harden the fallback (which would duplicate template wording and drift), the fallback was **removed** in favour of fail-fast. `validateProtocol` now hard-errors when a protocol resolves no `builder-prompt.md`, with a defensive backstop in `buildPromptFromTemplate`. Every shipped protocol ships a `builder-prompt.md`, so this only affects a malformed custom protocol, which now gets a clear error instead of a silently degraded prompt. Pinned by two tests (`buildPromptFromTemplate` throws; `validateProtocol` fails fast on a json-only protocol). PIR is single-pass, so this was not independently re-reviewed: flagged for your attention at the `pr` gate. Claude APPROVE'd; Gemini was skipped non-blockingly (agy not authenticated).
 - **The `{{> path}}` include directive is new surface.** It's a Handlebars-style partial resolved by a shared `resolveCodevIncludes()` (recursive, depth-guarded at 5, unresolved → empty), run on two channels (spawn-time inside `protocol.md`, and porch's `loadPromptFile` for phase prompts). Worth confirming the mechanism choice and the dual-channel wiring.
 - **The porch `loadPromptFile` change** (`commands/porch/prompts.ts`) is what makes the spir/aspir plan template resolve fresh at the plan phase. The plan gate needs the machine-readable phases JSON (`has_phases_json`), so this is load-bearing, not cosmetic.
 - **Doctor scope.** The audit flags only shell-fetch verbs (`cat`/`cp`/…) against `codev/(protocols|roles)/...`, runs against the project's local `codev/` overrides (end-user-controlled), warn-not-error; the shipped skeleton is guarded by a CI unit test instead.

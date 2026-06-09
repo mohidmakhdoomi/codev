@@ -157,8 +157,8 @@ describe('spawn-roles', () => {
   // =========================================================================
 
   describe('buildPromptFromTemplate', () => {
-    it('falls back to inline prompt when no template file exists', () => {
-      // Config with non-existent protocols dir
+    it('throws (no silent fallback) when a protocol has no builder-prompt.md (#1011)', () => {
+      // Non-existent protocols dir → no builder-prompt.md resolves anywhere.
       const config = {
         codevDir: '/nonexistent/codev',
         workspaceRoot: '/workspace',
@@ -172,10 +172,9 @@ describe('spawn-roles', () => {
         mode_strict: true,
         input_description: 'a feature',
       };
-      const result = buildPromptFromTemplate(config, 'spir', context);
-      expect(result).toContain('SPIR Builder (strict mode)');
-      expect(result).toContain('a feature');
-      expect(result).toContain('STRICT');
+      // Fail fast rather than synthesize a degraded prompt that points the builder
+      // at codev/protocols/... by literal path (bypasses the resolver, breaks fresh installs).
+      expect(() => buildPromptFromTemplate(config, 'spir', context)).toThrow(/no builder-prompt\.md/);
     });
   });
 
@@ -370,6 +369,13 @@ describe('spawn-roles', () => {
       fs.writeFileSync(path.join(skeletonRoot, 'protocols', 'spir', 'protocol.md'), '# SPIR');
       validateProtocol(makeConfig(), 'spir');
       expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('validateProtocol fails fast when a protocol has no builder-prompt.md (#1011)', () => {
+      // The skeleton's bugfix/ ships protocol.json but no builder-prompt.md. Rather
+      // than fall back to a prompt that points at codev/protocols/... by literal
+      // path, spawning must fail fast.
+      expect(() => validateProtocol(makeConfig(), 'bugfix')).toThrow(/no builder-prompt\.md/);
     });
 
     it('loadProtocol falls back to skeleton', () => {
