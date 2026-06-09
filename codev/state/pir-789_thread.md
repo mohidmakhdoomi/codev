@@ -28,3 +28,18 @@ Validation: `pnpm test:unit` 372 pass (had to build core+types dist first — th
 **Primary risk still unvalidated**: whether CodeLenses render inside the `vscode.changes` multi-diff editor. Needs the human to run the worktree at the dev-approval gate. Fallback documented in plan if they don't render.
 
 Awaiting `dev-approval`.
+
+## Dev-approval gate — primary risk materialized, pivoted to Option A
+
+Human tested in the Extension Dev Host. Lenses did NOT appear in the `codev.viewDiff` multi-file editor, even with `diffEditor.codeLens` enabled. Confirmed via VSCode issues #97640 / #156707: CodeLens is hidden in diff editors by default; the setting re-enables it for the **single-file** diff editor, but the **multi-file `vscode.changes` editor doesn't render CodeLens at all**. So the issue's literal surface (lenses in the viewDiff multi-file editor) is infeasible.
+
+**Provider proven correct**: opening a changed file in a plain editor tab shows the lens on line 1. So registration + fsPath matching + rendering all work — only the multi-diff host is the blocker.
+
+**Pivot (human chose Option A)**: surface the lenses on the **single-file `vscode.diff`** opened from the Builders tree (`codev.openBuilderFileDiff`), which honors `diffEditor.codeLens`. Changes:
+- `openBuilderFileDiff` now populates the registry for its file (new `registerFileInjectSession` in view-diff.ts, `upsert` on the provider) so lenses appear without a prior View Diff run.
+- New `ensure-diff-codelens.ts`: when opening a file diff with `diffEditor.codeLens` off, one-click prompt to enable it (with "Don't ask again" in globalState). Avoids shipping a feature that silently needs a hidden setting.
+- viewDiff still populates the registry (harmless; future-proofs if multi-diff ever supports lenses; also powers the normal-tab case).
+
+Validation: check-types/lint/test:unit (372) all green; esbuild bundles. **Needs human to re-test Option A**: F5 relaunch → click a changed file row in the Builders tree → single-file diff → lenses render (prompt offers to enable the setting first).
+
+Note for review file: the spec'd surface was infeasible; should reflect the per-file-diff entry point back to the issue.
