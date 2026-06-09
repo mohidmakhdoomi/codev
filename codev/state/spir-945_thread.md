@@ -70,3 +70,25 @@ Addressed both blockers (user + architect both approved the edits):
 
 Next: commit, then re-run the 3-way consult. Gate stays unrequested until ≥2-of-3 APPROVE
 with zero REQUEST_CHANGES, then re-notify the architect.
+
+## 2026-06-09 — Rebases + iter-2 consult + iter-3 revision
+
+Rebased onto latest main three times across the period (no conflicts; spec assumptions
+re-verified each time — `apps/` still not landed (#855), artifact-canvas absent, #857
+positional markers intact, dashboard React 19, DOMPurify bundled, #0048 present, markdown-it
+still novel). Branch history rewritten; remote `origin/builder/spir-945` diverged, not pushed.
+
+**iter-2 consult verdicts (per verdict files):** Gemini SKIPPED (agy lane no output), Codex
+**REQUEST_CHANGES** (HIGH), Claude **APPROVE** (HIGH). Not clean.
+
+**iter-3 revision** (user-approved) addressed Codex's three: (1) `FileAdapter.watch` async/sync
+fix in D2; (2) locked the comment-intent seam via a new `ArtifactCanvasProps` interface with
+canonical `onAddComment(line: number)`; (3) resolved ThemeAdapter/CSS via D4 Model A (CSS vars
+are v1 theming; `resolve()` is JS-side for #863) + enumerated the token vocabulary. Plus
+Claude's cheap notes: auto-`list` on watch (D6), keyboard accessibility AC. See Consultation
+Log iter-3.
+
+**Gate state note:** porch still carries a stale `spec-approval: approved` (2026-06-02) from a
+premature gate against the pre-revision spec — being treated as effectively pending, not a
+valid sign-off. **Open:** Gemini `agy` lane is dead — restore it or run the panel as
+Codex+Claude. Next: commit iter-3, then iter-4 re-consult.

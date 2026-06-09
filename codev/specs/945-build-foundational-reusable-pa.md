@@ -161,13 +161,17 @@ separately published. **Rationale:** the surfaces share one dependency set and o
 cadence; sub-packaging adds workspace + versioning overhead with no consumer benefit at this
 scale. Revisit only if an independent consumer needs the renderer without React.
 
-### D2 — Adapter I/O is async; theme resolution is sync + push
-- `FileAdapter.read` and `.watch`, and all `MarkerAdapter` methods, are **async**
-  (`Promise`-returning). Hosts back them with async I/O (`vscode.workspace.fs`, Tower REST).
-- `ThemeAdapter.resolve(token)` is **synchronous** (returns a resolved string); theme tokens
-  are cheap, cached values read during render. Theme changes are delivered **push-style** via
-  `ThemeAdapter.onChange(handler)` so the canvas re-renders on host theme switches.
-- `watch` / `onChange` return a `Disposable` (`{ dispose(): void }`) for teardown.
+### D2 — Adapter I/O is async; subscriptions and theme resolution are sync
+- **Async (`Promise`-returning):** `FileAdapter.read` and all `MarkerAdapter` methods. Hosts
+  back them with async I/O (`vscode.workspace.fs`, Tower REST).
+- **Synchronous, returns a `Disposable` immediately:** `FileAdapter.watch` and
+  `ThemeAdapter.onChange` *register* a subscription and return `{ dispose(): void }` right
+  away; the notifications themselves arrive **asynchronously** via the supplied callback.
+  (iter-2 Codex: this resolves the earlier prose that wrongly lumped `watch` in with the async
+  methods — the interface signatures are the source of truth.)
+- **Synchronous, returns a value:** `ThemeAdapter.resolve(token)` returns a resolved string;
+  theme tokens are cheap, cached values. See **D4** for the exact `resolve()`-vs-CSS-variable
+  responsibility split.
 - **Subscription lifecycle ownership (iter-1 Gemini/Claude):** the React component owns
   every subscription via `useEffect` cleanup — it calls `Disposable.dispose()` on unmount and
   on dependency change (e.g. `uri` change). The host's `Disposable` **must be idempotent**
@@ -196,13 +200,30 @@ dashboard host could choose an explicit-line form, without the package forcing e
 `ReviewMarker.raw` field carries the original marker text for lossless round-tripping. (See
 Open Questions §1 for the reconciliation this resolves.)
 
-### D4 — Theming is pure CSS custom properties
-The package ships `default-theme.css` mapping component styles onto `--codev-canvas-*`
-variables (e.g. `--codev-canvas-foreground`, `--codev-canvas-background`,
-`--codev-canvas-accent`, `--codev-canvas-comment-marker`). Hosts override by setting those
-variables — e.g. `--codev-canvas-foreground: var(--vscode-foreground)` in a VSCode webview,
-or dashboard design tokens on the dashboard. No CSS-in-JS, no CSS Modules; a single static
-stylesheet keeps it consumable from both a webview `<link>`/inline-style and a Vite import.
+### D4 — Theming is pure CSS custom properties (`resolve()` is JS-side only)
+**CSS custom properties are the sole theming mechanism for v1 rendering.** The package ships
+`default-theme.css` mapping all component styles onto `--codev-canvas-*` variables. Hosts theme
+the canvas by **setting those variables** on the canvas container — e.g.
+`--codev-canvas-foreground: var(--vscode-foreground)` in a VSCode webview, or dashboard design
+tokens on the dashboard. No CSS-in-JS, no CSS Modules; a single static stylesheet keeps it
+consumable from both a webview `<link>`/inline-style and a Vite import.
+
+**v1 `--codev-canvas-*` token vocabulary** (the default stylesheet ships a fallback value for
+each; hosts override any subset):
+`--codev-canvas-foreground`, `--codev-canvas-background`, `--codev-canvas-accent`,
+`--codev-canvas-border`, `--codev-canvas-muted` (secondary text),
+`--codev-canvas-code-background`, `--codev-canvas-link`,
+`--codev-canvas-comment-marker` (the hover-`+` / marker affordance color).
+
+**Responsibility split with `ThemeAdapter.resolve()` — Model A (iter-2 Codex/Claude, also
+iter-1 Gemini):** v1 rendering and overlays bind to the **CSS variables**, never to
+`resolve()`. `ThemeAdapter` exists for **JS-side consumers that must read an exact value** —
+chiefly #863's `<canvas>` minimap, which has to read a hex color to paint pixels. `resolve(token)`
+returns the current value of a `--codev-canvas-*` token and `onChange` lets such a consumer
+repaint on a host theme switch. **In v1 `resolve()` is therefore *not* on the render path** —
+it is part of the locked contract for the #863 era and is exercised only by the smoke-test host
+and a unit test, not by the v1 renderer or overlay. (This is the long-standing ThemeAdapter/CSS
+overlap, now resolved rather than deferred.)
 
 ### D5 — Renderer emits `data-line` on block tokens
 The markdown-it instance carries a source-mapping rule that stamps `data-line="<n>"` on
@@ -218,13 +239,16 @@ This matches the existing #857 host, which reads/writes via VSCode's 0-based
 base is part of the contract and is documented in the README.
 
 ### D6 — Comment overlay is presentation + intent only
-The hover-`+` overlay renders the affordance and, on click, **emits a comment-intent event**
-carrying `{ line: number }` to a host-supplied callback (`onAddComment(line)`). **The package
-stops there.** The text-input UX *and* the write-back both live in the **host**: the host
-collects the comment text and calls its own `MarkerAdapter.add(uri, line, text, author)`.
-**The package never calls `MarkerAdapter.add` itself.** The canvas then refreshes its markers
-when the host's change propagates — via `FileAdapter.watch` firing (or the host re-driving a
-`MarkerAdapter.list`), at which point the new marker renders.
+The hover-`+` overlay renders the affordance and, on click, invokes the component's
+**`onAddComment(line: number)`** prop — the single canonical comment-intent seam (formally
+typed as `ArtifactCanvasProps.onAddComment` in the interface block; `line` is 0-based per D5).
+**The package stops there.** The text-input UX *and* the write-back both live in the **host**:
+the host collects the comment text and calls its own `MarkerAdapter.add(uri, line, text, author)`.
+**The package never calls `MarkerAdapter.add` itself.** After the host writes, the canvas
+refreshes **automatically**: when `FileAdapter.watch` fires with new content, the component
+re-renders **and re-calls `MarkerAdapter.list(uri)`** to pick up the new marker — the host does
+not re-trigger the list itself (iter-2 Claude). A host with no file watcher forces the same
+refresh by re-rendering the component.
 
 **Rationale:** input affordances differ per surface (VSCode `InputBox`, a dashboard modal, a
 mobile sheet) and so does write-back; forcing either into the package would couple it to a
@@ -278,10 +302,10 @@ interface MarkerAdapter {
   // setCheckbox?(uri: string, line: number, checked: boolean): Promise<void>; // AC-progress (#862)
 }
 
-/** Resolves theme tokens (sync, D2) and notifies on host theme change (push, D2). */
+/** JS-side theme access for canvas-drawing consumers (D4, Model A); NOT used by v1 render. */
 interface ThemeAdapter {
-  resolve(token: string): string;       // e.g. resolve("foreground") → host-specific value
-  onChange(handler: () => void): Disposable;
+  resolve(token: string): string;             // current value of a --codev-canvas-* token (e.g. "foreground")
+  onChange(handler: () => void): Disposable;  // sync register; fires on host theme switch
 }
 
 /** In-memory marker model. `raw` preserves the on-disk text for lossless round-tripping. */
@@ -291,6 +315,18 @@ interface ReviewMarker {
   text: string;
   raw: string;
   lineRange?: { start: number; end: number };  // reserved for region anchors (not used in v1)
+}
+
+/** Public props of the React canvas component — the host-facing contract. `onAddComment`
+ *  is the single canonical comment-intent seam (D6): the overlay calls it with a 0-based
+ *  line; the host does the text input and calls MarkerAdapter.add. */
+interface ArtifactCanvasProps {
+  uri: string;
+  fileAdapter: FileAdapter;
+  markerAdapter: MarkerAdapter;
+  themeAdapter: ThemeAdapter;
+  onAddComment(line: number): void;            // comment-intent event (D6); line is 0-based (D5)
+  onError?(err: unknown): void;                // optional host error sink (D2)
 }
 ```
 
@@ -408,15 +444,21 @@ Functional (MUST):
 - [ ] Renderer produces HTML with `data-line` attributes on block tokens (paragraphs,
       headings, list items, code blocks, blockquotes, tables); a unit test covers the
       attribution.
-- [ ] A comment-overlay component renders a hover-`+` on rendered blocks; clicking **emits a
-      comment-intent event** carrying `{ line: number }` to the host callback; the package
-      does **not** call `MarkerAdapter.add` (text-input + write-back are host-owned, D6). A
-      unit test asserts the intent-event contract.
-- [ ] Three adapter interfaces (`FileAdapter`, `MarkerAdapter`, `ThemeAdapter`) plus
-      `ReviewMarker` and `Disposable` are exported from the public API; the package has zero
-      direct filesystem, `fetch`, or VSCode-API imports (import-boundary test).
-- [ ] Theming via CSS custom properties; the package supplies a default stylesheet mapping to
-      `--codev-canvas-*` variables; documented host override examples.
+- [ ] A comment-overlay component renders a hover-`+` on rendered blocks; clicking invokes the
+      **`onAddComment(line: number)`** prop (the canonical intent seam, `ArtifactCanvasProps`);
+      the package does **not** call `MarkerAdapter.add` (text-input + write-back are host-owned,
+      D6). A unit test asserts the intent-prop contract.
+- [ ] The hover-`+` affordance is **keyboard-accessible** — reachable via keyboard focus and
+      activatable with Enter/Space (not hover-only), with an accessible label for screen
+      readers; a test covers keyboard activation. (iter-2 Claude)
+- [ ] The public API exports the three adapter interfaces (`FileAdapter`, `MarkerAdapter`,
+      `ThemeAdapter`), the data types `ReviewMarker` and `Disposable`, and the component props
+      `ArtifactCanvasProps`; the package has zero direct filesystem, `fetch`, or VSCode-API
+      imports (import-boundary test).
+- [ ] Theming via CSS custom properties; the package ships a default stylesheet defining a
+      fallback for **each v1 `--codev-canvas-*` token (D4)**; hosts override by setting the
+      variables; documented host override examples. `ThemeAdapter.resolve()` is JS-side only
+      (D4, Model A) and is not on the v1 render path.
 - [ ] A smoke-test host demonstrates end-to-end: load sample markdown → render → hover →
       click `+` → adapter receives the call → marker round-trips.
 - [ ] Build produces a **CJS + ESM** bundle (with type declarations) consumable by both a
@@ -446,7 +488,9 @@ Non-functional (MUST):
    the intent event with the expected `{ line }`; a host-side test harness then calls
    `MarkerAdapter.add(uri, line, text, author)` and, on the subsequent refresh (a `watch`
    callback or a re-`list`), the new marker renders. The package itself never calls `add`.
-4. `ThemeAdapter.onChange` fires → the canvas re-renders with new resolved tokens.
+4. `ThemeAdapter` contract (D4 Model A): a unit test asserts `resolve(token)` returns the host
+   value and `onChange` fires on a simulated theme switch — these serve #863's `<canvas>`, not
+   v1 render (v1 visual theming is via CSS variables and needs no re-render).
 
 **Non-functional**
 5. Import-boundary test: scanning package source finds no forbidden imports.
@@ -542,10 +586,40 @@ plan-level. Gemini's `FileAdapter.write` idea is noted for the #862 follow-up, n
 the v1 contract. Open Q §1 (REVIEW marker format) — the architect confirmed #857 is positional;
 the D3 resolution stands.
 
-### Iteration 2 — Specify re-consult (pending)
-Revised spec to be re-run through the 3-way consult. Per architect direction, the
-spec-approval gate will not be (re-)requested until at least 2-of-3 reviewers return APPROVE /
-APPROVE-WITH-SUGGESTIONS with **zero** REQUEST_CHANGES.
+### Iteration 2 — Specify re-consult (2026-06-09)
+Re-ran the 3-way consult on the iter-1-revised spec. **Verdicts (per the verdict files):**
+- **Gemini — SKIPPED (COMMENT, LOW):** the `agy` lane produced no output (CLI not
+  installed/signed-in); not an actual review.
+- **Codex — REQUEST_CHANGES (HIGH):** three contract issues — (1) `FileAdapter.watch`
+  async/sync contradiction between D2 prose and the interface; (2) the comment-intent seam not
+  formally locked (event-vs-`onAddComment` drift; no typed component-props interface);
+  (3) `ThemeAdapter.resolve` underspecified vs D4's CSS-variable theming.
+- **Claude — APPROVE (HIGH):** no blockers; notes on the same ThemeAdapter/CSS overlap, the
+  refresh-flow ambiguity, accessibility, and minor edge cases.
+
+**Net: not clean (1 APPROVE, 1 REQUEST_CHANGES, 1 skipped lane)** — did not meet the
+"≥2 APPROVE, zero REQUEST_CHANGES" bar. Proceeded to iter-3.
+
+### Iteration 3 — Specify revision (2026-06-09)
+Addressed Codex's three issues + Claude's cheap convergent notes:
+- **`FileAdapter.watch` async/sync:** D2 reworded — `read` + `MarkerAdapter` methods are async;
+  `watch`/`onChange` are synchronous, returning a `Disposable` immediately (callbacks fire
+  async). The interface signatures are the source of truth.
+- **Comment-intent seam locked:** added `ArtifactCanvasProps` to the interface block with the
+  canonical `onAddComment(line: number): void` prop (+ adapters, `uri`, optional `onError`);
+  D6, the AC, and Test Scenario 2/3 now all reference it. Exported from the public API.
+- **ThemeAdapter/CSS resolved (Model A):** D4 now locks CSS variables as the sole v1 theming
+  mechanism, enumerates the v1 `--codev-canvas-*` token vocabulary, and scopes `resolve()`/
+  `onChange` to JS-side consumers (#863's `<canvas>`), off the v1 render path. Test Scenario 4
+  reframed accordingly.
+- **Refresh flow (Claude):** D6 now states the component auto-re-calls `MarkerAdapter.list`
+  when `watch` fires — hosts don't re-trigger it.
+- **Accessibility (Claude):** new AC — the hover-`+` is keyboard-reachable/activatable
+  (Enter/Space) with a screen-reader label; test covers it.
+
+Deferred to plan (reviewer-agreed): out-of-range-marker policy, React-18 CI matrix, dual-format
+build-tool choice. **Gemini lane:** dead (`agy` unavailable) — pending a decision on whether to
+restore it or proceed with Codex + Claude as the panel. To be re-consulted (iter-4).
 
 ## Notes
 This spec deliberately includes the adapter interface signatures verbatim because, for this
