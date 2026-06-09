@@ -1,7 +1,7 @@
 id: '945'
 title: build-foundational-reusable-pa
 protocol: spir
-phase: specify
+phase: plan
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -16,7 +16,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-05-30T23:09:36.579Z'
-updated_at: '2026-06-02T06:11:17.264Z'
+updated_at: '2026-06-09T23:04:51.322Z'
