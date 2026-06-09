@@ -23,22 +23,14 @@ Markdown (skeleton + mirrored `codev/`): 9 builder-prompts, spir/aspir `prompts/
 
 ## Commits
 
-- `d35e2c0d` [PIR #1011] Trim framework-files convention note (principle-level, drop cat/cp + padding)
-- `1c673862` [PIR #1011] Drop porch leak from spir protocol.md Structure notes
-- `126ffe7b` [PIR #1011] Trim plan-prompt lead-in (drop porch-internals leak)
-- `9e0e46de` [PIR #1011] Fix: deliver spir/aspir plan template (with required phases JSON) via porch-resolved include
-- `02178a99` [PIR #1011] Add non-fatal validateProtocol warning for json-without-md protocols
-- `09f167f0` [PIR #1011] Remove {{#if protocol_reference}} guard; enforce protocol.md completeness
-- `2cee4885` [PIR #1011] Repoint doctor audit to workspace codev/ overrides (end-user scope)
-- `926168a5` [PIR #1011] Reword dead template-path pointers in spir/protocol.md
-- `c2dc930d` [PIR #1011] Fold in #1013: de-stale bugfix protocol.md + drop experiment partial copy
-- `15345f54` [PIR #1011] Tighten framework-files convention note (accuracy + scope)
-- `4cfa872c` [PIR #1011] Rework delivery: fresh-at-spawn placeholder substitution
-- `282bca0f` [PIR #1011] Layer 2 sweep + Patch 2 embeds + Layer 3 (convention + doctor audit)
-- `d814851f` [PIR #1011] Inline protocol.md into builder spawn prompt
-- `81d45d00` [PIR #1011] Review + retrospective
-- (latest) [PIR #1011] Fail-fast on missing builder-prompt.md (Codex REQUEST_CHANGES iter-1)
-- (plus `[PIR #1011] Plan draft` and the porch phase-transition chore commits)
+Grouped by what landed (full per-commit history is on the PR):
+
+- **Delivery:** inline `protocol.md` at spawn via `{{protocol_reference}}`; shared `{{> path}}` include resolution on both the spawn and porch phase-prompt channels (incl. the spir/aspir plan template with its phases JSON).
+- **Cleanup sweep:** removed literal `codev/protocols/...` references across the 9 builder-prompts, `roles/builder.md`, and `spir/protocol.md`.
+- **Enforcement:** `codev doctor` framework-ref audit (scoped to workspace overrides, warn-not-error) + a principle-level convention note in CLAUDE.md / AGENTS.md.
+- **#1013 fold-in:** de-staled `bugfix/protocol.md` (shipped to the skeleton); dropped the `experiment` partial template copy.
+- **Consultation fixes:** fail-fast on a missing `builder-prompt.md` (Codex iter-1); `doctor` true no-op for projects with no overrides (Codex iter-2).
+- Plan draft, review/retrospective, and porch phase-transition chore commits.
 
 ## Test Results
 
