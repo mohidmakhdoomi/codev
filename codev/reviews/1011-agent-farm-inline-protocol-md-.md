@@ -43,7 +43,7 @@ Markdown (skeleton + mirrored `codev/`): 9 builder-prompts, spir/aspir `prompts/
 ## Test Results
 
 - `pnpm build`: ✓ pass (core then codev, including dashboard + copy-skeleton)
-- `pnpm test`: ✓ 3278 passed / 13 pre-existing skips on a clean run. New tests cover the `{{protocol_reference}}` fill, `{{> }}` include resolution on both spawn and porch channels, the plan template's phases JSON reaching the builder, the doctor audit (positive/negative/no-op), the protocol.md completeness check, the `validateProtocol` json-without-md warning, the skeleton sweep, and the fail-fast behaviour when a protocol ships no `builder-prompt.md` (the Codex disposition).
+- `pnpm test`: ✓ 3281 passed / 13 pre-existing skips on a clean run. New tests cover the `{{protocol_reference}}` fill, `{{> }}` include resolution on both spawn and porch channels, the plan template's phases JSON reaching the builder, the doctor audit (positive/negative/no-op), the protocol.md completeness check, the `validateProtocol` json-without-md warning, the skeleton sweep, the fail-fast behaviour when a protocol ships no `builder-prompt.md` (Codex iter-1 disposition), and the `hasFrameworkOverrides` true-no-op predicate (Codex iter-2 disposition).
 - Manual verification: the human reviewed the running worktree at the `dev-approval` gate and approved. End-to-end against the real skeleton: `protocol.md` inlines fresh under "Protocol Reference (full text)", "Read and internalize" restored, `{{> }}` expands, zero handlebar residue.
 
 ## Architecture Updates
