@@ -33,25 +33,36 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
     [onError],
   );
 
-  // List markers for the given text, dropping out-of-range markers (spec: deferred #4 policy —
-  // ignore + warn; chosen over clamp/hard-error). On failure, keep the prior markers.
-  const listMarkers = React.useCallback(
-    async (text: string) => {
+  // Request-versioning: out-of-order async resolutions must never apply stale state — a slow
+  // initial read() or an older list() must not overwrite a newer watch update (iter-2 Codex).
+  // Each load (initial read or a watch change) takes a monotonically increasing seq; results are
+  // applied only while their seq is still the latest.
+  const seqRef = React.useRef(0);
+
+  // Apply content + markers for one load, guarded by `seq`. Out-of-range markers are dropped +
+  // warned (deferred #4: ignore, not clamp/hard-error); a failed list() keeps the prior markers.
+  const applyLoad = React.useCallback(
+    async (text: string, seq: number) => {
+      if (seq !== seqRef.current) return; // superseded by a newer load
+      setContent(text);
       try {
         const list = await markerAdapter.list(uri);
+        if (seq !== seqRef.current) return; // a newer load won the race — discard these markers
         const lineCount = text.length === 0 ? 0 : text.split('\n').length;
-        const valid = list.filter((m) => {
-          const ok = m.line >= 0 && m.line < lineCount;
-          if (!ok) {
-            console.warn(
-              `[artifact-canvas] dropping out-of-range marker @line ${m.line} (document has ${lineCount} lines)`,
-            );
-          }
-          return ok;
-        });
-        setMarkers(valid);
+        setMarkers(
+          list.filter((m) => {
+            const ok = m.line >= 0 && m.line < lineCount;
+            if (!ok) {
+              console.warn(
+                `[artifact-canvas] dropping out-of-range marker @line ${m.line} (document has ${lineCount} lines)`,
+              );
+            }
+            return ok;
+          }),
+        );
       } catch (err) {
-        report(err);
+        if (seq !== seqRef.current) return;
+        report(err); // keep prior markers on failure
       }
     },
     [markerAdapter, uri, report],
@@ -60,14 +71,14 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
   // Initial read + the single watch subscription (spec D2/D6).
   React.useEffect(() => {
     let disposed = false;
+    const initialSeq = (seqRef.current += 1);
     void (async () => {
       try {
         const text = await fileAdapter.read(uri);
         if (disposed) return;
-        setContent(text);
-        await listMarkers(text);
+        await applyLoad(text, initialSeq);
       } catch (err) {
-        report(err);
+        if (!disposed) report(err);
       }
     })();
 
@@ -75,8 +86,8 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
     try {
       sub = fileAdapter.watch(uri, (newContent) => {
         if (disposed) return;
-        setContent(newContent);
-        void listMarkers(newContent); // auto re-list on change (D6)
+        const watchSeq = (seqRef.current += 1); // each change is a newer load
+        void applyLoad(newContent, watchSeq); // auto re-list on change (D6)
       });
     } catch (err) {
       // A synchronous failure setting up the subscription must not throw out of the effect (D2).
@@ -87,7 +98,7 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
       disposed = true;
       sub.dispose(); // idempotent per the Disposable contract (spec D2)
     };
-  }, [fileAdapter, uri, listMarkers, report]);
+  }, [fileAdapter, uri, applyLoad, report]);
 
   const html = React.useMemo(() => renderMarkdown(content), [content]);
 

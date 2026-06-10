@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react';
 import * as React from 'react';
 import { ArtifactCanvas } from '../ArtifactCanvas.js';
 import type { ReviewMarker } from '../../types.js';
@@ -198,6 +198,32 @@ describe('ArtifactCanvas (Phase 3)', () => {
     });
     fireEvent.keyDown(p, { key: ' ' });
     expect(onAddComment).toHaveBeenCalledWith(0);
+  });
+
+  it('keeps previously-rendered markers when a LATER list() rejects (D2 — prior markers preserved)', async () => {
+    const host = makeHost('A paragraph.\n<!-- REVIEW(@bob): fix -->'); // marker annotates line 0
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<ArtifactCanvas uri="x" {...host} onAddComment={vi.fn()} onError={vi.fn()} />);
+    await waitFor(() => expect(document.querySelector('.codev-canvas-has-marker')).not.toBeNull());
+    // Now a later list() fails; trigger a watch update (same content).
+    host.markerAdapter.list = vi.fn(async () => { throw new Error('list boom'); });
+    await act(async () => { host.watchers.forEach((cb) => cb('A paragraph.\n<!-- REVIEW(@bob): fix -->')); });
+    expect(document.querySelector('.codev-canvas-has-marker')).not.toBeNull(); // prior marker remains
+    err.mockRestore();
+  });
+
+  it('a slow initial read() does not overwrite newer watch content (request-versioning, iter-2 Codex)', async () => {
+    const host = makeHost('OLD content.');
+    let resolveRead!: (v: string) => void;
+    host.fileAdapter.read = vi.fn(() => new Promise<string>((res) => { resolveRead = res; }));
+    render(<ArtifactCanvas uri="x" {...host} onAddComment={vi.fn()} />);
+    // Newer watch content arrives before the slow read resolves.
+    await act(async () => { host.watchers.forEach((cb) => cb('NEW content.')); });
+    await waitFor(() => expect(document.body.textContent).toContain('NEW content'));
+    // The stale initial read resolves last — it must NOT overwrite the newer content.
+    await act(async () => { resolveRead('OLD content.'); });
+    expect(document.body.textContent).toContain('NEW content');
+    expect(document.body.textContent).not.toContain('OLD content');
   });
 });
 
