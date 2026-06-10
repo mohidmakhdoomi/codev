@@ -152,8 +152,14 @@ export function buildLensDescriptors(relPath: string, hunks: HunkRange[]): LensD
     // hunk header's context-inclusive span — so the lens sits on the real edit
     // (e.g. inside the right function) rather than on the up-to-3 leading
     // context lines git emits with --unified=3.
+    const line = Math.max(h.changeStart - 1, 0);
+    // The file-level lens already occupies line 0. A hunk that anchors there —
+    // a newly-added file (one whole-file hunk from line 1) or a change to the
+    // very first line — would stack a second "Forward to Builder" on the same
+    // line. Skip it; the file-level lens covers that spot.
+    if (line === 0) { continue; }
     lenses.push({
-      line: Math.max(h.changeStart - 1, 0),
+      line,
       title: `Forward to Builder (lines ${h.changeStart}-${h.changeEnd})`,
       refText: buildBuilderHunkRef(relPath, h.changeStart, h.changeEnd),
     });

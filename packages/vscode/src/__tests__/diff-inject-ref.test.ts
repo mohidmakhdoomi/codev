@@ -156,11 +156,27 @@ describe('buildLensDescriptors', () => {
     ]);
   });
 
-  it('clamps a hunk anchored at line 1 to a non-negative index', () => {
+  it('skips a hunk that anchors on the file-level lens line (added file / first-line change)', () => {
+    // A newly-added file is one whole-file hunk starting at line 1, so its
+    // hunk lens would anchor at line 0 and stack on the file-level lens. Only
+    // the file-level lens should remain.
     const lenses = buildLensDescriptors('a/b.ts', [
-      { newStart: 1, newEnd: 1, changeStart: 1, changeEnd: 1 },
+      { newStart: 1, newEnd: 17, changeStart: 1, changeEnd: 17 },
     ]);
-    expect(lenses[1]!.line).toBe(0);
+    expect(lenses).toEqual([
+      { line: 0, title: 'Forward to Builder', refText: 'a/b.ts ' },
+    ]);
+  });
+
+  it('keeps hunks below line 1 even when an earlier hunk was skipped at line 0', () => {
+    const lenses = buildLensDescriptors('a/b.ts', [
+      { newStart: 1, newEnd: 3, changeStart: 1, changeEnd: 3 },   // anchors line 0 → skipped
+      { newStart: 48, newEnd: 52, changeStart: 50, changeEnd: 52 }, // anchors line 49 → kept
+    ]);
+    expect(lenses).toEqual([
+      { line: 0, title: 'Forward to Builder', refText: 'a/b.ts ' },
+      { line: 49, title: 'Forward to Builder (lines 50-52)', refText: 'a/b.ts:L50-L52 ' },
+    ]);
   });
 
   it('emits just the file-level lens when there are no hunks', () => {
