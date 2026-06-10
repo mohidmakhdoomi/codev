@@ -56,7 +56,7 @@ follow-ups). Net: a new ~1,600-LOC workspace package, fully tested, consumed via
 ## Key Metrics
 
 - **Commits**: ~25 builder commits on `builder/spir-945` (plus porch chore commits).
-- **Tests**: 33 passing in the new package (5 files: data-line, sanitization, artifact-canvas, import-boundary, end-to-end). 0 pre-existing package tests (greenfield).
+- **Tests**: 34 passing in the new package (5 files: data-line, sanitization, artifact-canvas, import-boundary, end-to-end). 0 pre-existing package tests (greenfield).
 - **Files created**: the `packages/artifact-canvas/` package (26 files: src + adapters + renderer + components + overlays + styles + fixtures + tests + examples + README + build/test config).
 - **Files modified (repo wiring)**: root `package.json` (build graph), `.github/workflows/test.yml` (CI), `.gitignore` (dist), `scripts/bump-all.sh` (lockstep bump), `codev/protocols/release/protocol.md` (enumeration + git-add blocks).
 - **Files deleted**: none.
@@ -94,9 +94,13 @@ these `.skip`s once the tracker fix lands.
 
 ## Consultation Iteration Summary
 
-56 consultation files produced (19 rounds × 3 models). 19 APPROVE, 18 COMMENT, 17 REQUEST_CHANGES.
-(The COMMENT tally is dominated by the Gemini/`agy` lane skipping non-blockingly throughout — see
-Challenges.)
+21 consultation rounds across the protocol, each a 3-way (Gemini/Codex/Claude): Specify 3, Plan 5,
+Phase 1 2, Phase 2 1, Phase 3 6, Phase 4 2, PR 2 (see the per-phase table below). Across them, the
+Gemini/`agy` lane was unavailable in every round (non-blocking COMMENT skips — see Challenges);
+Codex was the recurring blocker (REQUEST_CHANGES on the items in the table, all resolved); Claude
+APPROVED from Phase 3 iter-2 onward and at the PR. (A couple of individual lane invocations produced
+no verdict file — the `agy` skips and one Codex PR-round timeout — so the on-disk file count is a
+few short of 21 × 3; exact per-file tallies are not load-bearing.)
 
 | Phase | Iters | Who Blocked | What They Caught |
 |-------|-------|-------------|------------------|
