@@ -361,7 +361,7 @@ export async function viewDiff(
     ];
   });
 
-  // CodeLens "Send to builder PTY" actions (#789): give the provider the
+  // CodeLens "Forward to Builder" actions (#789): give the provider the
   // right-side fs paths and new-side hunk ranges for the files just opened.
   // One extra git call here keeps `getBuilderChanges` (shared with the
   // Builders tree) untouched. A patch failure is non-fatal — the diff still
@@ -397,7 +397,7 @@ export async function viewDiff(
  * Populate the inject-codelens registry for a single changed file — the
  * per-file `vscode.diff` opened from the Builders tree (`openBuilderFileDiff`).
  * Mirrors what `viewDiff` does for the whole delta, but for one file, so the
- * "Send to builder PTY" lenses appear even when the reviewer opens a file diff
+ * "Forward to Builder" lenses appear even when the reviewer opens a file diff
  * without first running View Diff. Non-fatal on git failure (the file-level
  * lens still shows; only the per-hunk lenses are dropped).
  */

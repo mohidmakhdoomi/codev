@@ -1,5 +1,5 @@
 /**
- * Pure helpers for the "Send to builder PTY" CodeLens actions in the
+ * Pure helpers for the "Forward to Builder" CodeLens actions in the
  * `codev.viewDiff` editor (issue #789). No `vscode` import — same precedent
  * as `architect-reference-injection.ts`, so the parsing/string logic is
  * unit-tested directly without mocking the editor API.
@@ -145,7 +145,7 @@ export function buildBuilderHunkRef(relPath: string, start: number, end: number)
  */
 export function buildLensDescriptors(relPath: string, hunks: HunkRange[]): LensDescriptor[] {
   const lenses: LensDescriptor[] = [
-    { line: 0, title: 'Send to builder PTY', refText: buildBuilderFileRef(relPath) },
+    { line: 0, title: 'Forward to Builder', refText: buildBuilderFileRef(relPath) },
   ];
   for (const h of hunks) {
     // Anchor and label on the first/last *changed* new-side lines, not the
@@ -154,7 +154,7 @@ export function buildLensDescriptors(relPath: string, hunks: HunkRange[]): LensD
     // context lines git emits with --unified=3.
     lenses.push({
       line: Math.max(h.changeStart - 1, 0),
-      title: `Send to builder PTY (lines ${h.changeStart}-${h.changeEnd})`,
+      title: `Forward to Builder (lines ${h.changeStart}-${h.changeEnd})`,
       refText: buildBuilderHunkRef(relPath, h.changeStart, h.changeEnd),
     });
   }

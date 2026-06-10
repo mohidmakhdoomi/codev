@@ -824,7 +824,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		reg('codev.openBuilderFileDiff', async (arg: unknown) => {
 			if (!(arg instanceof BuilderFileTreeItem)) { return; }
 			// Populate the inject-codelens registry for this file so the
-			// "Send to builder PTY" lenses (#789) render on the diff without a
+			// "Forward to Builder" lenses (#789) render on the diff without a
 			// prior View Diff run, then offer to enable diffEditor.codeLens (off
 			// by default — VS Code hides CodeLens in diff editors).
 			await registerFileInjectSession({
@@ -910,7 +910,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	// without relying on the Git extension's worktree discovery.
 	activateDiffView(context);
 
-	// CodeLens "Send to builder PTY" actions inside the View Diff editor (#789).
+	// CodeLens "Forward to Builder" actions inside the View Diff editor (#789).
 	// The backing command `codev.injectBuilderFileRef` is registered below and
 	// deliberately NOT declared in `contributes.commands`, so it stays out of
 	// the Command Palette (codelens-only entry point).

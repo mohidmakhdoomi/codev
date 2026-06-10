@@ -1,5 +1,5 @@
 /**
- * CodeLens provider backing the "Send to builder PTY" actions in the
+ * CodeLens provider backing the "Forward to Builder" actions in the
  * `codev.viewDiff` multi-file diff editor (issue #789).
  *
  * The right side of each file in that editor is a plain `file:` document at

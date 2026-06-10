@@ -155,7 +155,7 @@ export class TerminalManager {
   /**
    * Type `text` into a builder terminal's input *without* a trailing newline
    * (no submit) — the builder-side analogue of `injectArchitectText`, backing
-   * the "Send to builder PTY" CodeLens (#789). Returns false if no terminal is
+   * the "Forward to Builder" CodeLens (#789). Returns false if no terminal is
    * registered for `builderId`; callers ensure it's open first (via
    * `openBuilderByRoleOrId`, whose resolved id keys the lookup).
    */
@@ -207,7 +207,7 @@ export class TerminalManager {
    *
    * Returns the resolved **canonical** builder id on success (the key under
    * which the terminal is registered), or `undefined` when the builder can't
-   * be opened. The "Send to builder PTY" inject path (#789) uses this to target
+   * be opened. The "Forward to Builder" inject path (#789) uses this to target
    * the same terminal that was opened, even when called with a bare numeric id;
    * other callers ignore the return value.
    */

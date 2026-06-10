@@ -1,5 +1,5 @@
 /**
- * The "Send to builder PTY" CodeLens actions (#789) only render in a diff
+ * The "Forward to Builder" CodeLens actions (#789) only render in a diff
  * editor when `diffEditor.codeLens` is on — VS Code hides CodeLens in diff
  * editors by default (microsoft/vscode#97640). When a reviewer opens a builder
  * file diff with the setting off, offer a one-click enable rather than letting
@@ -21,7 +21,7 @@ export async function ensureDiffEditorCodeLens(
   const ENABLE = 'Enable';
   const DISMISS = "Don't ask again";
   const choice = await vscode.window.showInformationMessage(
-    'Codev’s "Send to builder PTY" actions need CodeLens in diff editors, ' +
+    'Codev’s "Forward to Builder" actions need CodeLens in diff editors, ' +
       'which VS Code hides by default. Enable it?',
     ENABLE,
     DISMISS,

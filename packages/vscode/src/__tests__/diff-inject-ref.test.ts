@@ -1,5 +1,5 @@
 /**
- * Unit tests for the pure diff/ref helpers behind the "Send to builder PTY"
+ * Unit tests for the pure diff/ref helpers behind the "Forward to Builder"
  * CodeLens actions (#789). No `vscode` dependency, so the live implementation
  * is imported directly (same pattern as `architect-reference-injection.test.ts`).
  */
@@ -150,9 +150,9 @@ describe('buildLensDescriptors', () => {
       { newStart: 28, newEnd: 32, changeStart: 30, changeEnd: 30 },
     ]);
     expect(lenses).toEqual([
-      { line: 0, title: 'Send to builder PTY', refText: 'a/b.ts ' },
-      { line: 4, title: 'Send to builder PTY (lines 5-9)', refText: 'a/b.ts:L5-L9 ' },
-      { line: 29, title: 'Send to builder PTY (lines 30-30)', refText: 'a/b.ts:L30-L30 ' },
+      { line: 0, title: 'Forward to Builder', refText: 'a/b.ts ' },
+      { line: 4, title: 'Forward to Builder (lines 5-9)', refText: 'a/b.ts:L5-L9 ' },
+      { line: 29, title: 'Forward to Builder (lines 30-30)', refText: 'a/b.ts:L30-L30 ' },
     ]);
   });
 
@@ -165,7 +165,7 @@ describe('buildLensDescriptors', () => {
 
   it('emits just the file-level lens when there are no hunks', () => {
     expect(buildLensDescriptors('a/b.ts', [])).toEqual([
-      { line: 0, title: 'Send to builder PTY', refText: 'a/b.ts ' },
+      { line: 0, title: 'Forward to Builder', refText: 'a/b.ts ' },
     ]);
   });
 });
