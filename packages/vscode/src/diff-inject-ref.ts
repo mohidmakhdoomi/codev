@@ -65,6 +65,94 @@ const TOP_LEVEL_KINDS = new Set<number>([
   KIND.Module,
 ]);
 
+/**
+ * New-side line numbers of one diff hunk (1-based, inclusive). `newStart`/
+ * `newEnd` are the header span (context included); `changeStart`/`changeEnd`
+ * are the first/last lines *actually added* on the new side, so a lens anchors
+ * on the real edit rather than the up-to-3 leading context lines git emits with
+ * `--unified=3`. A pure-deletion hunk collapses both change fields to `newStart`.
+ */
+export interface HunkRange {
+  newStart: number;
+  newEnd: number;
+  changeStart: number;
+  changeEnd: number;
+}
+
+const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
+
+/**
+ * Parse the `@@ -a,b +c,d @@` hunk headers from a single file's unified diff
+ * into new-side ranges, walking each hunk body to find the first/last added
+ * (`+`) lines.
+ */
+export function parseHunkRanges(patch: string): HunkRange[] {
+  const lines = patch.split('\n');
+  const ranges: HunkRange[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = HUNK_HEADER.exec(lines[i]!);
+    if (!m) { continue; }
+    const newStart = Number(m[1]);
+    const len = m[2] === undefined ? 1 : Number(m[2]);
+    const newEnd = len <= 0 ? Math.max(newStart, 1) : newStart + len - 1;
+
+    let cur = newStart;
+    let firstChange = -1;
+    let lastChange = -1;
+    for (let j = i + 1; j < lines.length; j++) {
+      const l = lines[j]!;
+      if (HUNK_HEADER.test(l) || l.startsWith('diff --git')) { break; }
+      if (l.startsWith('\\')) { continue; }
+      if (l.startsWith('+')) {
+        if (firstChange === -1) { firstChange = cur; }
+        lastChange = cur;
+        cur++;
+      } else if (l.startsWith('-')) {
+        // old-side only — does not advance the new-side counter
+      } else {
+        cur++; // context line
+      }
+    }
+
+    const changeStart = firstChange === -1 ? Math.max(newStart, 1) : firstChange;
+    const changeEnd = lastChange === -1 ? changeStart : lastChange;
+    ranges.push({
+      newStart: len <= 0 ? Math.max(newStart, 1) : newStart,
+      newEnd,
+      changeStart,
+      changeEnd,
+    });
+  }
+  return ranges;
+}
+
+/**
+ * Split a multi-file unified diff (`git diff -M --unified=N <ref>`) into a map
+ * from each file's **new** path to its hunk ranges. The new path is read from
+ * the `+++ b/<path>` line; deleted files (`+++ /dev/null`) are omitted.
+ */
+export function parseUnifiedDiff(patch: string): Map<string, HunkRange[]> {
+  const out = new Map<string, HunkRange[]>();
+  const sections = patch.split(/^diff --git .*$/m).slice(1);
+  for (const section of sections) {
+    const newPath = newPathFromSection(section);
+    if (!newPath) { continue; }
+    out.set(newPath, parseHunkRanges(section));
+  }
+  return out;
+}
+
+/** Extract the new-side path from a single file section's `+++ b/<path>` line. */
+function newPathFromSection(section: string): string | null {
+  for (const line of section.split('\n')) {
+    if (!line.startsWith('+++ ')) { continue; }
+    const target = line.slice(4).trim();
+    if (target === '/dev/null') { return null; }
+    return target.startsWith('b/') ? target.slice(2) : target;
+  }
+  return null;
+}
+
 /** The whole file: `<repo-relative-path> ` (trailing space, no Enter). */
 export function buildBuilderFileRef(relPath: string): string {
   return `${relPath} `;
@@ -121,5 +209,32 @@ export function buildSymbolLensDescriptors(relPath: string, symbols: SymbolNode[
     }
   }
 
+  return lenses;
+}
+
+/**
+ * Combine the symbol lenses (file-level + declarations, bare "Forward to
+ * Builder") with per-hunk lenses (labeled "Forward to Builder (lines N-M)" on
+ * each changed region). A hunk lens is skipped when its anchor line already has
+ * a symbol/file lens — declaration-line changes show the structural lens; body
+ * changes show the hunk lens — so no two lenses stack on one line.
+ */
+export function buildAllLensDescriptors(
+  relPath: string,
+  symbols: SymbolNode[],
+  hunks: HunkRange[],
+): LensDescriptor[] {
+  const lenses = buildSymbolLensDescriptors(relPath, symbols);
+  const usedLines = new Set(lenses.map(l => l.line));
+  for (const h of hunks) {
+    const line = Math.max(h.changeStart - 1, 0);
+    if (usedLines.has(line)) { continue; } // file-level (line 0) or a symbol lens already here
+    usedLines.add(line);
+    lenses.push({
+      line,
+      title: `Forward to Builder (lines ${h.changeStart}-${h.changeEnd})`,
+      refText: buildBuilderRangeRef(relPath, h.changeStart, h.changeEnd),
+    });
+  }
   return lenses;
 }

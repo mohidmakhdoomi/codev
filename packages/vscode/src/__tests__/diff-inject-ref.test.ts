@@ -9,6 +9,8 @@ import {
   buildBuilderFileRef,
   buildBuilderRangeRef,
   buildSymbolLensDescriptors,
+  buildAllLensDescriptors,
+  parseHunkRanges,
   type SymbolNode,
 } from '../diff-inject-ref.js';
 
@@ -103,6 +105,63 @@ describe('buildSymbolLensDescriptors', () => {
     expect(buildSymbolLensDescriptors('a/b.ts', [cls])).toEqual([
       { line: 0, title: 'Forward to Builder', refText: 'a/b.ts ' },
       { line: 2, title: 'Forward to Builder', refText: 'a/b.ts:L3-L51 ' },
+    ]);
+  });
+});
+
+describe('parseHunkRanges', () => {
+  it('reads the header span and the first/last added new-side lines', () => {
+    const patch = [
+      '@@ -1,4 +1,6 @@',
+      ' a',     // new line 1 (context)
+      '+b',     // new line 2 (added)
+      ' c',
+      '@@ -20,3 +22,10 @@ func()',
+      ' x',     // 22
+      ' y',     // 23
+      '+z1',    // 24 (first change)
+      '+z2',    // 25 (last change)
+      ' w',
+    ].join('\n');
+    expect(parseHunkRanges(patch)).toEqual([
+      { newStart: 1, newEnd: 6, changeStart: 2, changeEnd: 2 },
+      { newStart: 22, newEnd: 31, changeStart: 24, changeEnd: 25 },
+    ]);
+  });
+
+  it('does not let deleted (-) lines advance the new-side counter', () => {
+    const patch = ['@@ -10,4 +10,3 @@', ' ctx', '-gone', '+added', ' tail'].join('\n');
+    expect(parseHunkRanges(patch)).toEqual([
+      { newStart: 10, newEnd: 12, changeStart: 11, changeEnd: 11 },
+    ]);
+  });
+});
+
+describe('buildAllLensDescriptors (symbol + hunk lenses)', () => {
+  it('adds per-hunk lenses below the symbol/file lenses', () => {
+    const symbols = [sym(K.Function, 4, 30)]; // function lens at line 4
+    const hunks = [{ newStart: 8, newEnd: 12, changeStart: 10, changeEnd: 12 }];
+    expect(buildAllLensDescriptors('a/b.ts', symbols, hunks)).toEqual([
+      { line: 0, title: 'Forward to Builder', refText: 'a/b.ts ' },
+      { line: 4, title: 'Forward to Builder', refText: 'a/b.ts:L5-L31 ' },
+      { line: 9, title: 'Forward to Builder (lines 10-12)', refText: 'a/b.ts:L10-L12 ' },
+    ]);
+  });
+
+  it('skips a hunk lens that collides with a symbol lens line', () => {
+    const symbols = [sym(K.Function, 9, 30)]; // function lens at line 9
+    // hunk changeStart 10 → anchor line 9, same as the function lens → skipped
+    const hunks = [{ newStart: 10, newEnd: 12, changeStart: 10, changeEnd: 12 }];
+    expect(buildAllLensDescriptors('a/b.ts', symbols, hunks)).toEqual([
+      { line: 0, title: 'Forward to Builder', refText: 'a/b.ts ' },
+      { line: 9, title: 'Forward to Builder', refText: 'a/b.ts:L10-L31 ' },
+    ]);
+  });
+
+  it('skips a whole-file hunk (changeStart 1) that collides with the file-level lens', () => {
+    const hunks = [{ newStart: 1, newEnd: 17, changeStart: 1, changeEnd: 17 }];
+    expect(buildAllLensDescriptors('a/b.ts', [], hunks)).toEqual([
+      { line: 0, title: 'Forward to Builder', refText: 'a/b.ts ' },
     ]);
   });
 });

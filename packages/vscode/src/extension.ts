@@ -851,8 +851,9 @@ export async function activate(context: vscode.ExtensionContext) {
 			// to Builder" lenses (#789) render on the diff without a prior View
 			// Diff run, then offer to enable diffEditor.codeLens (off by default
 			// — VS Code hides CodeLens in diff editors).
-			registerFileInjectSession({
+			await registerFileInjectSession({
 				worktreePath: arg.worktreePath,
+				baseRef: arg.baseRef,
 				builderId: arg.builderId,
 				plan: arg.plan,
 			});

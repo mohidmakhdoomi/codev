@@ -27,7 +27,7 @@
  */
 
 import * as vscode from 'vscode';
-import { buildSymbolLensDescriptors, type SymbolNode } from './diff-inject-ref.js';
+import { buildAllLensDescriptors, type HunkRange, type SymbolNode } from './diff-inject-ref.js';
 
 /** Command id the lenses invoke. Registered in `extension.ts`, NOT declared in
  *  `contributes.commands`, so it never appears in the Command Palette. */
@@ -45,6 +45,8 @@ export interface DiffInjectSessionEntry {
   builderId: string;
   /** Repo-relative path injected into the prompt. */
   relPath: string;
+  /** New-side hunk ranges for the per-hunk lenses (empty = file/symbol lenses only). */
+  hunks: HunkRange[];
 }
 
 /** Map a `vscode.DocumentSymbol` tree to the pure `SymbolNode` shape. */
@@ -100,7 +102,7 @@ class DiffInjectCodeLensProvider implements vscode.CodeLensProvider {
 
     const nodes = symbols.map(toSymbolNode);
     const lastLine = Math.max(document.lineCount - 1, 0);
-    return buildSymbolLensDescriptors(entry.relPath, nodes).map(d => {
+    return buildAllLensDescriptors(entry.relPath, nodes, entry.hunks).map(d => {
       const line = Math.min(Math.max(d.line, 0), lastLine);
       const range = new vscode.Range(line, 0, line, 0);
       return new vscode.CodeLens(range, {
