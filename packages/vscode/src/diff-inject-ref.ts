@@ -66,73 +66,72 @@ const TOP_LEVEL_KINDS = new Set<number>([
 ]);
 
 /**
- * New-side line numbers of one diff hunk (1-based, inclusive). `newStart`/
- * `newEnd` are the header span (context included); `changeStart`/`changeEnd`
- * are the first/last lines *actually added* on the new side, so a lens anchors
- * on the real edit rather than the up-to-3 leading context lines git emits with
- * `--unified=3`. A pure-deletion hunk collapses both change fields to `newStart`.
+ * A contiguous run of added new-side lines (1-based, inclusive) — a single
+ * visible change block. git groups nearby edits into one `@@` hunk, so each
+ * hunk is split into one `ChangedRange` per run of `+` lines (broken by
+ * unchanged context lines), and each run gets its own lens. `-` lines don't
+ * break a run (they don't occupy a new-side line); a pure-deletion hunk yields
+ * no range (nothing to point a new-side lens at).
  */
-export interface HunkRange {
-  newStart: number;
-  newEnd: number;
-  changeStart: number;
-  changeEnd: number;
+export interface ChangedRange {
+  start: number;
+  end: number;
 }
 
 const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
 
 /**
- * Parse the `@@ -a,b +c,d @@` hunk headers from a single file's unified diff
- * into new-side ranges, walking each hunk body to find the first/last added
- * (`+`) lines.
+ * Parse a unified diff into one `ChangedRange` per contiguous run of added
+ * (`+`) new-side lines, tracking the new-side line number across each hunk.
+ * Context lines break a run; deletions don't (they have no new-side line).
  */
-export function parseHunkRanges(patch: string): HunkRange[] {
-  const lines = patch.split('\n');
-  const ranges: HunkRange[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const m = HUNK_HEADER.exec(lines[i]!);
-    if (!m) { continue; }
-    const newStart = Number(m[1]);
-    const len = m[2] === undefined ? 1 : Number(m[2]);
-    const newEnd = len <= 0 ? Math.max(newStart, 1) : newStart + len - 1;
-
-    let cur = newStart;
-    let firstChange = -1;
-    let lastChange = -1;
-    for (let j = i + 1; j < lines.length; j++) {
-      const l = lines[j]!;
-      if (HUNK_HEADER.test(l) || l.startsWith('diff --git')) { break; }
-      if (l.startsWith('\\')) { continue; }
-      if (l.startsWith('+')) {
-        if (firstChange === -1) { firstChange = cur; }
-        lastChange = cur;
-        cur++;
-      } else if (l.startsWith('-')) {
-        // old-side only — does not advance the new-side counter
-      } else {
-        cur++; // context line
-      }
+export function parseHunkRanges(patch: string): ChangedRange[] {
+  const ranges: ChangedRange[] = [];
+  let inHunk = false;
+  let cur = 0;        // next new-side line number
+  let runStart = -1;
+  let runEnd = -1;
+  const flush = (): void => {
+    if (runStart !== -1) {
+      ranges.push({ start: runStart, end: runEnd });
+      runStart = -1;
+      runEnd = -1;
     }
+  };
 
-    const changeStart = firstChange === -1 ? Math.max(newStart, 1) : firstChange;
-    const changeEnd = lastChange === -1 ? changeStart : lastChange;
-    ranges.push({
-      newStart: len <= 0 ? Math.max(newStart, 1) : newStart,
-      newEnd,
-      changeStart,
-      changeEnd,
-    });
+  for (const l of patch.split('\n')) {
+    const m = HUNK_HEADER.exec(l);
+    if (m) {
+      flush();
+      cur = Number(m[1]);
+      inHunk = true;
+      continue;
+    }
+    if (!inHunk) { continue; }
+    if (l.startsWith('diff --git')) { flush(); inHunk = false; continue; }
+    if (l.startsWith('\\')) { continue; } // "\ No newline at end of file"
+    if (l.startsWith('+')) {
+      if (runStart === -1) { runStart = cur; }
+      runEnd = cur;
+      cur++;
+    } else if (l.startsWith('-')) {
+      // old-side only — does not advance the new-side counter, does not break the run
+    } else {
+      flush(); // context line ends the current run
+      cur++;
+    }
   }
+  flush();
   return ranges;
 }
 
 /**
  * Split a multi-file unified diff (`git diff -M --unified=N <ref>`) into a map
- * from each file's **new** path to its hunk ranges. The new path is read from
- * the `+++ b/<path>` line; deleted files (`+++ /dev/null`) are omitted.
+ * from each file's **new** path to its changed ranges. The new path is read
+ * from the `+++ b/<path>` line; deleted files (`+++ /dev/null`) are omitted.
  */
-export function parseUnifiedDiff(patch: string): Map<string, HunkRange[]> {
-  const out = new Map<string, HunkRange[]>();
+export function parseUnifiedDiff(patch: string): Map<string, ChangedRange[]> {
+  const out = new Map<string, ChangedRange[]>();
   const sections = patch.split(/^diff --git .*$/m).slice(1);
   for (const section of sections) {
     const newPath = newPathFromSection(section);
@@ -158,9 +157,15 @@ export function buildBuilderFileRef(relPath: string): string {
   return `${relPath} `;
 }
 
-/** A line range: `<repo-relative-path>:L<start>-L<end> ` (trailing space, no Enter). */
+/** A line range: `<path>:L<start>-L<end> `, or `<path>:L<n> ` for a single line
+ *  (trailing space, no Enter). */
 export function buildBuilderRangeRef(relPath: string, start: number, end: number): string {
-  return `${relPath}:L${start}-L${end} `;
+  return start === end ? `${relPath}:L${start} ` : `${relPath}:L${start}-L${end} `;
+}
+
+/** Label suffix for a line range: `(line N)` for one line, `(lines N-M)` otherwise. */
+function rangeLabel(start: number, end: number): string {
+  return start === end ? `(line ${start})` : `(lines ${start}-${end})`;
 }
 
 /**
@@ -222,18 +227,18 @@ export function buildSymbolLensDescriptors(relPath: string, symbols: SymbolNode[
 export function buildAllLensDescriptors(
   relPath: string,
   symbols: SymbolNode[],
-  hunks: HunkRange[],
+  ranges: ChangedRange[],
 ): LensDescriptor[] {
   const lenses = buildSymbolLensDescriptors(relPath, symbols);
   const usedLines = new Set(lenses.map(l => l.line));
-  for (const h of hunks) {
-    const line = Math.max(h.changeStart - 1, 0);
+  for (const r of ranges) {
+    const line = Math.max(r.start - 1, 0);
     if (usedLines.has(line)) { continue; } // file-level (line 0) or a symbol lens already here
     usedLines.add(line);
     lenses.push({
       line,
-      title: `Forward to Builder (lines ${h.changeStart}-${h.changeEnd})`,
-      refText: buildBuilderRangeRef(relPath, h.changeStart, h.changeEnd),
+      title: `Forward to Builder ${rangeLabel(r.start, r.end)}`,
+      refText: buildBuilderRangeRef(relPath, r.start, r.end),
     });
   }
   return lenses;

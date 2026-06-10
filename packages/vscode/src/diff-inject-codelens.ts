@@ -27,7 +27,7 @@
  */
 
 import * as vscode from 'vscode';
-import { buildAllLensDescriptors, type HunkRange, type SymbolNode } from './diff-inject-ref.js';
+import { buildAllLensDescriptors, type ChangedRange, type SymbolNode } from './diff-inject-ref.js';
 
 /** Command id the lenses invoke. Registered in `extension.ts`, NOT declared in
  *  `contributes.commands`, so it never appears in the Command Palette. */
@@ -45,8 +45,8 @@ export interface DiffInjectSessionEntry {
   builderId: string;
   /** Repo-relative path injected into the prompt. */
   relPath: string;
-  /** New-side hunk ranges for the per-hunk lenses (empty = file/symbol lenses only). */
-  hunks: HunkRange[];
+  /** Changed new-side line runs for the per-change lenses (empty = file/symbol lenses only). */
+  hunks: ChangedRange[];
 }
 
 /** Map a `vscode.DocumentSymbol` tree to the pure `SymbolNode` shape. */

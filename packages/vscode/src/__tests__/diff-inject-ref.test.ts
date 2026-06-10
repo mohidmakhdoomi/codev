@@ -109,58 +109,72 @@ describe('buildSymbolLensDescriptors', () => {
   });
 });
 
-describe('parseHunkRanges', () => {
-  it('reads the header span and the first/last added new-side lines', () => {
+describe('parseHunkRanges (one range per contiguous changed run)', () => {
+  it('splits a hunk into separate runs broken by context lines', () => {
+    // Three `return;` → `return undefined;` edits separated by context, in one
+    // git hunk — each is its own run, so each gets its own range.
     const patch = [
-      '@@ -1,4 +1,6 @@',
-      ' a',     // new line 1 (context)
-      '+b',     // new line 2 (added)
-      ' c',
-      '@@ -20,3 +22,10 @@ func()',
-      ' x',     // 22
-      ' y',     // 23
-      '+z1',    // 24 (first change)
-      '+z2',    // 25 (last change)
-      ' w',
+      '@@ -10,12 +10,12 @@',
+      ' a',           // new 10 (ctx)
+      '-return;',     // old only
+      '+return undefined;', // new 11  ← run 1
+      ' b',           // new 12 (ctx) — breaks run
+      ' c',           // new 13
+      '-return;',
+      '+return undefined;', // new 14  ← run 2
+      ' d',           // new 15 (ctx) — breaks run
+      '-return;',
+      '+return undefined;', // new 16  ← run 3
     ].join('\n');
     expect(parseHunkRanges(patch)).toEqual([
-      { newStart: 1, newEnd: 6, changeStart: 2, changeEnd: 2 },
-      { newStart: 22, newEnd: 31, changeStart: 24, changeEnd: 25 },
+      { start: 11, end: 11 },
+      { start: 14, end: 14 },
+      { start: 16, end: 16 },
     ]);
   });
 
-  it('does not let deleted (-) lines advance the new-side counter', () => {
-    const patch = ['@@ -10,4 +10,3 @@', ' ctx', '-gone', '+added', ' tail'].join('\n');
+  it('groups consecutive added lines into one run; deletions do not break it', () => {
+    const patch = ['@@ -1,3 +1,4 @@', ' a', '+b', '-x', '+c', ' d'].join('\n');
+    // new 1=a(ctx), 2=b(+), 3=c(+) [x is old-only], 4=d(ctx) → one run 2-3
+    expect(parseHunkRanges(patch)).toEqual([{ start: 2, end: 3 }]);
+  });
+
+  it('yields no range for a pure-deletion hunk', () => {
+    expect(parseHunkRanges('@@ -5,3 +4,0 @@\n-gone1\n-gone2')).toEqual([]);
+  });
+
+  it('separates runs across multiple hunks', () => {
+    const patch = ['@@ -1,1 +1,2 @@', '+a', '@@ -20,1 +22,2 @@', '+z'].join('\n');
     expect(parseHunkRanges(patch)).toEqual([
-      { newStart: 10, newEnd: 12, changeStart: 11, changeEnd: 11 },
+      { start: 1, end: 1 },
+      { start: 22, end: 22 },
     ]);
   });
 });
 
-describe('buildAllLensDescriptors (symbol + hunk lenses)', () => {
-  it('adds per-hunk lenses below the symbol/file lenses', () => {
+describe('buildAllLensDescriptors (symbol + change lenses)', () => {
+  it('adds one lens per changed run below the symbol/file lenses', () => {
     const symbols = [sym(K.Function, 4, 30)]; // function lens at line 4
-    const hunks = [{ newStart: 8, newEnd: 12, changeStart: 10, changeEnd: 12 }];
-    expect(buildAllLensDescriptors('a/b.ts', symbols, hunks)).toEqual([
+    const ranges = [{ start: 10, end: 12 }, { start: 18, end: 18 }];
+    expect(buildAllLensDescriptors('a/b.ts', symbols, ranges)).toEqual([
       { line: 0, title: 'Forward to Builder', refText: 'a/b.ts ' },
       { line: 4, title: 'Forward to Builder', refText: 'a/b.ts:L5-L31 ' },
       { line: 9, title: 'Forward to Builder (lines 10-12)', refText: 'a/b.ts:L10-L12 ' },
+      { line: 17, title: 'Forward to Builder (line 18)', refText: 'a/b.ts:L18 ' },
     ]);
   });
 
-  it('skips a hunk lens that collides with a symbol lens line', () => {
+  it('skips a change lens that collides with a symbol lens line', () => {
     const symbols = [sym(K.Function, 9, 30)]; // function lens at line 9
-    // hunk changeStart 10 → anchor line 9, same as the function lens → skipped
-    const hunks = [{ newStart: 10, newEnd: 12, changeStart: 10, changeEnd: 12 }];
-    expect(buildAllLensDescriptors('a/b.ts', symbols, hunks)).toEqual([
+    const ranges = [{ start: 10, end: 12 }]; // anchor line 9 → collides → skipped
+    expect(buildAllLensDescriptors('a/b.ts', symbols, ranges)).toEqual([
       { line: 0, title: 'Forward to Builder', refText: 'a/b.ts ' },
       { line: 9, title: 'Forward to Builder', refText: 'a/b.ts:L10-L31 ' },
     ]);
   });
 
-  it('skips a whole-file hunk (changeStart 1) that collides with the file-level lens', () => {
-    const hunks = [{ newStart: 1, newEnd: 17, changeStart: 1, changeEnd: 17 }];
-    expect(buildAllLensDescriptors('a/b.ts', [], hunks)).toEqual([
+  it('skips a change run at line 1 that collides with the file-level lens', () => {
+    expect(buildAllLensDescriptors('a/b.ts', [], [{ start: 1, end: 17 }])).toEqual([
       { line: 0, title: 'Forward to Builder', refText: 'a/b.ts ' },
     ]);
   });
