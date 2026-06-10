@@ -381,3 +381,45 @@ timeout) = clean 3-way. porch advanced to phase_3.
 - Fixed one test-stub bug (mapped REVIEW comment line i→i-1 per #857 annotated-line convention).
 
 Next: commit Phase 3, porch done → Phase 3 consult.
+
+## 2026-06-10 — Phase 3 consult: 4 Codex iterations → escalated judgment call
+
+Phase 3 consult iterations (Claude APPROVE since iter-2; Gemini COMMENT throughout; all porch
+checks green w/ flakes quarantined):
+- iter-1 Codex RC: unguarded fileAdapter.watch() (bug) + missing error/teardown tests + marker
+  author+text via overlay. Fixed (106dce84). Rebuttal 945-phase_3-iter1-rebuttals.md.
+- iter-2 Codex RC: async race (stale read/list overwrite) + prior-markers test. Fixed via
+  request-versioning seqRef (76dfa9a7). Rebuttal iter2.
+- iter-3 Codex RC: out-of-range warn-once (was warning every reload). Fixed via warnedRef
+  dedup (71a2cf7b). Rebuttal iter3.
+- iter-4 Codex RC (HIGH): spec D6 says a no-watcher host forces refresh by re-rendering, but the
+  effect's stable deps mean a same-props re-render doesn't re-fetch. Real gap, BUT the clean fix
+  needs an optional `revision`/`refreshKey` prop on **ArtifactCanvasProps (LOCKED interface)** +
+  a D6 wording fix. Won't change the locked contract unilaterally.
+
+**ESCALATED to architect** (judgment call): (a) approve adding optional `revision?` to
+ArtifactCanvasProps + D6 fix → I implement+test+reconsult; (b) treat Phase 3 advisory-clean
+(Claude APPROVE; implement consults are advisory) + advance, defer no-watcher-refresh to a
+follow-up; (c) other. HOLDING — not looping a 5th time, not touching the locked interface w/o OK.
+28/28 tests green; Phase 3 code committed through 71a2cf7b.
+
+---
+
+## Phase 3 — iter-5 (resolved) + iter-6 re-consult [2026-06-10]
+
+**iter-5 verdicts:** Codex REQUEST_CHANGES (MEDIUM); Claude APPROVE (4th); Gemini COMMENT.
+Two Codex items. Per the architect's "look at it on its merits" directive I escalated rather than
+auto-loop a 6th time; architect authorized both resolutions:
+
+1. **Stale activeLine (real bug, fixed at root).** activeLine survived watch/refreshKey reloads
+   unvalidated → overlay could render `+` on, and emit onAddComment for, a line the reloaded doc no
+   longer contained. Fix: `useEffect(() => setActiveLine(null), [content])` (covers watch + refreshKey).
+   Regression test: reload removes hovered block → no `+`, onAddComment not called. 30/30 green.
+2. **Out-of-range marker channel (plan-wording tightening, no code change).** Impl is correct
+   (console.warn once/marker); plan's `onError?/console.warn` was ambiguous. Tightened plan
+   deferred-#4: out-of-range = data-hygiene → console.warn; onError? reserved for genuine adapter
+   failures. Architect-authorized, same basis as iter-4 D6 tightening.
+
+Commit `7261fe16`. Rebuttal written to `945-phase_3-iter5-rebuttals.md`; running `porch done` to
+trigger iter-6 re-consult. Architect standard for iter-6: clean → Phase 3 advances; anything new →
+escalate marginal-vs-substantive distinction explicitly.
