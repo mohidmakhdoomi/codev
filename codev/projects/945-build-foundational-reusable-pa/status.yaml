@@ -5,17 +5,17 @@ phase: implement
 plan_phases:
   - id: phase_1
     title: Package skeleton, dual-format build, locked interfaces, theme tokens
-    status: in_progress
+    status: complete
   - id: phase_2
     title: 'Markdown renderer: data-line mapping + DOMPurify sanitization'
-    status: pending
+    status: in_progress
   - id: phase_3
     title: Comment overlay (intent-only) + v1 marker rendering + adapter wire-up
     status: pending
   - id: phase_4
     title: Smoke-test host, README, cross-cutting tests
     status: pending
-current_plan_phase: phase_1
+current_plan_phase: phase_2
 gates:
   spec-approval:
     status: approved
@@ -29,8 +29,8 @@ gates:
     status: pending
   verify-approval:
     status: pending
-iteration: 2
-build_complete: true
+iteration: 1
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase_1
@@ -49,4 +49,4 @@ history:
         file: >-
           /Users/amrmohamed/repos/cluesmith/codev/.builders/spir-945/codev/projects/945-build-foundational-reusable-pa/945-phase_1-iter1-claude.txt
 started_at: '2026-05-30T23:09:36.579Z'
-updated_at: '2026-06-10T03:55:04.187Z'
+updated_at: '2026-06-10T03:59:27.065Z'
