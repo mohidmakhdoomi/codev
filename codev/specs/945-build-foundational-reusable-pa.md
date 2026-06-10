@@ -197,11 +197,11 @@ scale. Revisit only if an independent consumer needs the renderer without React.
   change events (e.g. a noisy file watcher), debouncing/coalescing is the host's
   responsibility before invoking the callback.
 - **Error semantics (iter-1 all three):** adapter rejections are the **host's** concern in
-  v1. The package guards the adapter calls *it* makes — `FileAdapter.read` / `.watch`,
-  `MarkerAdapter.list`, `ThemeAdapter.resolve` / `.onChange`: a rejection is caught, logged
-  via an injectable logger (defaulting to `console`), and surfaces to an **optional**
-  host-provided `onError(err: unknown)` callback on the component; the package never throws
-  out of an event handler and never silently corrupts state (a failed `list` leaves the prior
+  v1. The package guards the adapter calls *it* makes — `FileAdapter.read` / `.watch` and
+  `MarkerAdapter.list`: a rejection is caught, logged to the `console`, and surfaces to an
+  **optional** host-provided `onError(err: unknown)` callback on the component; the package
+  never throws out of an event handler and never silently corrupts state (a failed `list`
+  leaves the prior
   rendered markers unchanged). `MarkerAdapter.add` is invoked by the **host** (D6), so its
   rejection is handled host-side. There is no built-in retry in v1 — retry/toast UX is the
   host's call.
@@ -320,7 +320,7 @@ interface MarkerAdapter {
 
 /** JS-side theme access for canvas-drawing consumers (D4, Model A); NOT used by v1 render. */
 interface ThemeAdapter {
-  resolve(token: string): string;             // current value of a --codev-canvas-* token (e.g. "foreground")
+  resolve(token: string): string;             // full custom-property name, e.g. resolve("--codev-canvas-foreground")
   onChange(handler: () => void): Disposable;  // sync register; fires on host theme switch
 }
 

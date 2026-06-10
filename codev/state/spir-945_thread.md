@@ -235,3 +235,19 @@ build check `npm run build` (full monorepo incl. dashboard) ✓; porch tests che
 the dts step.
 
 Next: commit Phase 1, `porch done 945` → implement-phase 3-way consult.
+
+## 2026-06-10 — Phase 1 committed; implement consult iter-1 → spec doc-sync
+
+Phase 1 committed (6f9d682f, amended to drop accidentally-staged dist/ + add
+`packages/artifact-canvas/dist/` to root .gitignore). porch done: ✓ build (6.6s) ✓ tests (20.2s).
+
+Implement consult iter-1 (type impl, phase_1): **Claude APPROVE (HIGH)** (verified all interfaces
+match spec exactly, build/tests/wiring all correct); **Codex REQUEST_CHANGES (HIGH)** — 2 spec
+doc-sync misses (code was correct, spec prose stale): (1) spec D2 still said "injectable logger"
+(plan deferred-#1 said drop it); (2) spec ThemeAdapter.resolve still showed `("foreground")` (plan
+deferred-#2 = full `--codev-canvas-*` name). Fixed both in the spec (also dropped ThemeAdapter from
+D2's guarded-calls list for D4-Model-A consistency). **Gemini: SKIPPED — timed out** (agy 1.0.7
+now *runs*, no longer silent-drops, but times out producing the review; reported precise reason to
+architect per their request).
+
+Next: commit spec doc-sync, re-run implement consult iter-2 (phase_1).
