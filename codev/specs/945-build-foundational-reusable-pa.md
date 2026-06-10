@@ -69,7 +69,7 @@ only path that scales as the review-surface family (#858–#863) grows.
   `<!-- REVIEW(@<author>): <text> -->` on the **following line**. The on-disk anchor is
   **positional** (the marker's location in the file), not an explicit line number. Parsing
   regex: `/<!--\s*REVIEW\s*\(@([^)]+)\)\s*:\s*([\s\S]*?)\s*-->/g`. Author is the current
-  GitHub login, falling back to `architect`. `review-decorations.ts` highlights these lines.
+  GitHub login, falling back to `architect`. `review-decorations.ts` (at `packages/vscode/src/`, not under `comments/`) highlights these lines.
   This flow is editor-only and must remain untouched.
 - **Dashboard (`packages/dashboard`):** React 19 + Vite 6 + Vitest, served by Tower. No
   artifact-rendering or review surface exists.

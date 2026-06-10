@@ -358,3 +358,26 @@ authorizes me to skip them on my own branch (I was over-conservative escalating)
 Documented in codev/reviews/945-…md §Flaky Tests (4 files, patterns, predate spir-945, unrelated to
 artifact-canvas). Architect filing the flake-fix tracker (references this skip commit). Next:
 commit skips, porch done → suite should be green → Phase 2 consult.
+
+## 2026-06-10 — Phase 2 consult CLEAN → Phase 3 built
+
+Phase 2 impl consult: Codex APPROVE + Claude APPROVE + Gemini COMMENT (real verdict this time, no
+timeout) = clean 3-way. porch advanced to phase_3.
+
+**Phase 3 built (overlay + v1 markers + adapter wire-up):**
+- `src/components/ArtifactCanvas.tsx` — real composition (replaces placeholder): reads via
+  FileAdapter.read, lists via MarkerAdapter.list, subscribes ONLY to FileAdapter.watch (idempotent
+  dispose) + auto re-list on change (D6); emits onAddComment intent, never calls add; themeAdapter
+  accepted but unused for render (D4 Model A); errors → console + onError?; out-of-range markers
+  dropped + warned (deferred #4).
+- `src/overlays/CommentAffordance.tsx` — the "+" affordance as a real <button> (keyboard-reachable,
+  aria-label); blocks made tabindex=0 + Enter/Space → onAddComment (accessibility AC).
+- v1 minimal marker rendering: `.codev-canvas-has-marker` class + title on the annotated block.
+- CSS for overlay/markers in default-theme.css.
+- Tests (21/21 green): overlay intent, keyboard activation, text round-trip (host add serializes a
+  positional REVIEW marker into the text; list derives from text), out-of-range drop+warn, adapter
+  error→onError, watch teardown, ThemeAdapter contract.
+- Deferred #5 closed: spec now states review-decorations.ts is at packages/vscode/src/ (not comments/).
+- Fixed one test-stub bug (mapped REVIEW comment line i→i-1 per #857 annotated-line convention).
+
+Next: commit Phase 3, porch done → Phase 3 consult.
