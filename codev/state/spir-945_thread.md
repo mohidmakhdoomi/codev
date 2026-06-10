@@ -423,3 +423,27 @@ auto-loop a 6th time; architect authorized both resolutions:
 Commit `7261fe16`. Rebuttal written to `945-phase_3-iter5-rebuttals.md`; running `porch done` to
 trigger iter-6 re-consult. Architect standard for iter-6: clean → Phase 3 advances; anything new →
 escalate marginal-vs-substantive distinction explicitly.
+
+---
+
+## Phase 4 — smoke host + README + e2e [2026-06-10]
+
+Phase 3 closed clean at iter-6 (Codex APPROVE / Claude APPROVE / Gemini COMMENT-skip); porch
+committed + advanced to phase_4. Implemented phase_4 deliverables:
+
+- **`src/__tests__/fixtures/`** — `stub-adapters.ts` (factory `createStubHost` + named
+  `stubFileAdapter`/`stubMarkerAdapter`/`stubThemeAdapter` over a shared text store; text is the
+  source of truth, #857 add-below-block convention) + `sample-artifact.ts` (realistic spec with a
+  seeded REVIEW marker).
+- **`src/__tests__/end-to-end.test.tsx`** — the PRIMARY contract proof: render → existing marker
+  shows → hover/click `+` AND focus/Enter → onAddComment(0-based) → host add serializes INTO text →
+  watch replays → list re-derives → new marker renders. Asserts the marker lands in the text store
+  (round-trip THROUGH text, not a UI-only refresh).
+- **`examples/`** — Vite dev page (index.html + main.tsx + vite.config.ts) reusing the same stubs;
+  `pnpm dev:example`. Verified it bundles headlessly (`vite build`, 105 modules, exit 0).
+- **`README.md`** — 3 adapter contracts, ArtifactCanvasProps table, 8 `--codev-canvas-*` tokens +
+  VSCode override example, host walkthrough, "why tsup" rationale, scope/non-goals.
+
+Verification: build 0, **33/33 tests** (5 files; +3 e2e), check-types 0, dist clean (index.* +
+theme only — no test/example/fixture leak; tsup entry = src/index.ts; files=["dist"]). Next:
+commit + porch done → phase_4 consult.
