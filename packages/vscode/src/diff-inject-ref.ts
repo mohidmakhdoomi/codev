@@ -189,10 +189,12 @@ export function buildSymbolLensDescriptors(relPath: string, symbols: SymbolNode[
   const addLens = (s: SymbolNode): void => {
     const line = Math.max(s.startLine, 0);
     if (line === 0) { return; } // collides with the file-level lens
+    const start = s.startLine + 1;
+    const end = s.endLine + 1;
     lenses.push({
       line,
-      title: 'Forward to Builder',
-      refText: buildBuilderRangeRef(relPath, s.startLine + 1, s.endLine + 1),
+      title: `Forward to Builder ${rangeLabel(start, end)}`,
+      refText: buildBuilderRangeRef(relPath, start, end),
     });
   };
 
