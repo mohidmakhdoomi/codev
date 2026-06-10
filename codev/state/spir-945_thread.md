@@ -265,3 +265,48 @@ explores the worktree but no structured verdict before 5m timeout). Net: zero RE
 Phase 1 verification clean.
 
 Phase 1 DONE. Next: advance porch to Phase 2 (renderer + data-line + DOMPurify sanitization).
+
+## 2026-06-10 — porch iteration tangle + gemini-file normalization (architect-approved)
+
+I went slightly off porch's rails (ran a manual iter-2 consult before porch reached iteration 2),
+which tangled porch's iteration bookkeeping. Walked it back through porch's proper cycle: wrote
+the iter-1 rebuttal (945-phase_1-iter1-rebuttals.md, documenting both Codex items already fixed),
+porch done → porch advanced to iteration 2.
+
+**porch-parser issue found:** porch flagged gemini iter-2 as REQUEST_CHANGES, but that file had NO
+`VERDICT:` line — it was the raw agy timeout/exploration narration. porch DEFAULTS a verdict-less
+file to REQUEST_CHANGES, blocking phase_1 despite the architect-cleared Codex+Claude 2-way.
+
+**NORMALIZED (architect-approved, 2026-06-10T03:58):** overwrote
+`codev/projects/945-build-foundational-reusable-pa/945-phase_1-iter2-gemini.txt` from the raw
+verdict-less agy log to the wrapper's standard timeout-skip format (`VERDICT: COMMENT`, "agy timed
+out producing the review"). This is the TRUE outcome (gemini produced no verdict — genuine
+timeout), NOT a fabricated review; matches the iter-1 auto-format. Boundary respected: (1) genuine
+no-verdict state, (2) recorded here, (3) not overriding any real model verdict. Architect confirmed
+the porch "verdict-less → REQUEST_CHANGES" default is a bug; they're filing two follow-ups
+(consult agy-timeout env-override; porch verdict-less→skip handling).
+
+iter-2 real result: **Codex COMMENT + Claude APPROVE = clean 2-way; gemini timeout-skip.** Phase 1
+verification clean. Next: porch advance → Phase 2.
+
+## 2026-06-10 — Phase 2 built (renderer + data-line + DOMPurify)
+
+porch advanced to phase_2 (renderer). Built:
+- `src/renderer/renderer.ts` — markdown-it (`html:false`, linkify) + `codev_data_line` core rule
+  stamping 0-based `token.map[0]` on block tokens (heading/para/list/li/blockquote/fence/code/
+  table) + DOMPurify sanitize pass. `renderMarkdown(source)` returns sanitized HTML w/ data-line.
+- `src/renderer/MarkdownView.tsx` — React component (useMemo + dangerouslySetInnerHTML over the
+  already-sanitized HTML).
+- Exported `renderMarkdown` + `MarkdownView` from index.ts.
+- Tests (13/13 green): data-line attribution across block types incl. table; sanitization.
+
+**PLAN DEVIATION (documented in sanitization.test.ts):** plan deferred-#3 said prove DOMPurify via
+a markdown `javascript:` link "surviving html:false". That premise is wrong — markdown-it's default
+`validateLink` neutralizes javascript:/data: links BEFORE DOMPurify, so that vector wouldn't isolate
+DOMPurify (passes even if sanitize were removed). Correct guard: a `vi.spyOn(DOMPurify,'sanitize')`
+test asserting the sanitize step is actually invoked (fails if removed). Kept all 3 defense layers
+(html:false + validateLink + DOMPurify). Will flag this deviation to the Phase 2 consult.
+Also fixed one self-authored flawed test (string-matched "onerror=" in escaped text → false
+positive; rewrote as a DOM assertion for no live [onerror]/[onclick]/<img> nodes).
+
+Next: commit Phase 2, porch done → Phase 2 implement consult (Codex+Claude 2-way; retry gemini).
