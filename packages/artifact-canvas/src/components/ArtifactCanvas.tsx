@@ -110,14 +110,6 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
 
   const html = React.useMemo(() => renderMarkdown(content), [content]);
 
-  // Reconcile the hover/focus overlay state on every content change (watch reload OR refreshKey
-  // bump): a stale `activeLine` from the prior document could otherwise render `+` on — and emit
-  // `onAddComment` for — a line that the reloaded document no longer contains (iter-5 Codex). The
-  // user re-hovers/re-focuses to re-anchor the overlay against the fresh content.
-  React.useEffect(() => {
-    setActiveLine(null);
-  }, [content]);
-
   // Decorate the rendered (innerHTML) DOM after each render: make blocks keyboard-focusable and
   // mark lines that carry a ReviewMarker (v1 minimal marker rendering — deferred #4; #863 adds
   // polished inline markers + the canvas minimap).
@@ -142,6 +134,14 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
         el.removeAttribute('title');
       }
     });
+    // Reconcile the overlay anchor against the *reloaded* DOM (iter-5 Codex): if a watch/refreshKey
+    // reload removed or shortened the previously active block, clear `activeLine` so the overlay
+    // can't render `+` for — or emit `onAddComment` for — a line the new content no longer has.
+    // VALIDATE rather than blindly reset: a still-present active line survives, so this never races
+    // a fresh hover (which changes only `activeLine`, not `html`, so this effect doesn't run then).
+    setActiveLine((cur) =>
+      cur !== null && !root.querySelector(`[data-line="${cur}"]`) ? null : cur,
+    );
   }, [html, markers]);
 
   const lineFromEvent = (target: EventTarget | null): number | null => {

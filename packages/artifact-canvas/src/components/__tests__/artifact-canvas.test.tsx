@@ -265,6 +265,27 @@ describe('ArtifactCanvas (Phase 3)', () => {
     expect(screen.queryByRole('button', { name: /add comment on line/i })).toBeNull();
     expect(onAddComment).not.toHaveBeenCalled();
   });
+
+  it('KEEPS the active overlay across a reload that still contains the hovered block (no over-clear; guards the CI clobber)', async () => {
+    // Root cause of the CI-only e2e failure: the iter-5 reset was UNCONDITIONAL on content change,
+    // so it could wipe a valid `activeLine` (e.g. one set by a hover that raced the initial async
+    // load). The fix VALIDATES instead: a still-present line survives a reload. This test fails
+    // against the blind-reset implementation and passes against the validating one.
+    const host = makeHost('# Title\n\nA paragraph.'); // paragraph at data-line 2
+    render(<ArtifactCanvas uri="x" {...host} onAddComment={vi.fn()} />);
+    const p = await waitFor(() => {
+      const el = document.querySelector('p[data-line]');
+      if (!el) throw new Error('no paragraph yet');
+      return el as HTMLElement;
+    });
+    fireEvent.mouseOver(p);
+    expect(await screen.findByRole('button', { name: /add comment on line/i })).not.toBeNull();
+    // A reload to DIFFERENT content where the hovered block (line 2) still exists.
+    await act(async () => { host.watchers.forEach((cb) => cb('# Title\n\nA paragraph.\n\nMore text.')); });
+    await waitFor(() => expect(document.querySelectorAll('p[data-line]').length).toBe(2));
+    // The overlay must NOT have been clobbered — the hovered line is still present.
+    expect(screen.queryByRole('button', { name: /add comment on line/i })).not.toBeNull();
+  });
 });
 
 describe('ThemeAdapter contract (D4 Model A, scenario 4 — not on the v1 render path)', () => {

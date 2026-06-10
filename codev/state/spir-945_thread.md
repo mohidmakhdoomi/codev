@@ -456,3 +456,22 @@ decision (not independently npm-published; consumed via `workspace:*`, bundled b
 release/protocol.md:56). Fixed: Install section now shows `"@cluesmith/codev-artifact-canvas":
 "workspace:*"` as a host dependency; removed all npm-install guidance. Docs-only; tests/types
 unaffected. Rebuttal written; porch done → iter-2 re-consult.
+
+## CI fix — Phase 4 e2e MOUSE test (CI-only failure) [2026-06-10]
+
+PR #1027 held at pr gate; architect flagged CI failure: e2e MOUSE test "Unable to find button",
+passes locally. Diagnosed (architect hypothesis #3 confirmed): the iter-5 stale-activeLine reset
+`useEffect(() => setActiveLine(null), [content])` was UNCONDITIONAL. Initial load sets content via
+an async path outside the test's act(), so that effect can fire AFTER the test's mouseOver set
+activeLine → clobbers it → overlay never mounts → findByRole times out. Fast local machine flushes
+the effect before the hover; CI's slower scheduling lands it after. Not reproducible locally even
+10x full-suite (timing-sensitive). Ruled out CSS :hover (button is React-state driven) and
+missing-waitFor (findByRole already waits — the clobber was the issue).
+
+Fix: replaced the blind reset with VALIDATION folded into the decoration effect (keyed on [html]):
+clear activeLine only if `!root.querySelector('[data-line="${cur}"]')` — a still-present line
+survives, so a fresh hover is never clobbered; a genuinely-removed line (Codex iter-5 case) is still
+cleared. Added a deterministic guard test ("KEEPS the active overlay across a reload that still
+contains the hovered block") — EMPIRICALLY PROVEN to fail against the old blind-reset (RC=1) and
+pass against the fix. types 0, build 0, 34/34 tests ×10 runs green. Pushing to re-trigger CI; pr
+gate stays held for the human.
