@@ -27,6 +27,10 @@ export async function ensureDiffEditorCodeLens(
     DISMISS,
   );
   if (choice === ENABLE) {
+    // `diffEditor.codeLens` is a personal editor-behavior preference, so write
+    // it at the user (Global) level. Deliberately NOT Workspace — that would
+    // edit the repo's shared, committed `.vscode/settings.json` and force the
+    // choice on every collaborator.
     await cfg.update('codeLens', true, vscode.ConfigurationTarget.Global);
   } else if (choice === DISMISS) {
     await context.globalState.update(DISMISS_KEY, true);
