@@ -51,6 +51,10 @@
         "title": "Codev: Show Connection State"
       },
       {
+        "command": "codev.forwardSelectionToBuilder",
+        "title": "Forward Selection to Builder"
+      },
+      {
         "command": "codev.openArchitectTerminal",
         "title": "Codev: Open Architect Terminal"
       },
@@ -296,6 +300,10 @@
     "menus": {
       "commandPalette": [
         {
+          "command": "codev.forwardSelectionToBuilder",
+          "when": "false"
+        },
+        {
           "command": "codev.openBuilderById",
           "when": "false"
         },
@@ -386,6 +394,13 @@
         {
           "command": "codev.devServer.hideSidebar",
           "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "codev.forwardSelectionToBuilder",
+          "when": "codev.activeEditorIsBuilderFile && editorHasSelection",
+          "group": "codev@1"
         }
       ],
       "view/item/context": [

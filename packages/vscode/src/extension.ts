@@ -8,8 +8,9 @@ import { approveGate } from './commands/approve.js';
 import { cleanupBuilder } from './commands/cleanup.js';
 import { openWorktreeWindow } from './commands/open-worktree-window.js';
 import { viewDiff, activateDiffView, diffUrisForChange, registerFileInjectSession } from './commands/view-diff.js';
-import { activateDiffInjectCodeLens } from './diff-inject-codelens.js';
+import { activateDiffInjectCodeLens, getDiffInjectEntry } from './diff-inject-codelens.js';
 import { ensureDiffEditorCodeLens } from './ensure-diff-codelens.js';
+import { buildBuilderRangeRef } from './diff-inject-ref.js';
 import { runWorktreeDev } from './commands/run-worktree-dev.js';
 import { stopWorktreeDev } from './commands/stop-worktree-dev.js';
 import { runWorkspaceDev, stopWorkspaceDev } from './commands/run-workspace-dev.js';
@@ -821,15 +822,37 @@ export async function activate(context: vscode.ExtensionContext) {
 				vscode.window.showWarningMessage('Codev: Builder terminal not available');
 			}
 		}),
+		// Right-click "Forward Selection to Builder" (#789): forward an arbitrary
+		// selected range when symbol/file lenses aren't granular enough. Unlike
+		// the CodeLens, a context-menu action works inside the multi-file View
+		// Diff editor too. Scoped via the `codev.activeEditorIsBuilderFile`
+		// context key + the built-in `editorHasSelection` in its `when` clause.
+		reg('codev.forwardSelectionToBuilder', async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (!editor) { return; }
+			const entry = getDiffInjectEntry(editor.document.uri.fsPath);
+			if (!entry) { return; }
+			const sel = editor.selection;
+			if (sel.isEmpty) { return; }
+			const start = sel.start.line + 1;
+			// A selection ending at column 0 of a line doesn't include that line.
+			const end = sel.end.character === 0 && sel.end.line > sel.start.line
+				? sel.end.line
+				: sel.end.line + 1;
+			const text = buildBuilderRangeRef(entry.relPath, start, end);
+			const resolvedId = await terminalManager?.openBuilderByRoleOrId(entry.builderId, true);
+			if (resolvedId && !terminalManager?.injectBuilderText(resolvedId, text)) {
+				vscode.window.showWarningMessage('Codev: Builder terminal not available');
+			}
+		}),
 		reg('codev.openBuilderFileDiff', async (arg: unknown) => {
 			if (!(arg instanceof BuilderFileTreeItem)) { return; }
-			// Populate the inject-codelens registry for this file so the
-			// "Forward to Builder" lenses (#789) render on the diff without a
-			// prior View Diff run, then offer to enable diffEditor.codeLens (off
-			// by default — VS Code hides CodeLens in diff editors).
-			await registerFileInjectSession({
+			// Register the inject-codelens entry for this file so the "Forward
+			// to Builder" lenses (#789) render on the diff without a prior View
+			// Diff run, then offer to enable diffEditor.codeLens (off by default
+			// — VS Code hides CodeLens in diff editors).
+			registerFileInjectSession({
 				worktreePath: arg.worktreePath,
-				baseRef: arg.baseRef,
 				builderId: arg.builderId,
 				plan: arg.plan,
 			});
