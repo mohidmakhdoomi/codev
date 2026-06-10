@@ -57,6 +57,12 @@ Added one entry to `codev/resources/lessons-learned.md` (UI/UX): CodeLens does *
 - **Surface limits**: symbol/hunk CodeLenses live in per-file diff + normal tabs (CodeLens is suppressed in the multi-file `vscode.changes` editor); the selection context-menu is the path that works in the multi-file editor. This is a VSCode constraint, not a bug.
 - **No 3-way consult iteration** (PIR single-pass): if the consult flags anything, it's addressed/rebutted here, not re-reviewed.
 
+### Consultation outcome (PR-creation, single advisory pass)
+
+- **Claude: APPROVE** (HIGH) — no issues.
+- **Codex: REQUEST_CHANGES** (HIGH) — **real defect, fixed.** The `codev.activeEditorIsBuilderFile` context key (gating the right-click "Forward Selection to Builder" + `Cmd/Ctrl+K B`) was synced only on `onDidChangeActiveTextEditor`. Because `openBuilderFileDiff` opens the diff (making it active) *before* registering its file, the key was left `false` on the just-opened diff until focus changed, so the selection entry point was dead. **Fix** (`diff-inject-codelens.ts`): re-sync the key on every registry change by subscribing to the provider's `onDidChangeCodeLenses` (fired by `setSession`/`upsert`). **Regression test**: `src/__tests__/diff-inject-context-key.test.ts` asserts the key flips `true` after the active file is registered (and back to `false` when a new session drops it) — it fails without the re-sync. Since PIR is single-pass, this fix was **not** independently re-reviewed; flagging for human verification at the `pr` gate.
+- **Gemini: skipped** — the agy/Gemini path returned "the current workspace is empty" on both attempts (it didn't ingest the diff). Best-effort per the consult design; no verdict.
+
 ## How to Test Locally
 
 This is a VSCode **extension** change, so `afx dev` won't exercise it — load the extension:

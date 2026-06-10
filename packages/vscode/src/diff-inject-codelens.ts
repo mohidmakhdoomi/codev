@@ -133,6 +133,13 @@ export function activateDiffInjectCodeLens(context: vscode.ExtensionContext): vo
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider({ scheme: 'file' }, provider),
     vscode.window.onDidChangeActiveTextEditor(syncContextKey),
+    // The registry often changes AFTER the diff editor is already active —
+    // `openBuilderFileDiff` opens the diff, then registers its file — so the
+    // active-editor event fires while the registry is still empty. Re-sync the
+    // key whenever the registry changes (the provider fires this on
+    // setSession/upsert), or the selection menu + Cmd/Ctrl+K B would stay
+    // disabled on the just-opened diff until focus changes (#789).
+    provider.onDidChangeCodeLenses(() => syncContextKey(vscode.window.activeTextEditor)),
     provider,
   );
 }
