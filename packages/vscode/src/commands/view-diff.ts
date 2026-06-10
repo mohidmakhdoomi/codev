@@ -362,36 +362,45 @@ export async function viewDiff(
   });
 
   // CodeLens "Forward to Builder" actions (#789): register the right-side fs
-  // paths + owning builder, plus per-hunk ranges so changed regions get their
-  // own lens alongside the symbol/file lenses (symbols resolve lazily in the
-  // provider). One extra git call here; a patch failure is non-fatal — the
-  // symbol/file lenses still render.
-  let hunksByPath = new Map<string, ReturnType<typeof parseHunkRanges>>();
-  try {
-    const { stdout: patch } = await execFileAsync(
-      'git',
-      ['-C', wt, 'diff', '-M', '--unified=3', baseRef],
-      { maxBuffer: 64 * 1024 * 1024 },
-    );
-    hunksByPath = parseUnifiedDiff(patch);
-  } catch {
-    // keep empty — symbol/file lenses still render
-  }
-  const entries: DiffInjectSessionEntry[] = plans
-    .filter(plan => plan.right.kind === 'file')
-    .map(plan => ({
+  // paths + owning builder now (no hunks yet) so symbol/file lenses and the
+  // selection menu work as soon as a file is opened — without blocking the
+  // editor on a git call.
+  const filePlans = plans.filter(plan => plan.right.kind === 'file');
+  setDiffInjectSession(
+    filePlans.map(plan => ({
       fsPath: path.join(wt, plan.resourcePath),
       builderId: builder.id,
       relPath: plan.resourcePath,
-      hunks: hunksByPath.get(plan.resourcePath) ?? [],
-    }));
-  setDiffInjectSession(entries);
+      hunks: [],
+    })),
+  );
 
   await vscode.commands.executeCommand(
     'vscode.changes',
     `Reviewing #${builder.issueId ?? builder.id} (${defaultBranch} ↔ HEAD)`,
     resources,
   );
+
+  // Fill per-hunk ranges after the editor is open; the provider's change event
+  // refreshes the lenses. Non-fatal on git failure — symbol/file lenses remain.
+  try {
+    const { stdout: patch } = await execFileAsync(
+      'git',
+      ['-C', wt, 'diff', '-M', '--unified=3', baseRef],
+      { maxBuffer: 64 * 1024 * 1024 },
+    );
+    const hunksByPath = parseUnifiedDiff(patch);
+    setDiffInjectSession(
+      filePlans.map(plan => ({
+        fsPath: path.join(wt, plan.resourcePath),
+        builderId: builder.id,
+        relPath: plan.resourcePath,
+        hunks: hunksByPath.get(plan.resourcePath) ?? [],
+      })),
+    );
+  } catch {
+    // keep the hunk-less entries already registered
+  }
 }
 
 /**
@@ -411,23 +420,22 @@ export async function registerFileInjectSession(args: {
   // Deleted/binary files have no right-side `file:` document to host a lens.
   if (args.plan.right.kind !== 'file') { return; }
   const relPath = args.plan.resourcePath;
-  let hunks: ReturnType<typeof parseHunkRanges> = [];
+  const fsPath = path.join(args.worktreePath, relPath);
+  // Register immediately with no hunks so the symbol/file lenses render right
+  // away — the git hunk computation below must not gate them.
+  upsertDiffInjectEntry({ fsPath, builderId: args.builderId, relPath, hunks: [] });
   try {
     const { stdout } = await execFileAsync(
       'git',
       ['-C', args.worktreePath, 'diff', '-M', '--unified=3', args.baseRef, '--', relPath],
       { maxBuffer: 64 * 1024 * 1024 },
     );
-    hunks = parseHunkRanges(stdout);
+    // Re-upsert with hunks; the provider's change event refreshes the lenses,
+    // adding the per-hunk ones.
+    upsertDiffInjectEntry({ fsPath, builderId: args.builderId, relPath, hunks: parseHunkRanges(stdout) });
   } catch {
-    // keep empty — symbol/file lenses still render
+    // keep the symbol/file lenses already registered
   }
-  upsertDiffInjectEntry({
-    fsPath: path.join(args.worktreePath, relPath),
-    builderId: args.builderId,
-    relPath,
-    hunks,
-  });
 }
 
 interface BuilderLike {

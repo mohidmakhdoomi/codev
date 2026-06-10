@@ -847,20 +847,23 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 		reg('codev.openBuilderFileDiff', async (arg: unknown) => {
 			if (!(arg instanceof BuilderFileTreeItem)) { return; }
-			// Register the inject-codelens entry for this file so the "Forward
-			// to Builder" lenses (#789) render on the diff without a prior View
-			// Diff run, then offer to enable diffEditor.codeLens (off by default
-			// — VS Code hides CodeLens in diff editors).
+			// Open the diff FIRST so it appears instantly. Lens registration and
+			// the git hunk computation happen after — the entry registers
+			// synchronously (symbol/file lenses render right away) and the hunk
+			// lenses refresh in once git resolves (#789). Doing this before the
+			// open used to block the diff on a git subprocess.
+			const { left, right } = diffUrisForChange(arg.plan, { wt: arg.worktreePath, ref: arg.baseRef });
+			const title = `${arg.plan.resourcePath} (#${arg.builderId})`;
+			await vscode.commands.executeCommand('vscode.diff', left, right, title);
 			await registerFileInjectSession({
 				worktreePath: arg.worktreePath,
 				baseRef: arg.baseRef,
 				builderId: arg.builderId,
 				plan: arg.plan,
 			});
+			// Offer to enable diffEditor.codeLens (off by default — VS Code hides
+			// CodeLens in diff editors). After the open, so it never delays it.
 			await ensureDiffEditorCodeLens(context);
-			const { left, right } = diffUrisForChange(arg.plan, { wt: arg.worktreePath, ref: arg.baseRef });
-			const title = `${arg.plan.resourcePath} (#${arg.builderId})`;
-			await vscode.commands.executeCommand('vscode.diff', left, right, title);
 		}),
 		regCli('codev.runWorktreeDev', (arg: vscode.TreeItem | string | undefined) =>
 			runWorktreeDev(connectionManager!, terminalManager!, extractBuilderId(arg))),
