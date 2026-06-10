@@ -141,6 +141,64 @@ describe('ArtifactCanvas (Phase 3)', () => {
     expect(disposable.dispose).toHaveBeenCalled();
     expect(() => host.watchers.forEach((cb) => cb('changed'))).not.toThrow();
   });
+
+  it('surfaces a FileAdapter.read rejection via onError without throwing (D2)', async () => {
+    const host = makeHost('A paragraph.');
+    host.fileAdapter.read = vi.fn(async () => { throw new Error('read boom'); });
+    const onError = vi.fn();
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(() => render(<ArtifactCanvas uri="x" {...host} onAddComment={vi.fn()} onError={onError} />)).not.toThrow();
+    await waitFor(() => expect(onError).toHaveBeenCalled());
+    err.mockRestore();
+  });
+
+  it('surfaces a synchronous FileAdapter.watch() failure via onError without throwing (D2)', async () => {
+    const host = makeHost('A paragraph.');
+    host.fileAdapter.watch = vi.fn(() => { throw new Error('watch boom'); });
+    const onError = vi.fn();
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(() => render(<ArtifactCanvas uri="x" {...host} onAddComment={vi.fn()} onError={onError} />)).not.toThrow();
+    await waitFor(() => expect(onError).toHaveBeenCalled());
+    expect(document.querySelector('p[data-line]')).not.toBeNull(); // read succeeded → content still renders
+    err.mockRestore();
+  });
+
+  it('Disposable.dispose is safe to call more than once (idempotent contract, D2)', async () => {
+    const host = makeHost('A paragraph.');
+    const { unmount } = render(<ArtifactCanvas uri="x" {...host} onAddComment={vi.fn()} />);
+    await waitFor(() => expect(document.querySelector('p[data-line]')).not.toBeNull());
+    const disposable = host.fileAdapter.watch.mock.results[0].value as { dispose: () => void };
+    unmount(); // dispose() #1
+    expect(() => disposable.dispose()).not.toThrow(); // dispose() #2 — safe no-op
+  });
+
+  it('surfaces an existing marker author + text via the overlay when its line is active (deferred #4)', async () => {
+    const host = makeHost('A paragraph.\n<!-- REVIEW(@bob): please fix -->'); // marker annotates line 0
+    render(<ArtifactCanvas uri="x" {...host} onAddComment={vi.fn()} />);
+    const p = await waitFor(() => {
+      const el = document.querySelector('p[data-line]');
+      if (!el) throw new Error('no paragraph yet');
+      return el as HTMLElement;
+    });
+    await waitFor(() => expect(document.querySelector('.codev-canvas-has-marker')).not.toBeNull());
+    fireEvent.mouseOver(p);
+    const list = await screen.findByLabelText(/comments on line/i);
+    expect(list.textContent).toContain('bob');
+    expect(list.textContent).toContain('please fix');
+  });
+
+  it('activates on Space (not just Enter) on a focused block', async () => {
+    const host = makeHost('A paragraph.');
+    const onAddComment = vi.fn();
+    render(<ArtifactCanvas uri="x" {...host} onAddComment={onAddComment} />);
+    const p = await waitFor(() => {
+      const el = document.querySelector('p[data-line]');
+      if (!el) throw new Error('no paragraph yet');
+      return el as HTMLElement;
+    });
+    fireEvent.keyDown(p, { key: ' ' });
+    expect(onAddComment).toHaveBeenCalledWith(0);
+  });
 });
 
 describe('ThemeAdapter contract (D4 Model A, scenario 4 — not on the v1 render path)', () => {

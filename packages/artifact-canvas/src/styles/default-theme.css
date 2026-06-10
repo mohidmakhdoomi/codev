@@ -57,3 +57,16 @@
 .codev-artifact-canvas-body a { color: var(--codev-canvas-link); }
 .codev-artifact-canvas-body pre,
 .codev-artifact-canvas-body code { background: var(--codev-canvas-code-background); }
+
+/* Overlay: the "+" affordance + the active line's existing comments (author + text) */
+.codev-canvas-overlay { display: flex; gap: 8px; align-items: flex-start; }
+.codev-canvas-marker-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 8px;
+  border-left: 3px solid var(--codev-canvas-comment-marker);
+  background: var(--codev-canvas-code-background);
+  color: var(--codev-canvas-foreground);
+  font-size: 0.9em;
+}
+.codev-canvas-marker-author { font-weight: 600; color: var(--codev-canvas-muted); }

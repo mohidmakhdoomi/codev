@@ -71,11 +71,17 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
       }
     })();
 
-    const sub = fileAdapter.watch(uri, (newContent) => {
-      if (disposed) return;
-      setContent(newContent);
-      void listMarkers(newContent); // auto re-list on change (D6)
-    });
+    let sub: { dispose(): void } = { dispose: () => {} };
+    try {
+      sub = fileAdapter.watch(uri, (newContent) => {
+        if (disposed) return;
+        setContent(newContent);
+        void listMarkers(newContent); // auto re-list on change (D6)
+      });
+    } catch (err) {
+      // A synchronous failure setting up the subscription must not throw out of the effect (D2).
+      report(err);
+    }
 
     return () => {
       disposed = true;
@@ -118,9 +124,13 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
     return Number.isNaN(n) ? null : n;
   };
 
+  // Markers on the currently-active (hovered/focused) line — surfaced author + text via the
+  // overlay (deferred #4: minimal v1 marker rendering; #863 adds polished inline markers).
+  const activeMarkers = activeLine === null ? [] : markers.filter((m) => m.line === activeLine);
+
   return React.createElement(
     'div',
-    { className: 'codev-artifact-canvas' },
+    { className: 'codev-artifact-canvas', onMouseLeave: () => setActiveLine(null) },
     React.createElement('div', {
       ref: bodyRef,
       className: 'codev-artifact-canvas-body',
@@ -144,7 +154,28 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
       dangerouslySetInnerHTML: { __html: html },
     }),
     activeLine !== null
-      ? React.createElement(CommentAffordance, { line: activeLine, onActivate: onAddComment })
+      ? React.createElement(
+          'div',
+          { className: 'codev-canvas-overlay' },
+          React.createElement(CommentAffordance, { line: activeLine, onActivate: onAddComment }),
+          activeMarkers.length > 0
+            ? React.createElement(
+                'ul',
+                {
+                  className: 'codev-canvas-marker-list',
+                  'aria-label': `Comments on line ${activeLine + 1}`,
+                },
+                activeMarkers.map((m, i) =>
+                  React.createElement(
+                    'li',
+                    { key: String(i), className: 'codev-canvas-marker' },
+                    React.createElement('span', { className: 'codev-canvas-marker-author' }, m.author),
+                    `: ${m.text}`,
+                  ),
+                ),
+              )
+            : null,
+        )
       : null,
   );
 }
