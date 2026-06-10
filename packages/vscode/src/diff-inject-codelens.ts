@@ -64,13 +64,6 @@ class DiffInjectCodeLensProvider implements vscode.CodeLensProvider {
   private readonly _onDidChangeCodeLenses = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this._onDidChangeCodeLenses.event;
 
-  // Symbol resolution is the expensive part (a full language-server query). The
-  // diff editor re-queries CodeLens often, so cache the result per document
-  // *version* — keyed by uri, holding the in-flight promise so concurrent
-  // refreshes share one resolution. Without this, `provideCodeLenses` re-ran
-  // `executeDocumentSymbolProvider` on every refresh and pegged the CPU.
-  private readonly symbolCache = new Map<string, { version: number; nodes: Promise<SymbolNode[]> }>();
-
   setSession(entries: DiffInjectSessionEntry[]): void {
     this.registry = new Map(entries.map(e => [e.fsPath, e]));
     this._onDidChangeCodeLenses.fire();
@@ -95,9 +88,19 @@ class DiffInjectCodeLensProvider implements vscode.CodeLensProvider {
     const entry = this.registry.get(document.uri.fsPath);
     if (!entry) { return []; }
 
-    const nodes = await this.symbolsFor(document);
+    let symbols: vscode.DocumentSymbol[] = [];
+    try {
+      symbols =
+        (await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+          'vscode.executeDocumentSymbolProvider',
+          document.uri,
+        )) ?? [];
+    } catch {
+      symbols = [];
+    }
     if (token.isCancellationRequested) { return []; }
 
+    const nodes = symbols.map(toSymbolNode);
     const lastLine = Math.max(document.lineCount - 1, 0);
     return buildAllLensDescriptors(entry.relPath, nodes, entry.hunks).map(d => {
       const line = Math.min(Math.max(d.line, 0), lastLine);
@@ -108,31 +111,6 @@ class DiffInjectCodeLensProvider implements vscode.CodeLensProvider {
         arguments: [entry.builderId, d.refText],
       });
     });
-  }
-
-  /**
-   * Document symbols for a file, resolved at most once per (uri, version).
-   * Caching the in-flight promise both avoids redundant language-server work on
-   * every CodeLens refresh and breaks any refresh loop (a cache hit returns
-   * without re-querying the symbol provider, so it can't keep re-triggering).
-   */
-  private symbolsFor(document: vscode.TextDocument): Promise<SymbolNode[]> {
-    const key = document.uri.toString();
-    const cached = this.symbolCache.get(key);
-    if (cached && cached.version === document.version) { return cached.nodes; }
-    const nodes = (async (): Promise<SymbolNode[]> => {
-      try {
-        const syms = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-          'vscode.executeDocumentSymbolProvider',
-          document.uri,
-        );
-        return (syms ?? []).map(toSymbolNode);
-      } catch {
-        return [];
-      }
-    })();
-    this.symbolCache.set(key, { version: document.version, nodes });
-    return nodes;
   }
 
   dispose(): void {
