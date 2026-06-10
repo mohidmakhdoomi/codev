@@ -108,16 +108,18 @@ describe('ArtifactCanvas (Phase 3)', () => {
     expect(host.text()).toContain('<!-- REVIEW(@reviewer): please clarify -->'); // proves text round-trip
   });
 
-  it('drops out-of-range markers (line >= doc length) and warns (deferred #4)', async () => {
+  it('drops an out-of-range marker and warns ONCE even across reloads (deferred #4)', async () => {
     const host = makeHost('one line only');
     host.markerAdapter.list = vi.fn(async () => [
-      { author: 'a', line: 99, text: 'stale', raw: '' } as ReviewMarker,
+      { author: 'a', line: 99, text: 'stale', raw: 'r' } as ReviewMarker,
     ]);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     render(<ArtifactCanvas uri="x" {...host} onAddComment={vi.fn()} />);
     await waitFor(() => expect(document.querySelector('[data-line]')).not.toBeNull());
     expect(document.querySelector('.codev-canvas-has-marker')).toBeNull(); // not rendered
-    expect(warn).toHaveBeenCalled();
+    // A watch refresh re-lists the SAME stale marker — it must not re-warn (warn-once).
+    await act(async () => { host.watchers.forEach((cb) => cb('one line only')); });
+    expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
 

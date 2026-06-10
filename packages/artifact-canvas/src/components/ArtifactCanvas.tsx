@@ -38,6 +38,9 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
   // Each load (initial read or a watch change) takes a monotonically increasing seq; results are
   // applied only while their seq is still the latest.
   const seqRef = React.useRef(0);
+  // Warn-once dedup for out-of-range stale markers, so a noisy watch doesn't spam warnings
+  // across reloads (deferred #4 AC: "dropped … and warned once"). iter-3 Codex.
+  const warnedRef = React.useRef(new Set<string>());
 
   // Apply content + markers for one load, guarded by `seq`. Out-of-range markers are dropped +
   // warned (deferred #4: ignore, not clamp/hard-error); a failed list() keeps the prior markers.
@@ -53,9 +56,13 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
           list.filter((m) => {
             const ok = m.line >= 0 && m.line < lineCount;
             if (!ok) {
-              console.warn(
-                `[artifact-canvas] dropping out-of-range marker @line ${m.line} (document has ${lineCount} lines)`,
-              );
+              const key = `${m.line}|${m.author}|${m.text}`;
+              if (!warnedRef.current.has(key)) {
+                warnedRef.current.add(key);
+                console.warn(
+                  `[artifact-canvas] dropping out-of-range marker @line ${m.line} (document has ${lineCount} lines)`,
+                );
+              }
             }
             return ok;
           }),
