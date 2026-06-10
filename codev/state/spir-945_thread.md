@@ -475,3 +475,13 @@ cleared. Added a deterministic guard test ("KEEPS the active overlay across a re
 contains the hovered block") — EMPIRICALLY PROVEN to fail against the old blind-reset (RC=1) and
 pass against the fix. types 0, build 0, 34/34 tests ×10 runs green. Pushing to re-trigger CI; pr
 gate stays held for the human.
+
+## PR consult (re-run on final code) + fixes [2026-06-10]
+
+After CI went green I re-ran the PR consult (the first run was stale + missing Codex). Codex
+REQUEST_CHANGES (2 items, both legit + fixed); Claude APPROVE; Gemini skip:
+1. Version lockstep: artifact-canvas was 3.1.7 vs repo 3.1.9 (rebase side effect) → bumped to 3.1.9.
+2. Approved plan still marked "Status: draft" with no frontmatter → added approval frontmatter
+   (approved 2026-06-10, validated [claude]) + flipped Status to approved.
+Both are doc/version hygiene, no code-behavior change. build + 34 tests green; lockfile unchanged.
+Pushing; pr gate stays held for the human.

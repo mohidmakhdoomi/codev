@@ -1,8 +1,19 @@
+---
+approved: 2026-06-10
+approval_note: >-
+  Approved at the SPIR plan-approval gate (status.yaml: approved_at 2026-06-10). 5 plan consult
+  iterations — Claude APPROVE x5; Codex REQUEST_CHANGES x5 (progressively smaller build/test/release
+  wiring items, the last two self-inflicted by revisions); Gemini lane unavailable (agy). Per the
+  human decision recorded in the Consultation Log below, the final two Codex items were fixed and the
+  plan taken to the gate rather than a 6th consult round.
+validated: [claude]   # plan iter-5 APPROVE; codex REQUEST_CHANGES resolved pre-gate; gemini lane unavailable
+---
+
 # Plan: Foundational reusable package `@cluesmith/codev-artifact-canvas`
 
 ## Metadata
 - **ID**: plan-2026-06-09-945-build-foundational-reusable-pa
-- **Status**: draft
+- **Status**: approved
 - **Specification**: [codev/specs/945-build-foundational-reusable-pa.md](../specs/945-build-foundational-reusable-pa.md)
 - **GitHub Issue**: [#945](https://github.com/cluesmith/codev/issues/945)
 - **Created**: 2026-06-09
