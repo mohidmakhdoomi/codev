@@ -979,7 +979,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// CLI preflight (#791): verify the codev CLI is installed and >= this
 	// extension's version. Fire-and-forget so activation isn't blocked — the
-	// probe self-bounds at 400ms and caches its result for the session. Uses
+	// probe self-bounds at the `codev.cliVersionTimeoutMs` budget (#1024) and
+	// caches its result for the session. Uses
 	// detectWorkspacePath() directly (connectionManager.getWorkspacePath() isn't
 	// populated until initialize() resolves, which may wait on Tower auto-start).
 	runPreflight(context, detectWorkspacePath(), outputChannel);

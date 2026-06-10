@@ -751,6 +751,13 @@
           "default": true,
           "description": "Auto-start Tower if not running on activation"
         },
+        "codev.cliVersionTimeoutMs": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 100,
+          "maximum": 60000,
+          "description": "Maximum time (in milliseconds) to wait for `codev --version` during the startup CLI preflight. Bump higher if you're on a slow remote / VM / network filesystem and the 'Get started with Codev' walkthrough keeps appearing despite codev being installed (check the Codev Output channel for `[Preflight] codev --version timed out` lines to confirm). Default 5000ms covers most local and remote-dev environments."
+        },
         "codev.autoOpenBuilderTerminal": {
           "type": "string",
           "enum": ["off", "notify", "auto"],
