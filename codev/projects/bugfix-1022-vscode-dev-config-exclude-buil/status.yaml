@@ -1,7 +1,7 @@
 id: bugfix-1022
 title: vscode-dev-config-exclude-buil
 protocol: bugfix
-phase: investigate
+phase: fix
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -11,4 +11,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-12T23:08:50.454Z'
-updated_at: '2026-06-12T23:08:50.455Z'
+updated_at: '2026-06-12T23:10:07.587Z'
