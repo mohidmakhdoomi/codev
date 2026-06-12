@@ -186,11 +186,44 @@ function buildHistoryHeader(history: IterationRecord[], currentIteration: number
 }
 
 /**
+ * Build the always-on "hot tier" context block (Spec 987).
+ *
+ * Resolves the capped `arch-critical.md` and `lessons-critical.md` via the
+ * four-tier chain and returns them verbatim, to be prepended to EVERY phase
+ * prompt. This is the always-on consumption surface for porch-driven builders:
+ * the tiny, hard-capped hot files are unconditionally in context at every phase,
+ * not a "go read this file" pointer. Returns '' if neither file resolves (no crash).
+ */
+export function buildHotTierContext(workspaceRoot: string): string {
+  const parts: string[] = [];
+  for (const rel of ['resources/arch-critical.md', 'resources/lessons-critical.md']) {
+    const resolved = resolveCodevFile(rel, workspaceRoot);
+    if (!resolved) continue;
+    try {
+      const content = fs.readFileSync(resolved, 'utf-8').trim();
+      if (content) parts.push(content);
+    } catch {
+      // Non-fatal: a hot file that can't be read is simply omitted.
+    }
+  }
+  if (parts.length === 0) return '';
+  return (
+    '# Always-On Engineering Context (hot tier)\n\n' +
+    'Curated, always-injected guidance — consult before deciding. Use each ' +
+    '"consult when…" map to open the full arch.md / lessons-learned.md when relevant.\n\n' +
+    parts.join('\n\n') +
+    '\n\n---\n\n'
+  );
+}
+
+/**
  * Build a prompt for the current phase.
  * Loads from protocol's prompts/ directory if available, otherwise uses fallback.
  *
  * For build-verify phases with iteration > 1, lists previous build outputs
  * and review files so Claude can read them for context.
+ *
+ * The always-on hot tier (Spec 987) is prepended to every returned prompt.
  */
 export async function buildPhasePrompt(
   workspaceRoot: string,
@@ -198,9 +231,12 @@ export async function buildPhasePrompt(
   protocol: Protocol,
   resolver?: ArtifactResolver
 ): Promise<string> {
+  // Always-on hot tier — prepended to every prompt this function returns.
+  const hotTier = buildHotTierContext(workspaceRoot);
+
   const phaseConfig = getPhaseConfig(protocol, state.phase);
   if (!phaseConfig) {
-    return buildFallbackPrompt(state, 'unknown');
+    return hotTier + buildFallbackPrompt(state, 'unknown');
   }
 
   // Get project summary from GitHub Issues (with spec-file fallback)
@@ -265,7 +301,7 @@ export async function buildPhasePrompt(
         result = historyHeader + '\n\n---\n\n' + result;
       }
 
-      return result;
+      return hotTier + result;
     }
   }
 
@@ -277,7 +313,7 @@ export async function buildPhasePrompt(
     fallback = historyHeader + '\n\n---\n\n' + fallback;
   }
 
-  return fallback;
+  return hotTier + fallback;
 }
 
 /**
