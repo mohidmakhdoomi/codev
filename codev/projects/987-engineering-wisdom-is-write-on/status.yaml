@@ -14,14 +14,14 @@ plan_phases:
     status: complete
   - id: phase_4
     title: 'Project materialization: hot-file creation in init/adopt/update'
-    status: in_progress
+    status: complete
   - id: phase_5
     title: Producer routing (review prompts, both trees)
-    status: pending
+    status: in_progress
   - id: phase_6
     title: MAINTAIN + skill policing, docs sweep, consistency
     status: pending
-current_plan_phase: phase_4
+current_plan_phase: phase_5
 gates:
   spec-approval:
     status: approved
@@ -36,7 +36,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history:
   - iteration: 1
     plan_phase: phase_1
@@ -103,4 +103,4 @@ history:
         file: >-
           /Users/mwk/Development/cluesmith/codev/.builders/spir-987/codev/projects/987-engineering-wisdom-is-write-on/987-phase_2-iter2-claude.txt
 started_at: '2026-06-04T15:42:17.225Z'
-updated_at: '2026-06-12T01:44:45.305Z'
+updated_at: '2026-06-12T01:47:54.969Z'
