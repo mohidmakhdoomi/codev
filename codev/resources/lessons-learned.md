@@ -338,6 +338,9 @@ Generalizable wisdom extracted from review documents, ordered by impact. Updated
 
 ## 3-Way Reviews
 
+- [From 987] The agy/Gemini consult lane reviews against an **empty sandbox** (no worktree) → emits no `VERDICT` → porch defaults to `REQUEST_CHANGES`, looping the phase even when the other two reviewers approve. Per-project workaround: a worktree-local `.codev/config.json` with `porch.consultation.models: ["codex","claude"]` (gitignored, doesn't touch main; config > protocol precedence). Tracked as bugs #1032/#1033.
+- [From 987] The codev-instance skill lives at **repo-root** `.claude/skills/`, not `codev/.claude/skills/`; the skeleton copy is `codev-skeleton/.claude/skills/`. Mirror framework edits to both trees and guard `CLAUDE.md ≡ AGENTS.md` + cross-tree identity with a test — silent dual-tree divergence otherwise slips through CMAP.
+
 - [From 0054] Each reviewer catches different aspects - Claude: spec compliance, Gemini: API correctness, Codex: practical issues
 - [From 0061-002] Security vulnerabilities (XSS) often identified in 3-way review that weren't in initial implementation
 - [From CMAP analysis] CMAP misses proxy/deployment topology bugs and React lifecycle/WebSocket timing issues — add "works behind reverse proxy?" to review checklist for HTTP specs
