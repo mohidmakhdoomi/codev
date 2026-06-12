@@ -26,6 +26,7 @@ import {
   copySkills,
   copyRootFiles,
 } from '../lib/scaffold.js';
+import { syncHotContextBlock } from '../lib/managed-block.js';
 import {
   backfillGitignore,
   CODEV_GITIGNORE_ENTRIES,
@@ -250,6 +251,17 @@ export async function update(options: UpdateOptions = {}): Promise<UpdateResult>
         });
         log(chalk.yellow('  ! (conflict)'), file);
         log(chalk.dim('    New version saved as:'), `${file}.codev-new`);
+      }
+    }
+
+    // Refresh the always-on hot-tier managed block in CLAUDE.md / AGENTS.md (Spec 987).
+    // Non-clobbering: only the marked block is replaced; user content is preserved.
+    // Logged as a side effect (not added to result.updated, which tracks template copies).
+    if (dryRun) {
+      log(chalk.dim('  ~ (hot-tier) would refresh CLAUDE.md / AGENTS.md managed block'));
+    } else {
+      for (const file of syncHotContextBlock(targetDir)) {
+        log(chalk.blue('  ~ (hot-tier block)'), file);
       }
     }
 

@@ -16,6 +16,7 @@ import {
   copySkills,
   copyRootFiles,
 } from '../lib/scaffold.js';
+import { syncHotContextBlock } from '../lib/managed-block.js';
 import { createGitignore } from '../lib/gitignore.js';
 
 interface InitOptions {
@@ -108,6 +109,12 @@ export async function init(projectName?: string, options: InitOptions = {}): Pro
   for (const file of rootResult.copied) {
     console.log(chalk.green('  +'), file);
     fileCount++;
+  }
+
+  // Inject the always-on hot-tier managed block into CLAUDE.md / AGENTS.md (Spec 987).
+  // Hot files resolve via the four-tier chain (skeleton starter until the project curates its own).
+  for (const file of syncHotContextBlock(targetDir)) {
+    console.log(chalk.green('  ~'), `${file} (hot-tier context)`);
   }
 
   // Create .gitignore

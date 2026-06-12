@@ -17,6 +17,7 @@ import { getProjectDir, resolveArtifactBaseName } from './state.js';
 import type { ArtifactResolver } from './artifacts.js';
 import { fetchIssue } from '../../lib/github.js';
 import { resolveCodevFile } from '../../lib/skeleton.js';
+import { readHotTierFiles } from '../../lib/managed-block.js';
 
 /**
  * Get project summary from GitHub Issues, with spec-file fallback.
@@ -195,17 +196,7 @@ function buildHistoryHeader(history: IterationRecord[], currentIteration: number
  * not a "go read this file" pointer. Returns '' if neither file resolves (no crash).
  */
 export function buildHotTierContext(workspaceRoot: string): string {
-  const parts: string[] = [];
-  for (const rel of ['resources/arch-critical.md', 'resources/lessons-critical.md']) {
-    const resolved = resolveCodevFile(rel, workspaceRoot);
-    if (!resolved) continue;
-    try {
-      const content = fs.readFileSync(resolved, 'utf-8').trim();
-      if (content) parts.push(content);
-    } catch {
-      // Non-fatal: a hot file that can't be read is simply omitted.
-    }
-  }
+  const parts = readHotTierFiles(workspaceRoot);
   if (parts.length === 0) return '';
   return (
     '# Always-On Engineering Context (hot tier)\n\n' +
