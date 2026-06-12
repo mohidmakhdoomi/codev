@@ -81,6 +81,8 @@ Modelled on the established `codev.referenceIssueInArchitect` pattern that injec
 
 <!-- Non-vscode work that ships in the npm release. Same bullet shape as Polish. -->
 
+- **Contributor VSCode workspace no longer pegs CPU walking builder worktrees** (#1022, PR #1039). The repo's `.vscode/extensions.json` used to recommend `ms-vscode.extension-test-runner`, whose test discovery runs `rg --no-ignore --follow` over the workspace and chases symlinks into every `.builders/*/node_modules` pnpm farm — with ~15 worktrees that pegged CPU for ~30s at a time on file changes. The recommendation is removed and `.vscode/settings.json` gains `files.watcherExclude` + extended `search.exclude` covering `**/.builders/**` and `**/node_modules/**` as defense in depth. Contributor-experience only; nothing in the published extension changes.
+
 ## Breaking changes
 
 None.
