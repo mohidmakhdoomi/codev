@@ -15,6 +15,7 @@ import {
   createProjectsDir,
   copySkills,
   copyRootFiles,
+  copyHotTierDefaults,
 } from '../lib/scaffold.js';
 import { syncHotContextBlock } from '../lib/managed-block.js';
 import { createGitignore } from '../lib/gitignore.js';
@@ -111,8 +112,14 @@ export async function init(projectName?: string, options: InitOptions = {}): Pro
     fileCount++;
   }
 
+  // Materialize the hot-tier files into codev/resources/ (Spec 987) so they're local + editable.
+  // Must run BEFORE syncHotContextBlock so the block injects local content, not the skeleton fallback.
+  for (const file of copyHotTierDefaults(targetDir, skeletonDir).copied) {
+    console.log(chalk.green('  +'), `codev/resources/${file}`);
+    fileCount++;
+  }
+
   // Inject the always-on hot-tier managed block into CLAUDE.md / AGENTS.md (Spec 987).
-  // Hot files resolve via the four-tier chain (skeleton starter until the project curates its own).
   for (const file of syncHotContextBlock(targetDir)) {
     console.log(chalk.green('  ~'), `${file} (hot-tier context)`);
   }

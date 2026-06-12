@@ -25,6 +25,7 @@ import {
 import {
   copySkills,
   copyRootFiles,
+  copyHotTierDefaults,
 } from '../lib/scaffold.js';
 import { syncHotContextBlock } from '../lib/managed-block.js';
 import {
@@ -251,6 +252,18 @@ export async function update(options: UpdateOptions = {}): Promise<UpdateResult>
         });
         log(chalk.yellow('  ! (conflict)'), file);
         log(chalk.dim('    New version saved as:'), `${file}.codev-new`);
+      }
+    }
+
+    // Materialize the hot-tier files for existing adopters (Spec 987), skip-existing so a
+    // curated copy is preserved. Runs BEFORE the block refresh so the block uses local content.
+    if (dryRun) {
+      log(chalk.dim('  + (hot-tier) would create missing codev/resources/{arch,lessons}-critical.md'));
+    } else {
+      for (const file of copyHotTierDefaults(targetDir, templatesDir, { skipExisting: true }).copied) {
+        const rel = `codev/resources/${file}`;
+        result.newFiles.push(rel);
+        log(chalk.green('  + (new)'), rel);
       }
     }
 
