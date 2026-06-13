@@ -639,12 +639,12 @@ export async function runAgentFarm(args: string[]): Promise<void> {
     .command('start')
     .description('Start the tower dashboard and wait for readiness by default')
     .option('-p, --port <port>', 'Port to run on (default: 4100)')
-    .option('--no-wait', 'Daemonize without waiting for readiness')
+    .option('--wait', 'Deprecated no-op: tower start waits for readiness by default')
     .action(async (options) => {
       try {
         await towerStart({
           port: options.port ? parseInt(options.port, 10) : undefined,
-          wait: options.wait,
+          wait: true,
         });
       } catch (error) {
         logger.error(error instanceof Error ? error.message : String(error));
@@ -656,14 +656,12 @@ export async function runAgentFarm(args: string[]): Promise<void> {
     .command('stop')
     .description('Stop the tower dashboard')
     .option('-p, --port <port>', 'Port to stop (default: 4100)')
-    .option('--preserve-shellpers', 'Stop Tower but leave scoped shellper processes running')
     .option('--force-kill-all-child-processes', 'SIGKILL tower and every child process (builders, shells, everything)')
     .action(async (options) => {
       try {
         await towerStop({
           port: options.port ? parseInt(options.port, 10) : undefined,
           forceKillAllChildProcesses: options.forceKillAllChildProcesses,
-          preserveShellpers: options.preserveShellpers,
         });
       } catch (error) {
         logger.error(error instanceof Error ? error.message : String(error));

@@ -602,40 +602,6 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Kill all shellper-main.js processes scoped to this manager's socketDir.
-   *
-   * This is intentionally stronger than killOrphanedShellpers(): it is for an
-   * explicit operator stop/cleanup path, so responsive shellpers are reclaimed
-   * too. Startup reconciliation should keep using killOrphanedShellpers().
-   */
-  async killScopedShellpers(): Promise<number> {
-    let killed = 0;
-    try {
-      const entries = await this.findShellperProcesses();
-      for (const { pid, socketPath } of entries) {
-        if (pid === process.pid) continue;
-
-        this.log(`Killing scoped shellper process: pid=${pid}${socketPath ? `, socket=${socketPath}` : ''}`);
-        const terminated = await this.terminateShellperProcess(pid);
-        if (terminated) {
-          killed++;
-        }
-
-        if (terminated && socketPath) {
-          this.unlinkSocketIfExists(socketPath);
-        }
-      }
-    } catch {
-      return 0;
-    }
-
-    if (killed > 0) {
-      this.log(`Killed ${killed} scoped shellper process(es)`);
-    }
-    return killed;
-  }
-
-  /**
    * Find shellper-main.js processes belonging to THIS Tower instance.
    *
    * Uses `ps -ww -eo pid,args` and filters for lines containing both
@@ -752,6 +718,10 @@ export class SessionManager extends EventEmitter {
         if (settled) return;
         try {
           const info = JSON.parse(data) as { pid: number; startTime: number };
+          if (typeof info.pid !== 'number' || typeof info.startTime !== 'number') {
+            fail('Invalid shellper info JSON');
+            return;
+          }
           settled = true;
           clearTimeout(timeout);
           resolve(info);
@@ -790,7 +760,30 @@ export class SessionManager extends EventEmitter {
   private safeDiagnosticSnippet(value: string): string {
     const trimmed = value.trim();
     if (!trimmed) return '';
-    return trimmed.replace(/"env"\s*:\s*\{[^}]*\}/g, '"env":"[redacted]"').slice(0, 1000);
+    try {
+      return JSON.stringify(this.redactDiagnosticValue(JSON.parse(trimmed))).slice(0, 1000);
+    } catch {
+      return '';
+    }
+  }
+
+  private redactDiagnosticValue(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.redactDiagnosticValue(item));
+    }
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+
+    const result: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'env' || key === 'args') {
+        result[key] = '[redacted]';
+      } else {
+        result[key] = this.redactDiagnosticValue(child);
+      }
+    }
+    return result;
   }
 
   private readTextTail(filePath: string, maxChars: number): string {
@@ -847,31 +840,6 @@ export class SessionManager extends EventEmitter {
       };
       check();
     });
-  }
-
-  private async terminateShellperProcess(pid: number): Promise<boolean> {
-    let signaled = false;
-    try {
-      process.kill(-pid, 'SIGTERM');
-      signaled = true;
-    } catch {
-      try {
-        process.kill(pid, 'SIGTERM');
-        signaled = true;
-      } catch {
-        return false;
-      }
-    }
-
-    const died = await this.waitForProcessExit(pid, 5000);
-    if (!died) {
-      try {
-        process.kill(-pid, 'SIGKILL');
-      } catch {
-        try { process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
-      }
-    }
-    return signaled;
   }
 
   private setupAutoRestart(session: ManagedSession, sessionId: string): void {
