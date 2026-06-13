@@ -34,8 +34,7 @@ import { BuilderTerminalLinkProvider, ReconnectTerminalLinkProvider } from './te
 import { computeBuildersToClose, roleIdsFromBuilders } from './prune-builder-terminals.js';
 import { buildBuilderPickRows } from './builder-pick-rows.js';
 import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
-import { BuildersProvider } from './views/builders.js';
-import { BuilderGroupTreeItem } from './views/builder-tree-item.js';
+import { BuildersProvider, AccordionGate } from './views/builders.js';
 import { PullRequestsProvider } from './views/pull-requests.js';
 import { BacklogProvider } from './views/backlog.js';
 import { visibleBacklogCount, formatBacklogTitle } from './views/backlog-filter.js';
@@ -339,13 +338,18 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.window.registerFileDecorationProvider(new BuilderFileDecorationProvider(builderDiffCache)),
 	);
 
+	// #913: the Builders view no longer persists per-group expansion (groups are
+	// ephemeral nav state — default expanded each session). Delete any value left
+	// by a prior install so the dead state doesn't linger; updating to `undefined`
+	// removes the key and is idempotent across activations. Both axis keys are
+	// cleared (#952 added the stage axis after #913 was filed).
+	context.workspaceState.update('codev.buildersGroupExpansion', undefined);
+	context.workspaceState.update('codev.buildersStageGroupExpansion', undefined);
+
 	// List views use createTreeView so their title can carry a live item
 	// count; the rest stay on registerTreeDataProvider.
-	const buildersProvider = new BuildersProvider(overviewCache, builderDiffCache, context.workspaceState);
+	const buildersProvider = new BuildersProvider(overviewCache, builderDiffCache);
 	buildersView = vscode.window.createTreeView('codev.builders', { treeDataProvider: buildersProvider });
-	context.subscriptions.push(...persistAreaGroupExpansion(
-		buildersView, BuilderGroupTreeItem, buildersProvider.expansion,
-	));
 	pullRequestsView = vscode.window.createTreeView('codev.pullRequests', { treeDataProvider: new PullRequestsProvider(overviewCache) });
 	const backlogProvider = new BacklogProvider(overviewCache, context.workspaceState);
 	backlogView = vscode.window.createTreeView('codev.backlog', { treeDataProvider: backlogProvider });
@@ -439,48 +443,27 @@ export async function activate(context: vscode.ExtensionContext) {
 		context.globalState.update(PANEL_REVEALED_KEY, true);
 	}
 
-	// Builders accordion: expanding one builder auto-collapses the others so a
-	// reviewer can't have diffs from unrelated worktrees open at once. The
-	// deterministic collapseAll+reveal pair (vs fighting VSCode's expansion
-	// reconciliation) is guarded against the expand/collapse events it itself
-	// generates. Toggle via the header button / `codev.buildersAutoCollapse`.
+	// Builders accordion: expanding one builder auto-collapses the OTHER builder
+	// rows so a reviewer can't have diffs from unrelated worktrees open at once.
+	// It deliberately leaves group headers alone (#913) — `collapseBuildersExcept`
+	// only re-ids builder rows, never the group rows. Toggle via the header
+	// button / `codev.buildersAutoCollapse`.
 	const readAccordion = () =>
 		vscode.workspace.getConfiguration('codev').get<boolean>('buildersAutoCollapse', true);
-	let accordionOn = readAccordion();
-	let reconciling = false;
-	// The builder we've made (or are making) the single open one. The id check
-	// is the real guard: `reveal({expand:true})` re-fires onDidExpandElement
-	// for the same builder, and that re-fire can land *after* the await chain
-	// (so `reconciling` is already false). Matching builderId makes the
-	// re-fire a no-op regardless of timing — `reconciling` only debounces
-	// rapid expands of *different* builders.
-	let openBuilderId: string | undefined;
-	vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', accordionOn);
+	const accordion = new AccordionGate(readAccordion());
+	vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', readAccordion());
 	context.subscriptions.push(
-		buildersView.onDidExpandElement(async (e) => {
-			if (!accordionOn) { return; }
+		buildersView.onDidExpandElement((e) => {
 			if (!(e.element instanceof BuilderTreeItem)) { return; }
-			if (e.element.builderId === openBuilderId || reconciling) { return; }
-			openBuilderId = e.element.builderId;
-			reconciling = true;
-			try {
-				await vscode.commands.executeCommand('workbench.actions.treeView.codev.builders.collapseAll');
-				// `expand: 3` (the VSCode max) recursively expands the builder
-				// and its file-tree descendants — so re-expanding after the
-				// accordion's collapseAll restores the default expanded-folder
-				// look instead of leaving every folder collapsed. Without this,
-				// collapseAll persists "collapsed" against each folder's stable
-				// id, and the next reveal honours that persisted state for
-				// every level below the builder row itself.
-				await buildersView!.reveal(e.element, { expand: 3, select: false, focus: false });
-			} finally {
-				reconciling = false;
+			if (accordion.shouldCollapseOthers(e.element.builderId)) {
+				buildersProvider.collapseBuildersExcept(e.element);
 			}
 		}),
 		vscode.workspace.onDidChangeConfiguration((e) => {
 			if (!e.affectsConfiguration('codev.buildersAutoCollapse')) { return; }
-			accordionOn = readAccordion();
-			vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', accordionOn);
+			const on = readAccordion();
+			accordion.setEnabled(on);
+			vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', on);
 		}),
 	);
 
