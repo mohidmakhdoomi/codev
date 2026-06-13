@@ -31,3 +31,10 @@ Issue #1012 — scaffold: `codev init` bootstraps `codev/resources/` with arch.m
 ## Second rebase on main (2026-06-13)
 
 - Rebased again (was 38 behind). Verified NONE of the 38 new commits touched any plan-target file (scaffold.ts, init/adopt/update.ts, templates.ts, skeleton templates, review prompts). All plan assumptions re-confirmed: hot-tier mechanism intact, cold files still user-data with no fallback, propagation note still in skeleton arch.md:116, no production reader of cold template sources, review prompts still reference cold files. Plan unchanged. Force-pushed. Still at plan-approval gate.
+
+## Content decision settled: one-line placeholders
+
+- Architect chose the one-line placeholder option (issue's suggested text verbatim) over copying/trimming the rich skeleton templates.
+- This SIMPLIFIES the plan: skeleton templates are NOT edited at all (rich templates + their manual-cp note stay as-is). No `copyHotTierDefaults` refactor needed.
+- Final implementation: `createColdTierDefaults(targetDir, opts)` in scaffold.ts writes two small placeholder consts (arch.md, lessons-learned.md) with skip-if-exists; wired at the same 3 sites next to copyHotTierDefaults; update backfills (consistent with 987). copyHotTierDefaults left completely untouched.
+- Plan finalized. No open decisions remain. Awaiting plan-approval.
