@@ -33,4 +33,6 @@ Dev-approval feedback: architect disliked the loose `gen`/`openBuilderId`/`openG
 
 ## Review phase
 
-Wrote `codev/reviews/913-vscode-accordion-shouldn-t-aff.md`. No arch.md change (behavioral fix, no module-boundary/pattern change). Added two `[From 913]` lessons to lessons-learned.md: (1) the VSCode "no per-item collapse API; version the id" technique, (2) match UI-state persistence to the lifetime of what it describes. About to open the PR and let porch's verify block run the single advisory 3-way consult.
+Wrote `codev/reviews/913-vscode-accordion-shouldn-t-aff.md`. No arch.md change (behavioral fix, no module-boundary/pattern change). Added two `[From 913]` lessons to lessons-learned.md: (1) the VSCode "no per-item collapse API; version the id" technique, (2) match UI-state persistence to the lifetime of what it describes. Opened PR #1040.
+
+3-way consult verdicts: Gemini=COMMENT (skipped — agy not installed), Claude=APPROVE (HIGH), Codex=REQUEST_CHANGES (HIGH). Codex found a REAL defect Claude missed: the accordion expand-guard kept `openBuilderId` across toggle off→on, so after disable→open another→re-enable, re-expanding the previously-open builder was skipped and others didn't collapse (violates an acceptance criterion). Fixed by extracting the guard into `AccordionGate` whose `setEnabled` resets the open-builder state on toggle; added a regression test for the exact repro. 395 unit tests green. Documented in the review's "Things to Look At" and escalating to the human at the pr gate (PIR is single-pass, no AI re-review).

@@ -416,6 +416,42 @@ export class AccordionRowIds {
   }
 }
 
+/**
+ * The accordion's "is one builder already held open" guard (#913). Decides
+ * whether an `onDidExpandElement` should collapse the other rows, and suppresses
+ * the re-fire that `reveal({expand:true})` triggers for the row just opened.
+ *
+ * Resetting the guard on every toggle (`setEnabled`) is load-bearing: without
+ * it, disabling the accordion, opening a second builder, then re-enabling would
+ * leave the previously-open builder still recorded as open — so re-expanding it
+ * would be skipped by the guard and the other rows would never collapse. After
+ * a toggle the next expand of *any* builder, including the previously-open one,
+ * must collapse the rest.
+ */
+export class AccordionGate {
+  private openBuilderId: string | undefined;
+
+  constructor(private enabled: boolean) {}
+
+  /**
+   * True if expanding `builderId` should collapse the other builder rows.
+   * Returns false when the accordion is off or when this builder is already the
+   * open one (the re-fire guard).
+   */
+  shouldCollapseOthers(builderId: string): boolean {
+    if (!this.enabled) { return false; }
+    if (builderId === this.openBuilderId) { return false; }
+    this.openBuilderId = builderId;
+    return true;
+  }
+
+  /** React to a config toggle; clears the open-builder guard either way. */
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    this.openBuilderId = undefined;
+  }
+}
+
 /** Non-clickable informational leaf (no worktree / no changes / error). */
 function placeholder(label: string): vscode.TreeItem {
   const item = new vscode.TreeItem(label);

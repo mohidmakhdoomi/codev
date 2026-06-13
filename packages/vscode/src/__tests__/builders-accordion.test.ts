@@ -54,7 +54,7 @@ vi.mock('vscode', () => {
 
 // Import AFTER the mock is registered.
 const vscode = await import('vscode');
-const { BuildersProvider, AccordionRowIds } = await import('../views/builders.js');
+const { BuildersProvider, AccordionRowIds, AccordionGate } = await import('../views/builders.js');
 const { BuilderTreeItem, BuilderGroupTreeItem } = await import('../views/builder-tree-item.js');
 
 function builder(overrides: Partial<OverviewBuilder>): OverviewBuilder {
@@ -212,5 +212,34 @@ describe('AccordionRowIds (#913)', () => {
     const ids = new AccordionRowIds();
     ids.keepOnly('a', undefined);
     expect(ids.idFor('a')).toBe('a#1');
+  });
+});
+
+describe('AccordionGate (#913)', () => {
+  it('collapses others on the first expand, but not on a re-expand of the open row', () => {
+    const gate = new AccordionGate(true);
+    expect(gate.shouldCollapseOthers('a')).toBe(true);  // a becomes open
+    expect(gate.shouldCollapseOthers('a')).toBe(false); // re-fire guard
+    expect(gate.shouldCollapseOthers('b')).toBe(true);  // switching opens b
+  });
+
+  it('never collapses while disabled', () => {
+    const gate = new AccordionGate(false);
+    expect(gate.shouldCollapseOthers('a')).toBe(false);
+    expect(gate.shouldCollapseOthers('b')).toBe(false);
+  });
+
+  // Regression for the Codex review finding: toggling the accordion off, opening
+  // another builder, then toggling back on must let the NEXT expand collapse the
+  // rest — even when that next expand is the builder that was open before the
+  // toggle. Without resetting the guard on toggle, re-expanding 'a' was skipped
+  // and the other rows stayed open.
+  it('re-collapses after disable → open another → re-enable, even on the previously-open row', () => {
+    const gate = new AccordionGate(true);
+    gate.shouldCollapseOthers('a');     // a open, accordion on
+    gate.setEnabled(false);             // toggle off
+    gate.shouldCollapseOthers('b');     // user opens b manually (no collapse while off)
+    gate.setEnabled(true);              // toggle back on
+    expect(gate.shouldCollapseOthers('a')).toBe(true); // re-expanding a collapses the rest
   });
 });

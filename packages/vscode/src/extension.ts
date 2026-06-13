@@ -34,7 +34,7 @@ import { BuilderTerminalLinkProvider, ReconnectTerminalLinkProvider } from './te
 import { computeBuildersToClose, roleIdsFromBuilders } from './prune-builder-terminals.js';
 import { buildBuilderPickRows } from './builder-pick-rows.js';
 import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
-import { BuildersProvider } from './views/builders.js';
+import { BuildersProvider, AccordionGate } from './views/builders.js';
 import { PullRequestsProvider } from './views/pull-requests.js';
 import { BacklogProvider } from './views/backlog.js';
 import { visibleBacklogCount, formatBacklogTitle } from './views/backlog-filter.js';
@@ -450,26 +450,20 @@ export async function activate(context: vscode.ExtensionContext) {
 	// button / `codev.buildersAutoCollapse`.
 	const readAccordion = () =>
 		vscode.workspace.getConfiguration('codev').get<boolean>('buildersAutoCollapse', true);
-	let accordionOn = readAccordion();
-	// The builder the accordion is currently holding open. Guards against the
-	// expand event re-firing for the same row: `openBuilderRow`'s
-	// `reveal({expand:true})` fires onDidExpandElement, and the provider re-render
-	// could in principle do so again — matching builderId makes those re-fires a
-	// no-op so we don't loop bumping the generation.
-	let openBuilderId: string | undefined;
-	vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', accordionOn);
+	const accordion = new AccordionGate(readAccordion());
+	vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', readAccordion());
 	context.subscriptions.push(
 		buildersView.onDidExpandElement((e) => {
-			if (!accordionOn) { return; }
 			if (!(e.element instanceof BuilderTreeItem)) { return; }
-			if (e.element.builderId === openBuilderId) { return; }
-			openBuilderId = e.element.builderId;
-			buildersProvider.collapseBuildersExcept(e.element);
+			if (accordion.shouldCollapseOthers(e.element.builderId)) {
+				buildersProvider.collapseBuildersExcept(e.element);
+			}
 		}),
 		vscode.workspace.onDidChangeConfiguration((e) => {
 			if (!e.affectsConfiguration('codev.buildersAutoCollapse')) { return; }
-			accordionOn = readAccordion();
-			vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', accordionOn);
+			const on = readAccordion();
+			accordion.setEnabled(on);
+			vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', on);
 		}),
 	);
 
