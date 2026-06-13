@@ -30,7 +30,6 @@ import {
   serializeReviewMarker,
   markerInsertionLine,
   parseReviewMarkers,
-  stripMarkersForRender,
 } from '@cluesmith/codev-core/review-markers';
 import type { OverviewCache } from '../views/overview-data.js';
 
@@ -54,10 +53,12 @@ export class MarkdownPreviewProvider implements vscode.CustomTextEditorProvider 
     panel.webview.html = this.renderHtml(panel.webview);
 
     const pushUpdate = (): void => {
+      // Send the raw document text: the canvas renderer strips REVIEW/comment lines itself
+      // (and keeps blocks intact + data-line accurate), so the host no longer pre-hides them.
       const text = document.getText();
       panel.webview.postMessage({
         type: 'update',
-        content: stripMarkersForRender(text),
+        content: text,
         markers: parseReviewMarkers(text),
       });
     };

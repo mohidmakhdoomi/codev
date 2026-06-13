@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   serializeReviewMarker,
   parseReviewMarkers,
-  stripMarkersForRender,
   markerInsertionLine,
   isReviewMarkerLine,
   isEligibleReviewPath,
@@ -63,20 +62,8 @@ describe('parseReviewMarkers', () => {
   });
 });
 
-describe('stripMarkersForRender', () => {
-  it('blanks marker lines (does not delete them) so line count is preserved', () => {
-    const text = ['# H', '<!-- REVIEW(@a): note -->', 'body'].join('\n');
-    const stripped = stripMarkersForRender(text);
-    expect(stripped).toBe(['# H', '', 'body'].join('\n'));
-    expect(stripped.split('\n').length).toBe(text.split('\n').length);
-  });
-
-  it('keeps non-marker lines (including HTML comments that are not REVIEW markers) intact', () => {
-    const text = '<!-- TODO: keep me -->\ntext';
-    expect(stripMarkersForRender(text)).toBe(text);
-  });
-
-  it('round-trips: a marker written at the insertion line parses back to the annotated line', () => {
+describe('round-trip (insert → parse)', () => {
+  it('a marker written at the insertion line parses back to the annotated line', () => {
     // Author comments on logical line 0 (the heading).
     const original = '# Heading\nbody paragraph';
     const lines = original.split('\n');
@@ -87,8 +74,6 @@ describe('stripMarkersForRender', () => {
     const markers = parseReviewMarkers(written);
     expect(markers).toHaveLength(1);
     expect(markers[0].line).toBe(0); // back to the heading
-    // ...and the renderer never sees the raw marker:
-    expect(stripMarkersForRender(written)).not.toContain('REVIEW(@amr)');
   });
 });
 

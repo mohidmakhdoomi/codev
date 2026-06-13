@@ -21,14 +21,11 @@
  * future hosts consume the same functions so they cannot drift. It is pure
  * (no `vscode`, no DOM, no I/O) and therefore safe in both Node and the browser.
  *
- * One transform is canvas-specific: `stripMarkersForRender`. The canvas renderer
- * runs markdown-it with `html: false`, which escapes a raw `<!-- REVIEW … -->`
- * line to *visible literal text*. So the host hands the renderer a copy with
- * every marker line blanked (replaced by an empty line, NOT deleted — deleting
- * would shift line numbers and could merge adjacent blocks). Blank-replacement
- * keeps the rendered text's line count identical to the on-disk text, so a
- * marker's logical line still lines up with the renderer's `data-line`. This is
- * the host side of #1036.
+ * Hiding markers from the rendered body is NOT done here: the canvas renderer
+ * strips full-line HTML comments before parsing (keeping blocks intact and
+ * `data-line` accurate), so hosts pass raw document text straight through. This
+ * codec is purely the on-disk read/write convention (#1036 is fixed in the
+ * renderer, #1042).
  */
 
 /**
@@ -109,15 +106,3 @@ export function parseReviewMarkers(text: string): ReviewMarker[] {
   return out;
 }
 
-/**
- * Return a copy of `text` with every marker line replaced by an empty line, so
- * the renderer never shows raw `<!-- REVIEW … -->` text (the #1036 host fix).
- * Line count is preserved, so marker logical lines still align with the
- * renderer's `data-line` attribution.
- */
-export function stripMarkersForRender(text: string): string {
-  return text
-    .split('\n')
-    .map((line) => (isReviewMarkerLine(line) ? '' : line))
-    .join('\n');
-}
