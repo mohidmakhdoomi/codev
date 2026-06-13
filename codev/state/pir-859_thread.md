@@ -135,3 +135,37 @@ design (CustomTextEditor + React webview + core codec + Convention B) holds. Del
 
 Plan edited (not yet committed). Branch rebased locally; push will need --force-with-lease.
 Awaiting architect ok to commit + force-push.
+
+## Implement phase complete (2026-06-13)
+
+Built the vscode host on artifact-canvas. Three commits: core codec / editor refactor / vscode host.
+
+DELIVERED:
+- packages/core/src/review-markers.ts (+ test): shared codec — serializeReviewMarker,
+  parseReviewMarkers, stripMarkersForRender (blank-replace = #1036 vscode fix), markerInsertionLine,
+  ELIGIBLE_PATH_REGEX/isEligibleReviewPath. Pure, NO new deps.
+- plan-review.ts: editor path now uses the codec for format + gating (no behavior change; still
+  inserts at line+1).
+- review-preview.ts: CustomTextEditorProvider 'codev.reviewPreview' (CSP/nonce/asWebviewUri per #920),
+  host<->webview bridge (push update / addComment -> showInputBox -> WorkspaceEdit).
+- webview/main.ts: React entry mounting <ArtifactCanvas>, refreshKey-driven (host = source of truth).
+- esbuild.js: 2nd browser/IIFE bundle (react+react-dom+canvas, css emitted) -> dist/webview/.
+- extension.ts: registerCustomEditorProvider + reg('codev.openReviewCanvas') (opens Beside via openWith).
+- package.json: customEditors (priority:option, **/*.md), command + editor/title + commandPalette
+  (gated to codev/(plans|specs|reviews)), deps react/react-dom/artifact-canvas. tsconfig excludes the
+  webview dir from host typecheck (#920-style; esbuild builds it).
+
+DEVIATION FROM APPROVED PLAN (important): plan specified a markdown-it block-start resolver in core
++ a parity test (Convention B "resolve marker -> block start"). DROPPED as unnecessary. The
+artifact-canvas package's OWN tested convention (its stub adapters) and the EXISTING editor convention
+are identical and trivial: marker on the line after the anchor; marker.line = fileLine - 1. So no
+tokenizer is needed. This means core has NO markdown-it dep, no parity test, no two-instance drift.
+Tradeoff (same as the package's own v1 contract): a marker authored mid-multi-line-block maps to that
+line; on render a blank-replaced marker between two paragraph lines visually splits the paragraph.
+Accepted v1 limitation; richer anchoring is #863/#1036. Existing annotations are untouched (in-memory
+strip only) and anchor correctly when authored on a block-start line (the common case).
+
+CHECKS: core tests 31 pass (incl. new review-markers). vscode: check-types ✓ lint ✓ esbuild(2 bundles) ✓
+unit tests 395 pass. Fixed a self-inflicted duplicate command-title (caught by contributes-commands test).
+
+Pushing; porch done -> dev-approval gate.
