@@ -27,3 +27,7 @@ Issue #1012 — scaffold: `codev init` bootstraps `codev/resources/` with arch.m
 - Also found: the skeleton `templates/arch.md` has a "Note on propagation" section asserting it is NOT copied into projects — copying it verbatim would be self-contradicting. That's the real reason inline content was tempting.
 - Final design (plan revised): generalize `copyHotTierDefaults` body into a private `copyResourceDefaults(files,...)`, redefine hot in terms of it (no behavior change), add `copyColdTierDefaults` for ['arch.md','lessons-learned.md']; wire at the same 3 sites. Fix the SOURCE: trim the propagation note from skeleton arch.md + false footer from lessons-learned.md. One mechanism, one source of truth, no inline strings.
 - Open sub-decision for gate: how lean to trim the templates (light trim keeping structural stubs [recommended] vs ultra-minimal one-liner).
+
+## Second rebase on main (2026-06-13)
+
+- Rebased again (was 38 behind). Verified NONE of the 38 new commits touched any plan-target file (scaffold.ts, init/adopt/update.ts, templates.ts, skeleton templates, review prompts). All plan assumptions re-confirmed: hot-tier mechanism intact, cold files still user-data with no fallback, propagation note still in skeleton arch.md:116, no production reader of cold template sources, review prompts still reference cold files. Plan unchanged. Force-pushed. Still at plan-approval gate.
