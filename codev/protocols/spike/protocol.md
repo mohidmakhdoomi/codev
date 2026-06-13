@@ -52,7 +52,7 @@ The following 3-step workflow is **guidance only** — not enforced by porch. Fo
 ### Step 3: Findings
 
 - Write the findings document at `codev/spikes/<id>-<name>.md`
-- Use the template: `codev/protocols/spike/templates/findings.md`
+- Use the embedded template at the end of this protocol
 - Provide a clear feasibility verdict
 - Commit and notify the architect
 
@@ -120,3 +120,9 @@ When a spike finds something is not feasible:
 1. Document clearly in findings
 2. Close the related GitHub issue with a link to findings
 3. The findings become institutional knowledge
+
+## Template: findings.md
+
+Write the findings document using the following template:
+
+{{> protocols/spike/templates/findings.md}}

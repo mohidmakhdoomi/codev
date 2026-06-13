@@ -27,8 +27,7 @@ You are running in STRICT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the ASPIR protocol: `codev/protocols/aspir/protocol.md`
-Read and internalize the protocol before starting any work.
+Follow the ASPIR protocol. Read and internalize the protocol before starting any work. The full protocol text is included below under **## Protocol Reference (full text)**.
 
 ## Baked Decisions
 
@@ -111,3 +110,9 @@ If you encounter **pre-existing flaky tests** (intermittent failures unrelated t
 1. Read the protocol document thoroughly
 2. Review the spec and plan (if available)
 3. Begin implementation following the protocol phases
+
+---
+
+## Protocol Reference (full text)
+
+{{protocol_reference}}

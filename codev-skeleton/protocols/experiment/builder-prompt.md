@@ -24,7 +24,7 @@ You are running in STRICT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the EXPERIMENT protocol: `codev/protocols/experiment/protocol.md`
+Follow the EXPERIMENT protocol. Read and internalize the protocol before starting any work. The full protocol text is included below under **## Protocol Reference (full text)**.
 
 ## EXPERIMENT Overview
 The EXPERIMENT protocol ensures disciplined experimentation:
@@ -74,3 +74,9 @@ If you encounter **pre-existing flaky tests** (intermittent failures unrelated t
 1. Read the EXPERIMENT protocol document
 2. Define your hypothesis clearly
 3. Follow the phases in order
+
+---
+
+## Protocol Reference (full text)
+
+{{protocol_reference}}

@@ -79,8 +79,8 @@ In soft mode, you follow the protocol document yourself. The architect monitors 
 cat codev/specs/XXXX-*.md
 cat codev/plans/XXXX-*.md
 
-# Read the protocol
-cat codev/protocols/spir/protocol.md
+# (The full protocol text is inlined in your spawn prompt under the
+#  "## Protocol Reference (full text)" heading; no need to fetch it.)
 
 # Start implementing
 ```

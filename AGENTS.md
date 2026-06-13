@@ -166,6 +166,10 @@ Codev resolves protocol files, prompts, agent definitions, and roles through a f
 
 **Implication for `codev update` and CLAUDE.md / AGENTS.md merges:** when an updated template references a protocol (e.g., PIR), do NOT drop the reference because `codev/protocols/<name>/` is absent locally. The protocol resolves via the package skeleton, and dropping the reference removes the protocol from the user's available-protocol list while it's still callable from the CLI.
 
+### Framework files in prompts: deliver them, don't make the builder read them by path
+
+Framework files (protocol/role docs, the shipped `codev/resources/` reference docs) default to the package skeleton (see File Resolution above) and aren't guaranteed on disk in a fresh project. So when authoring any builder-facing prompt, role doc, or instruction, don't tell the builder to read a framework file by literal `codev/...` path — that bypasses the resolver and fails in fresh installs. Deliver the content instead (`protocol.md` is inlined into the spawn prompt; per-phase prompts and their templates arrive via porch). Mentioning a `codev/...` path in prose for orientation is fine — the rule is about *fetching*, not *referencing*. (`codev/resources/arch.md` and `codev/resources/lessons-learned.md` are user-evolved files, not framework files, so referencing those by path is correct.)
+
 ### Protocol Verification (When You Don't Recognize a Protocol Name)
 
 If the user mentions a protocol name you don't immediately recognize, verify against the CLI before responding:

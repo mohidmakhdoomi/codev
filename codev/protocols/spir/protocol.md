@@ -1,6 +1,5 @@
 # SPIR Protocol
 
-> **Quick Reference**: See `codev/resources/workflow-reference.md` for stage diagrams and common commands.
 
 ## Prerequisites
 
@@ -212,7 +211,7 @@ When filing an issue for SPIR, you can pin architectural decisions you don't wan
 - All consultation feedback incorporated directly into this document
 - Include a "Consultation Log" section summarizing key feedback and changes
 - Version control captures evolution through commits
-**Template**: `templates/spec.md`
+**Structure**: developed through the specify phase
 **Review Required**: Yes - Human approval AFTER consultations
 
 ### P - Plan (Structured Decomposition)
@@ -298,7 +297,7 @@ Each phase should be:
 - Include phase status tracking within this document
 - **DO NOT include time estimates** - Focus on deliverables and dependencies, not hours/days
 - Version control captures evolution through commits
-**Template**: `templates/plan.md`
+**Structure**: follows the plan template provided by the plan phase
 **Review Required**: Yes - Technical lead approval AFTER consultations
 
 ### (IDE) - Implementation Loop
@@ -710,7 +709,7 @@ spir/0001-user-authentication/database-schema
 
 ## Templates
 
-Templates for each phase are available in the `templates/` directory:
+Each phase has a template that ships in the package skeleton; the phase prompts deliver the structure you need, so you do not fetch these files directly:
 - `spec.md` - Specification template
 - `plan.md` - Planning template (includes phase status tracking)
 - `review.md` - Review and lessons learned template

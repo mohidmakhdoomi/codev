@@ -254,6 +254,15 @@ All architect sessions (at all 3 creation points) receive a role prompt injected
 - `tower-terminals.ts` → `reconcileTerminalSessions()` (startup reconnection with auto-restart options)
 - `tower-terminals.ts` → `getTerminalsForWorkspace()` (on-the-fly shellper reconnection)
 
+#### Builder Prompt: Protocol & Template Delivery (#1011)
+
+Framework files (protocol docs, templates) live in the package skeleton (resolver tier 4) and are not guaranteed on disk in a fresh install, so builder-facing prompts must not fetch them by literal `codev/...` path. They are *delivered* through resolver-aware channels instead:
+
+- **`{{protocol_reference}}`** — `buildPromptFromTemplate` (`agent-farm/commands/spawn-roles.ts`) fills this context variable by reading the protocol's `protocol.md` fresh through the four-tier resolver at spawn and inlining it under the prompt's "Protocol Reference (full text)" heading. Nothing is committed into the prompt, so nothing goes stale.
+- **`{{> <codev-path>}}`** — a Handlebars-style include directive resolved by the shared `resolveCodevIncludes()` (`lib/skeleton.ts`): it pulls the referenced framework file fresh through the resolver (recursive, depth-guarded, unresolved includes drop to empty). It runs on two channels: at spawn (inside `protocol.md`, e.g. experiment/spike templates) and in porch's `loadPromptFile` (`commands/porch/prompts.ts`) for phase prompts (e.g. the spir/aspir plan template, which carries the machine-readable phases JSON the plan gate requires).
+
+A `codev doctor` audit (`lib/framework-ref-audit.ts`) flags shell-fetch of framework files in a project's local `codev/` overrides; the shipped skeleton is guarded by a CI unit test.
+
 #### Multi-Architect Support (Spec 755 / Spec 786)
 
 A workspace can host more than one architect terminal. Each architect has a stable name (`main` for the workspace's default; siblings via `afx workspace add-architect`). The primary use case is letting a sibling architect drive a focused workflow without monopolising `main`.
