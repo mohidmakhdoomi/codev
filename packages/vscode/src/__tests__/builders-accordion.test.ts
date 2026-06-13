@@ -16,7 +16,7 @@
  * pattern (see overview-cache.test.ts).
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { OverviewBuilder, OverviewData } from '@cluesmith/codev-types';
 
 vi.mock('vscode', () => {
@@ -54,7 +54,7 @@ vi.mock('vscode', () => {
 
 // Import AFTER the mock is registered.
 const vscode = await import('vscode');
-const { BuildersProvider } = await import('../views/builders.js');
+const { BuildersProvider, AccordionRowIds } = await import('../views/builders.js');
 const { BuilderTreeItem, BuilderGroupTreeItem } = await import('../views/builder-tree-item.js');
 
 function builder(overrides: Partial<OverviewBuilder>): OverviewBuilder {
@@ -187,21 +187,30 @@ describe('BuildersProvider accordion (#913)', () => {
   });
 });
 
-describe('generationOf (#913)', () => {
-  let generationOf: (id: string | undefined) => number | undefined;
-  beforeEach(async () => {
-    ({ generationOf } = await import('../views/builders.js'));
+describe('AccordionRowIds (#913)', () => {
+  it('versions every id from 0 until the first keepOnly', () => {
+    const ids = new AccordionRowIds();
+    expect(ids.idFor('a')).toBe('a#0');
+    expect(ids.idFor('b')).toBe('b#0');
   });
 
-  it('parses the trailing generation', () => {
-    expect(generationOf('pir-913#7')).toBe(7);
-    expect(generationOf('a#0')).toBe(0);
+  it('holds the open builder at its clicked id and re-versions the rest', () => {
+    const ids = new AccordionRowIds();
+    ids.keepOnly('b', 'b#0');
+    expect(ids.idFor('b')).toBe('b#0'); // open — verbatim
+    expect(ids.idFor('a')).toBe('a#1'); // others — bumped
   });
 
-  it('returns undefined for ids without a numeric suffix', () => {
-    expect(generationOf('pir-913')).toBeUndefined();
-    expect(generationOf('pir-913#')).toBeUndefined();
-    expect(generationOf('pir-913#x')).toBeUndefined();
-    expect(generationOf(undefined)).toBeUndefined();
+  it('never reuses a version, so a re-opened builder lands on a fresh id', () => {
+    const ids = new AccordionRowIds();
+    ids.keepOnly('a', ids.idFor('a')); // a held at a#0, version → 1
+    ids.keepOnly('b', ids.idFor('b')); // b held at b#1, version → 2; a now collapsing
+    expect(ids.idFor('a')).toBe('a#2'); // not a#0 — its old expanded id is never resurrected
+  });
+
+  it('falls back to a versioned id when the open row has no id', () => {
+    const ids = new AccordionRowIds();
+    ids.keepOnly('a', undefined);
+    expect(ids.idFor('a')).toBe('a#1');
   });
 });

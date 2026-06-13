@@ -93,17 +93,8 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
   // flatten case (area mode only — builders are root again), so `getParent`
   // returns `undefined` and the accordion works unchanged on that branch.
   private groupParentByBuilderId = new Map<string, BuilderGroupTreeItem>();
-  // Accordion state (#913). VSCode has no "collapse this row" API and never
-  // forgets a row id it has seen expanded, so the only way to force a builder
-  // row collapsed is to render it under an id VSCode hasn't seen. `gen` is a
-  // monotonic id allocator: every builder except the open one renders as
-  // `<id>#<gen>`; `collapseBuildersExcept` bumps `gen` so all those rows get
-  // fresh (never-expanded) ids and snap shut. The open builder is pinned to
-  // `openGen` so its row id is stable and it stays expanded. Group headers
-  // never carry the suffix, so the accordion can't touch them.
-  private gen = 0;
-  private openBuilderId: string | undefined;
-  private openGen = 0;
+  // Accordion row-id versioning (#913) — see AccordionRowIds.
+  private readonly rowIds = new AccordionRowIds();
 
   constructor(
     private cache: OverviewCache,
@@ -118,19 +109,13 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
 
   /**
    * Accordion (#913): collapse every builder row except the one just expanded,
-   * without touching group headers. Pins the clicked builder as the open one
-   * (its row id stays put across the re-render, so VSCode keeps it expanded),
-   * then bumps the generation so every *other* builder row re-renders under a
-   * fresh id and VSCode applies the provider's default `Collapsed` state.
-   *
-   * `openGen` is pinned from the clicked element's own rendered id rather than
-   * the current `gen`, so a render that landed between the last bump and this
-   * click can't leave the open row pointing at a stale generation.
+   * without touching group headers. The open row keeps its exact id (so VSCode
+   * keeps it expanded); every other row is re-versioned to a fresh, never-seen
+   * id, which VSCode renders with the provider's default `Collapsed` state.
+   * Group headers carry no version suffix, so the accordion can't touch them.
    */
   collapseBuildersExcept(item: BuilderTreeItem): void {
-    this.openBuilderId = item.builderId;
-    this.openGen = generationOf(item.id) ?? this.gen;
-    this.gen += 1;
+    this.rowIds.keepOnly(item.builderId, item.id);
     this.changeEmitter.fire();
   }
 
@@ -138,9 +123,9 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
    * The grouping strategy for the active axis, read from the
    * `codev.buildersGroupBy` setting (#952). Defaults to `stage` — the action
    * axis. Toggled via the Builders title-bar button (`codev.groupBuildersByArea`
-   * / `codev.groupBuildersByPhase`). All per-axis behavior (bucketing, expansion
-   * store, row prefix, flatten rule) lives on the returned strategy, so callers
-   * never branch on the mode themselves.
+   * / `codev.groupBuildersByPhase`). All per-axis behavior (bucketing, row
+   * prefix, flatten rule) lives on the returned strategy, so callers never
+   * branch on the mode themselves.
    */
   private active(): BuilderGrouping {
     const mode = vscode.workspace
@@ -252,16 +237,12 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     const isBlocked = !!b.blocked;
     const isIdle = !isBlocked && isIdleWaiting(b, now);
     const item = new BuilderTreeItem(b.id, builderRowLabel(b, isIdle, now, this.active().rowPrefix(b)));
-    // Generation-suffixed id (#913). The base is `b.id` (stable, not the
-    // churning label) so VSCode preserves a row's expansion across the frequent
-    // overview-poll refreshes. The `#<gen>` suffix is the accordion lever: the
-    // open builder is pinned to `openGen` (id stays put → stays expanded), every
-    // other builder uses the current `gen`, so a bump in `collapseBuildersExcept`
-    // hands them never-seen ids and VSCode renders them with the default
-    // Collapsed state. Group ids carry no suffix, so the accordion can't touch
+    // Versioned id (#913). The base `b.id` is stable (not the churning label) so
+    // VSCode preserves a row's expansion across the frequent overview-poll
+    // refreshes; the `#<version>` suffix is the accordion lever (see
+    // AccordionRowIds). Group ids carry no suffix, so the accordion can't touch
     // them.
-    const generation = b.id === this.openBuilderId ? this.openGen : this.gen;
-    item.id = `${b.id}#${generation}`;
+    item.id = this.rowIds.idFor(b.id);
     // Expandable so the second-level changed-files list can hang off it.
     // The row keeps its open-terminal command (single click); the chevron
     // toggles the file list.
@@ -403,21 +384,36 @@ function builderHasReviewFile(b: OverviewBuilder): boolean {
 }
 
 /**
- * Parse the generation suffix off a builder row id (`<builderId>#<gen>`),
- * returning the numeric generation or `undefined` if the id carries none.
- * Used by the accordion to pin the just-clicked builder to the generation its
- * row was actually rendered with, immune to a render landing between the last
- * bump and the click (#913).
+ * Builder-row id versioning for the accordion (#913). VSCode has no "collapse
+ * this row" API and replays its remembered expand-state for any id it has seen,
+ * so the only way to force a row collapsed is to render it under a never-seen
+ * id. Every row id is `<builderId>#<version>`; bumping the version (`keepOnly`)
+ * hands every row a fresh — hence collapsed — id, except the one being held
+ * open, which keeps the exact id it was clicked at so VSCode keeps it expanded.
+ *
+ * The open row's id is stored verbatim (not reconstructed from a number), so a
+ * render that lands between a bump and the next click can't leave the open row
+ * pointing at a stale version.
  */
-export function generationOf(id: string | undefined): number | undefined {
-  if (!id) { return undefined; }
-  const hash = id.lastIndexOf('#');
-  if (hash === -1) { return undefined; }
-  const suffix = id.slice(hash + 1);
-  // Guard the empty suffix (`Number('')` is 0) and any non-numeric tail.
-  if (suffix === '') { return undefined; }
-  const gen = Number(suffix);
-  return Number.isInteger(gen) ? gen : undefined;
+export class AccordionRowIds {
+  private version = 0;
+  private openBuilderId: string | undefined;
+  private openRowId: string | undefined;
+
+  /** The id to render for `builderId` this pass. */
+  idFor(builderId: string): string {
+    if (builderId === this.openBuilderId && this.openRowId) {
+      return this.openRowId;
+    }
+    return `${builderId}#${this.version}`;
+  }
+
+  /** Hold `builderId` open at its current `rowId`; re-version everyone else. */
+  keepOnly(builderId: string, rowId: string | undefined): void {
+    this.openBuilderId = builderId;
+    this.openRowId = rowId;
+    this.version += 1;
+  }
 }
 
 /** Non-clickable informational leaf (no worktree / no changes / error). */
