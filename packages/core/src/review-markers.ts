@@ -9,8 +9,9 @@
  *     <!-- REVIEW(@<author>): <text> -->
  *
  * written on the line **after** the block it annotates. There is no `line=N`
- * attribute — the marker's *position in the file* is the entire line
- * association (a marker on file line `i` annotates logical line `i - 1`). This
+ * attribute. The marker's *position in the file* is the entire line association:
+ * a marker annotates the nearest non-marker line above it (so a stack of
+ * comments on one block all resolve to that block). This convention
  * matches both the existing VSCode editor Comments-API path
  * (`packages/vscode/src/comments/plan-review.ts`) and the canvas package's own
  * tested adapter contract, so the two authoring surfaces round-trip through the
@@ -91,17 +92,22 @@ export function markerInsertionLine(annotatedLine: number): number {
 
 /**
  * Parse all review markers out of `text` into `ReviewMarker`s, mapping each to
- * the 0-based logical line it annotates (`fileLine - 1`). A marker on line 0
- * annotates nothing and is skipped (matches the canvas package's contract).
+ * the 0-based logical line it annotates: the nearest line ABOVE the marker that
+ * is not itself a marker. Skipping over a run of stacked markers means several
+ * comments on one block all anchor to that block's start (the canvas renders
+ * them as a list) instead of each pointing at the marker above it. A marker, or
+ * a run of markers, at the very top of the file annotates nothing and is skipped.
  */
 export function parseReviewMarkers(text: string): ReviewMarker[] {
   const out: ReviewMarker[] = [];
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const m = REVIEW_MARKER_RE.exec(lines[i]);
-    if (m && i > 0) {
-      out.push({ author: m[2], line: i - 1, text: m[3], raw: lines[i].trim() });
-    }
+    if (!m) { continue; }
+    let anchor = i - 1;
+    while (anchor >= 0 && isReviewMarkerLine(lines[anchor])) { anchor--; }
+    if (anchor < 0) { continue; }
+    out.push({ author: m[2], line: anchor, text: m[3], raw: lines[i].trim() });
   }
   return out;
 }

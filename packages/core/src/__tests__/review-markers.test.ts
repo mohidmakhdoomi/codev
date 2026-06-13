@@ -41,16 +41,19 @@ describe('parseReviewMarkers', () => {
     expect(parseReviewMarkers('<!-- REVIEW(@amr): orphan -->\ntext')).toEqual([]);
   });
 
-  it('parses multiple markers, including two stacked on the same block', () => {
+  it('anchors a STACK of comments on one block to that block (all to the same line)', () => {
+    // Several comments on the same block stack as a run of marker lines; each
+    // must skip over the markers above it and resolve to the block, not to the
+    // adjacent marker. Otherwise the older comments orphan (no block at their line).
     const text = [
-      'Paragraph.', // 0
-      '<!-- REVIEW(@a): first -->', // 1 -> line 0
-      '<!-- REVIEW(@b): second -->', // 2 -> line 1 (the marker above)
+      'Paragraph.', // 0  the block
+      '<!-- REVIEW(@a): first -->', // 1 -> skips none above -> line 0
+      '<!-- REVIEW(@b): second -->', // 2 -> skips line 1 (marker) -> line 0
     ].join('\n');
     const markers = parseReviewMarkers(text);
     expect(markers.map((m) => [m.author, m.line, m.text])).toEqual([
       ['a', 0, 'first'],
-      ['b', 1, 'second'],
+      ['b', 0, 'second'],
     ]);
   });
 
