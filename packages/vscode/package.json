@@ -63,7 +63,10 @@
       {
         "command": "codev.openMarkdownPreview",
         "title": "Codev: Open Markdown Preview",
-        "icon": "icons/codev.svg"
+        "icon": {
+          "light": "icons/codev-light.svg",
+          "dark": "icons/codev-dark.svg"
+        }
       },
       {
         "command": "codev.forwardSelectionToBuilder",
