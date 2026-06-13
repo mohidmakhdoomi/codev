@@ -1,7 +1,7 @@
 /**
- * Webview entry for the Codev Review Preview (#859).
+ * Webview entry for the Codev Markdown Preview (#859).
  *
- * Runs inside the `CustomTextEditor` webview (see `../review-preview.ts`). It
+ * Runs inside the `CustomTextEditor` webview (see `../preview-provider.ts`). It
  * mounts `<ArtifactCanvas>` and bridges the package's adapter contract to the
  * extension host over `postMessage`:
  *
@@ -15,7 +15,7 @@
  *    (0-based line). The host runs the InputBox + write-back; the resulting
  *    document change comes back as another `update`.
  *
- * This file is bundled by esbuild as a browser IIFE (`dist/webview/review-canvas.js`)
+ * This file is bundled by esbuild as a browser IIFE (`dist/webview/markdown-preview.js`)
  * and is intentionally excluded from the extension's `tsc` typecheck (it targets
  * the DOM, not Node) — same treatment as the backlog-search webview script (#920).
  * No JSX: `ArtifactCanvas` is created via `React.createElement`, so no JSX build
@@ -38,7 +38,7 @@ declare function acquireVsCodeApi(): { postMessage(message: unknown): void };
 const vscodeApi = acquireVsCodeApi();
 // Host-opaque document id — the host already knows which document this editor is
 // bound to, so the value is never interpreted, only required by the prop.
-const URI = 'codev:review-preview';
+const URI = 'codev:markdown-preview';
 
 let content = '';
 let markers: ReviewMarker[] = [];

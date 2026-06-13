@@ -1,5 +1,5 @@
 /**
- * Codev Review Preview (#859) — a read-only `CustomTextEditor` that renders a
+ * Codev Markdown Preview (#859) — a read-only `CustomTextEditor` that renders a
  * spec/plan/review in the shared `@cluesmith/codev-artifact-canvas` surface and
  * lets a reviewer add a comment without dropping to the raw `.md` editor.
  *
@@ -22,7 +22,7 @@
  *
  * Registered with `priority: "option"` so it never replaces the default `.md`
  * editor or the built-in preview; it is opt-in via "Reopen With…" or the
- * `codev.openReviewCanvas` command.
+ * `codev.openMarkdownPreview` command.
  */
 
 import * as vscode from 'vscode';
@@ -34,8 +34,8 @@ import {
 } from '@cluesmith/codev-core/review-markers';
 import type { OverviewCache } from '../views/overview-data.js';
 
-export class ReviewPreviewProvider implements vscode.CustomTextEditorProvider {
-  public static readonly viewType = 'codev.reviewPreview';
+export class MarkdownPreviewProvider implements vscode.CustomTextEditorProvider {
+  public static readonly viewType = 'codev.markdownPreview';
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -102,10 +102,10 @@ export class ReviewPreviewProvider implements vscode.CustomTextEditorProvider {
 
   private renderHtml(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'review-canvas.js'),
+      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'markdown-preview.js'),
     );
     const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'review-canvas.css'),
+      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'markdown-preview.css'),
     );
     const nonce = getNonce();
     const csp = [
@@ -138,7 +138,7 @@ export class ReviewPreviewProvider implements vscode.CustomTextEditorProvider {
       background: var(--codev-canvas-background);
     }
   </style>
-  <title>Codev Review Preview</title>
+  <title>Codev Markdown Preview</title>
 </head>
 <body>
   <div id="root"></div>

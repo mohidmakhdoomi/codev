@@ -45,7 +45,7 @@ const extensionConfig = {
  * npm-published; each host bundles it). `process.env.NODE_ENV` is defined so
  * React's dev/prod branch resolves in the browser (no Node `process` there).
  * The imported `default-theme.css` is emitted next to the JS as
- * `dist/webview/review-canvas.css`.
+ * `dist/webview/markdown-preview.css`.
  */
 const webviewConfig = {
 	entryPoints: ['src/markdown-preview/webview/main.ts'],
@@ -55,7 +55,7 @@ const webviewConfig = {
 	sourcemap: !production,
 	sourcesContent: false,
 	platform: 'browser',
-	outfile: 'dist/webview/review-canvas.js',
+	outfile: 'dist/webview/markdown-preview.js',
 	loader: { '.css': 'css' },
 	define: { 'process.env.NODE_ENV': production ? '"production"' : '"development"' },
 	logLevel: 'silent',

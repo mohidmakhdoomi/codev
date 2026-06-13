@@ -29,7 +29,7 @@ import { addReviewComment } from './commands/review.js';
 import { activateGateToasts } from './notifications/gate-toast.js';
 import { activateReviewDecorations } from './review-decorations.js';
 import { activateReviewComments } from './comments/plan-review.js';
-import { ReviewPreviewProvider } from './markdown-preview/review-preview.js';
+import { MarkdownPreviewProvider } from './markdown-preview/preview-provider.js';
 import { BuilderSpawnHandler } from './builder-spawn-handler.js';
 import { BuilderTerminalLinkProvider, ReconnectTerminalLinkProvider } from './terminal-link-provider.js';
 import { computeBuildersToClose, roleIdsFromBuilders } from './prune-builder-terminals.js';
@@ -769,16 +769,16 @@ export async function activate(context: vscode.ExtensionContext) {
 		reg('codev.openBacklogSearch', () =>
 			BacklogSearchPanel.createOrShow(connectionManager!, overviewCache, context.extensionUri)),
 		reg('codev.searchBacklog', () => searchBacklog(overviewCache)),
-		reg('codev.openReviewCanvas', async () => {
+		reg('codev.openMarkdownPreview', async () => {
 			const uri = vscode.window.activeTextEditor?.document.uri;
 			if (!uri) {
 				vscode.window.showInformationMessage(
-					'Codev: open a spec/plan/review markdown file first, then run Open Review Canvas.',
+					'Codev: open a spec/plan/review markdown file first, then run Open Markdown Preview.',
 				);
 				return;
 			}
 			await vscode.commands.executeCommand(
-				'vscode.openWith', uri, ReviewPreviewProvider.viewType, vscode.ViewColumn.Beside,
+				'vscode.openWith', uri, MarkdownPreviewProvider.viewType, vscode.ViewColumn.Beside,
 			);
 		}),
 		regCli('codev.referenceIssueInArchitect', async (arg: IssueCommandArg) => {
@@ -949,15 +949,15 @@ export async function activate(context: vscode.ExtensionContext) {
 	// format produced by `codev.addReviewComment` and review.json snippet.
 	activateReviewComments(context, overviewCache);
 
-	// Codev Review Preview (#859): a read-only custom editor that renders a
+	// Codev Markdown Preview (#859): a read-only custom editor that renders a
 	// spec/plan/review in the shared artifact-canvas and adds review comments
 	// from the rendered surface. Opt-in via "Reopen With…" or
-	// `codev.openReviewCanvas`; `priority: "option"` keeps the default `.md`
+	// `codev.openMarkdownPreview`; `priority: "option"` keeps the default `.md`
 	// editor and built-in preview untouched.
 	context.subscriptions.push(
 		vscode.window.registerCustomEditorProvider(
-			ReviewPreviewProvider.viewType,
-			new ReviewPreviewProvider(context.extensionUri, overviewCache),
+			MarkdownPreviewProvider.viewType,
+			new MarkdownPreviewProvider(context.extensionUri, overviewCache),
 			{
 				webviewOptions: { retainContextWhenHidden: true },
 				supportsMultipleEditorsPerDocument: false,
