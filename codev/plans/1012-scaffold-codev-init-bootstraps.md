@@ -1,93 +1,90 @@
-# PIR Plan: `codev init` bootstraps `codev/resources/` with arch.md + lessons-learned.md starters
+# PIR Plan: `codev init` bootstraps `codev/resources/` cold-tier files (arch.md + lessons-learned.md)
+
+> **Rebased on main 2026-06-13.** Spec 987 (two-tier governance docs) landed since this plan was first drafted and changes the picture materially. This revision re-scopes the work to ride the 987 rails. See "What Spec 987 already did" below.
 
 ## Understanding
 
-Fresh `codev init` projects have no `codev/resources/` directory. The review prompts of PIR, SPIR, ASPIR, and MAINTAIN unconditionally read `codev/resources/arch.md` (e.g. `codev-skeleton/protocols/spir/prompts/review.md:152` says "Read the current `codev/resources/arch.md`"), so the first review phase in a fresh project errors on a missing file.
+The issue: fresh `codev init` projects have no `codev/resources/arch.md` or `lessons-learned.md`, so review prompts that read them error out.
 
-Root cause: `createUserDirs` in `packages/codev/src/lib/scaffold.ts:23-44` creates only `specs`, `plans`, and `reviews`. Nothing in the init flow (`packages/codev/src/commands/init.ts:79-140`) creates `codev/resources/`.
+### What Spec 987 already did (post-rebase reality)
 
-These two files are project-specific (each workspace's own architecture and lessons), so the fix is bootstrap-on-init with minimal placeholder content, not resolver fallback (that framework-side concern is #1011).
+Spec 987 introduced a **hot/cold two-tier** governance-doc model and, as part of it, wired resource materialization into init/adopt/update — but **only for the HOT tier**:
 
-### Codebase findings worth noting
+- `copyHotTierDefaults()` (`scaffold.ts:161`) copies skeleton `templates/arch-critical.md` + `templates/lessons-critical.md` into `codev/resources/`, with `skipExisting` for adopt/update. It is called at all three sites:
+  - `init.ts:117` (no skip — fresh project)
+  - `adopt.ts:159` (`skipExisting: true`)
+  - `update.ts:263` (`skipExisting: true`, with a `dryRun` branch + `result.newFiles` reporting)
+- `update` already **backfills** missing hot files for existing adopters (`update.ts:258-268`). The "should update touch resources?" question we discussed at the gate is therefore already settled in the codebase: backfill-missing-only via `skipExisting` is the shipped house style.
+- The COLD files `resources/arch.md` and `resources/lessons-learned.md` are **already registered as protected user data** (`templates.ts:83-84`), so update's clean step will never overwrite them — they're just never *created*.
 
-1. **`copyResourceTemplates` (scaffold.ts:113-145) already exists but is dead code.** No command imports it; only `scaffold.test.ts` exercises it. It copies the skeleton's `templates/arch.md` and `templates/lessons-learned.md` (rich, instructional template stubs) plus `cheatsheet.md` and `lifecycle.md` (framework docs, the #1011 side of the audit). It was orphaned when init/adopt moved to the "minimal structure, framework files resolve from the package" model.
-2. **`codev update` never touches `resources/`** today — `update.ts` has no reference to the resources dir. **Scope amendment (approved at the plan gate)**: update WILL backfill missing-only resources files. Rationale: adopt structurally cannot reach already-initialized projects (it aborts when `codev/` exists), so the population missing `resources/` — projects bootstrapped before this fix — is only ever touched by `update`. Create-if-missing honors the intent of the issue's "update does NOT touch resources" criterion (protecting customizations) while closing the backfill gap: the skip-if-exists semantics make it provably non-clobbering.
-3. **`codev adopt` refuses to run when `codev/` exists** (`adopt.ts:75-77`), so the "don't clobber existing resources" criterion is structurally unreachable today. The new function still implements skip-if-exists semantics per file, so adopt is safe even if that precondition ever loosens.
-4. `init.test.ts:74` carries a comment documenting the current behavior ("resources/ is NOT created in minimal structure") — it must be updated with the new expectation.
+### What's still broken (the residual #1012 gap)
+
+The **COLD** files are still not materialized by any command. The review prompts reference them directly:
+
+- `spir/prompts/review.md:156` — "Read `arch-critical.md` (hot) and **skim `arch.md`** (cold)."
+- `spir/prompts/review.md:163` — skim `lessons-learned.md` (cold).
+- `pir/prompts/review.md:88,99-100` — routes changes into / `git add`s `arch.md` and `lessons-learned.md`.
+
+Beyond the prompts, the cold files are the **archive that the hot-tier maps point into**: each hot template carries a "Map of arch.md (consult when…)" section that directs readers into `arch.md`. Materializing the cold tier is the coherent completion of 987's model, not just an error-avoidance patch.
+
+So the fix shrinks from the original "invent `createResourcesDir` with inline placeholder content" to: **add a cold-tier sibling to `copyHotTierDefaults` and wire it in at the same three sites.**
 
 ## Proposed Change
 
-Add a new `createResourcesDir(targetDir, options)` function to `packages/codev/src/lib/scaffold.ts`, alongside `createUserDirs` / `createProjectsDir`, that:
+Mirror the proven 987 hot-tier path for the cold tier.
 
-- Creates `codev/resources/` (mkdir recursive).
-- Writes `arch.md` and `lessons-learned.md` with the minimal starter content from the issue (inline string constants in scaffold.ts — no skeleton dependency, since the content is project-owned placeholder, not a framework template).
-- **Always skips a file that already exists** (per-file, unconditional). Clobbering an existing arch.md is never correct in any flow, so this is not behind the `skipExisting` option flag.
-- Returns `{ created: string[], skipped: string[] }` matching the existing result-shape convention.
+1. **`scaffold.ts`** — add, directly below `HOT_TIER_FILES` / `copyHotTierDefaults`:
+   - `export const COLD_TIER_FILES = ['arch.md', 'lessons-learned.md'] as const;`
+   - `export function copyColdTierDefaults(targetDir, skeletonDir, options)` — byte-for-byte structural mirror of `copyHotTierDefaults`: ensure `codev/resources/` exists, copy each cold file from `skeletonDir/templates/`, honor `skipExisting`, return `{ copied, skipped }`.
 
-Starter content (verbatim from the issue):
+2. **Wire into the three commands**, immediately after each existing `copyHotTierDefaults` call (so cold files are materialized alongside hot, with identical logging/`fileCount`/`result.newFiles` handling):
+   - `init.ts:~117` — `copyColdTierDefaults(targetDir, skeletonDir)` (no skip).
+   - `adopt.ts:~159` — `copyColdTierDefaults(targetDir, skeletonDir, { skipExisting: true })`.
+   - `update.ts:~263` — `copyColdTierDefaults(targetDir, templatesDir, { skipExisting: true })`, inside the same `dryRun` if/else, pushing to `result.newFiles` and logging `+ (new)`. Extend the dry-run message to mention `{arch,lessons}.md` too.
 
-`arch.md`:
-```markdown
-# Architecture
+### Content decision: copy the skeleton templates (NOT inline minimal placeholders)
 
-This document evolves as the project grows. Update it during the review phase of any work that introduces or changes architectural patterns.
+The original issue asked for *trivial inline* starter content and argued against seeding heavyweight generic content. **That preference predates Spec 987 and I propose overriding it**, for three reasons:
 
-_No architecture documented yet._
-```
+1. **Consistency**: 987 established that resource starters come from `skeleton/templates/` via a `copy*TierDefaults` function. Inventing a second mechanism (inline string constants) for the cold tier would be an inconsistent oddity sitting right next to the hot-tier code.
+2. **The skeleton already ships curated cold starters**: `templates/arch.md` (126 lines) and `templates/lessons-learned.md` (66 lines) are proper "how to use this doc" stubs with section scaffolding and "skip if N/A" hints — more useful to a new project than a one-line `_No architecture documented yet._`.
+3. **The hot tier points into the cold tier**: the hot template's cold-doc map expects `arch.md` to have real top-level sections to map onto. A skeletal-but-structured cold file satisfies that; a one-liner does not.
 
-`lessons-learned.md`:
-```markdown
-# Lessons Learned
+**This is the main judgment call and I want your explicit sign-off at the gate.** If you prefer the issue's original minimal-inline content, say so and I'll seed trivial placeholders instead (still via `copyColdTierDefaults`, just sourcing inline strings rather than the skeleton files — or I trim the skeleton templates down).
 
-Durable engineering wisdom captured across the project's work. Update it during the review phase of any work that surfaces a generally-applicable pattern, gotcha, or constraint.
+### Why a sibling function, not a generalization
 
-_No lessons captured yet._
-```
-
-Wire it into both bootstrap commands:
-
-- `init.ts`: call `createResourcesDir` after `createProjectsDir` (around line 90), print each created file with the existing `+` prefix pattern (`+ codev/resources/arch.md`, `+ codev/resources/lessons-learned.md`), increment `fileCount`.
-- `adopt.ts`: same call after `createProjectsDir` (around line 126), same output pattern. Skip-if-exists semantics make this safe by construction.
-- `update.ts`: call `createResourcesDir` in the every-run refresh section, alongside the `.gitignore` backfill (`update.ts:256`), which already embodies the same create-missing-only philosophy. Created files are pushed to `result.newFiles` and logged with the existing `+ (new)` pattern; existing files are silently left alone (no noise on the common path). Respects `dryRun`: no writes, log missing files as `+ (would create)`.
-
-### Why inline content instead of reviving `copyResourceTemplates`
-
-The dead `copyResourceTemplates` copies the skeleton's rich template stubs (~60 lines each of "how to use this template" guidance) into every project. The issue deliberately chose trivial placeholders: enough for the first review-phase `Read` to succeed, with a one-line invitation to grow the file. Seeding every workspace with the same heavyweight generic content is exactly what the issue argues against. Inline constants also remove any dependency on skeleton resolution for this path.
-
-**Open question for the reviewer**: `copyResourceTemplates` remains dead code after this change, and two of the files it copies (`cheatsheet.md`, `lifecycle.md`) belong to the #1011 framework-file story. I propose leaving it untouched here (out of scope) and letting the architect decide whether its removal should be a separate item. If you'd rather I delete it (and its tests) in this PR, say so at this gate.
+I considered refactoring `copyHotTierDefaults` into a generic `copyResourceDefaults(files, …)` called twice. Rejected: 987 landed days ago and its hot path is load-bearing (porch injection + managed-block depend on it). A parallel `copyColdTierDefaults` is lower-risk, reads symmetrically, and keeps the 987 code untouched. The minor duplication is acceptable and easy to fold later if desired.
 
 ## Files to Change
 
-- `packages/codev/src/lib/scaffold.ts` — add `createResourcesDir` + the two starter-content constants (after `createProjectsDir`, ~line 223).
-- `packages/codev/src/commands/init.ts:86-90` — import and call `createResourcesDir`, print created entries.
-- `packages/codev/src/commands/adopt.ts:122-126` — same, in the adopt flow.
-- `packages/codev/src/__tests__/scaffold.test.ts` — new `describe('createResourcesDir')`: creates dir + both files with starter content; preserves pre-existing files (write sentinel content, call, assert unchanged and reported in `skipped`).
-- `packages/codev/src/__tests__/init.test.ts:68-74` — replace the "resources/ is NOT created" note with positive assertions: `codev/resources/arch.md` and `codev/resources/lessons-learned.md` exist and contain the placeholder markers.
-- `packages/codev/src/__tests__/adopt.test.ts` — extend the happy-path adopt test to assert resources files are created.
-- `packages/codev/src/commands/update.ts:~256` — import and call `createResourcesDir` in the refresh section (next to the gitignore backfill), with `dryRun` handling as described above.
-- `packages/codev/src/__tests__/update.test.ts` (or the existing update test file) — two cases: (a) update on a project missing `resources/` creates both starter files and reports them in `newFiles`; (b) update on a project with a customized `resources/arch.md` leaves it byte-identical and creates only the missing `lessons-learned.md`.
+- `packages/codev/src/lib/scaffold.ts` — add `COLD_TIER_FILES` + `copyColdTierDefaults` (~25 LOC, mirrors lines 147-190).
+- `packages/codev/src/commands/init.ts` — import + call after `copyHotTierDefaults` (~line 117).
+- `packages/codev/src/commands/adopt.ts` — import + call after `copyHotTierDefaults` (~line 159).
+- `packages/codev/src/commands/update.ts` — import + call inside the hot-tier `dryRun` block (~line 263); extend dry-run log line.
+- `packages/codev/src/__tests__/hot-tier-materialization.test.ts` (or a new parallel `cold-tier-materialization.test.ts`) — mirror the two unit tests (`copies both cold files` / `skip-existing preserves a curated copy`) and the update-integration test (`update creates the cold files`) for the cold tier.
+- `packages/codev/src/__tests__/init.test.ts:74` — replace the stale comment ("resources/ is NOT created in minimal structure") with positive assertions that all four resource files exist after init.
+- `packages/codev/src/__tests__/adopt.test.ts` — assert cold files appear after adopt.
 
-Estimated net diff: ~50 LOC source + ~90 LOC tests.
+Estimated net diff: ~30 LOC source + ~70 LOC tests.
 
 ## Risks & Alternatives Considered
 
-- **Alternative: revive `copyResourceTemplates`** (copy skeleton templates at init). Rejected — see "Why inline content" above; also drags `cheatsheet.md`/`lifecycle.md` (framework files, #1011 territory) into project repos.
-- **Alternative: resolver fallback to a skeleton default arch.md.** Rejected by the issue itself — these files are project-specific; a shared default defeats the purpose.
-- **Alternative: extend `createUserDirs` instead of a sibling function.** Rejected — `createUserDirs` creates empty dirs with `.gitkeep`; resources needs file content and per-file skip semantics. A sibling keeps both functions simple and matches the issue's suggestion.
-- **Risk: existing tests assert resources is absent.** `init.test.ts` only carries a comment (no negative assertion), so breakage risk is low; I'll run the full test suite to confirm.
-- **Risk: adopt onto a repo with a hand-made `codev/resources/`.** Unreachable today (adopt aborts when `codev/` exists), and the per-file skip makes it safe regardless.
-- **Deviation from the issue as filed**: the issue's acceptance criteria say "update does NOT touch `resources/*`". Amended at the plan-approval gate to create-if-missing backfill (architect-approved), because update is the only command that reaches projects initialized before this fix. Existing content is never modified — the criterion's protective intent is preserved. This deviation will be documented in the review file.
+- **Content-source deviation from the issue** (skeleton templates vs inline minimal). Documented above; gated on your approval. Will be recorded in the review file as a deliberate, approved deviation.
+- **Risk: the skeleton cold templates drift / are seen as "too heavy."** Mitigated by the fact they're already the canonical MAINTAIN-curated stubs; if they're too heavy that's a separate skeleton-content concern, not a scaffold-wiring concern.
+- **Risk: stale negative assertions break.** `init.test.ts:74` is only a comment (no assertion), so no breakage; I update it to a positive assertion. Full suite run will confirm nothing else asserts absence.
+- **`copyResourceTemplates` remains dead code** (987's own comment flags it as such). Out of scope here; flagged for the architect to retire separately if desired.
+- **Alternative: do nothing in `update`** (init/adopt only). Rejected — update is the only command that reaches pre-987/pre-fix projects, and 987 already backfills the hot tier there; leaving the cold tier out would be asymmetric and re-open the gap for existing projects.
+- **Alternative: generalize `copyHotTierDefaults`.** Rejected (see above) to protect the freshly-landed 987 code.
 
 ## Test Plan
 
-- **Unit (scaffold.test.ts)**: `createResourcesDir` creates `codev/resources/arch.md` + `lessons-learned.md` with the starter markers (`_No architecture documented yet._`, `_No lessons captured yet._`); a pre-existing file with sentinel content is left byte-identical and reported as skipped.
-- **Unit (init.test.ts)**: `init --yes` produces `codev/resources/` with both starter files.
-- **Unit (adopt.test.ts)**: `adopt --yes` on a plain repo produces both starter files.
-- **Unit (update)**: (a) update backfills both starter files into a project missing `resources/`; (b) customized `resources/arch.md` survives update byte-identical while the missing sibling is created; (c) `--dry-run` writes nothing.
+- **Unit**: `copyColdTierDefaults` copies both cold files (creating `resources/`); `skipExisting` preserves a curated `arch.md` while creating the missing sibling.
+- **Unit (init)**: `init --yes` yields all four `codev/resources/*.md` files.
+- **Unit (adopt)**: `adopt --yes` on a plain repo yields the cold files.
+- **Integration (update)**: update on a project missing the cold files creates both and reports them in `result.newFiles`; a customized `arch.md` survives byte-identical while `lessons-learned.md` is created; `--dry-run` writes nothing. (Mirror the existing hot-tier update integration test.)
 - **Build + full suite**: `pnpm --filter @cluesmith/codev build && pnpm --filter @cluesmith/codev test` from the worktree.
-- **Manual (for the dev-approval reviewer)**:
-  1. From the worktree: `pnpm build`, then run the built CLI: `node packages/codev/dist/src/cli.js init /tmp/pir1012-fresh --yes` (or the bin entry point; exact invocation confirmed at implement time).
-  2. Verify the init output lists `+ codev/resources/arch.md` and `+ codev/resources/lessons-learned.md`.
-  3. `cat /tmp/pir1012-fresh/codev/resources/arch.md` — starter content present; a `Read` of the path succeeds (the original failure mode).
-  4. In an adopt-shaped temp dir (no `codev/`), run adopt with `--yes` and verify the same two files appear.
-  5. In a codev project missing `resources/` (simulating a pre-fix project), run `codev update` and verify both files are backfilled; re-run with a customized `arch.md` present and verify it is untouched.
+- **Manual (dev-approval reviewer)**:
+  1. Build, then run the built CLI `init` into a temp dir; confirm output lists `+ codev/resources/arch.md` and `+ codev/resources/lessons-learned.md` alongside the hot files.
+  2. `cat` both cold files — present and readable (the original failure mode is gone).
+  3. In a codev project missing the cold files (pre-fix simulation), run `codev update`; confirm both are backfilled and a pre-existing customized `arch.md` is untouched.
