@@ -1,7 +1,8 @@
 /**
  * Codev: View {Spec,Plan,Review} File — open the on-disk markdown
  * artifact a builder has produced (or is about to produce) directly in
- * a VSCode editor tab.
+ * a VSCode editor tab. Specs and plans open in the rendered Codev Markdown
+ * Preview (#859); reviews open in the raw text editor (see PREVIEW_KINDS).
  *
  * Right-click a builder row → "View Spec/Plan/Review File".
  *
@@ -23,6 +24,7 @@ import * as vscode from 'vscode';
 import { resolve } from 'node:path';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import type { ConnectionManager } from '../connection-manager.js';
+import { MarkdownPreviewProvider } from '../markdown-preview/preview-provider.js';
 
 type ArtifactKind = 'plan' | 'spec' | 'review';
 
@@ -31,6 +33,13 @@ const ARTIFACT_SUBDIR: Record<ArtifactKind, string> = {
   spec: 'codev/specs',
   review: 'codev/reviews',
 };
+
+/**
+ * Kinds that open in the rendered Codev Markdown Preview (#859) rather than the
+ * raw text editor. Specs and plans are read/reviewed, so the rendered surface is
+ * the natural default; reviews stay as text. Add 'review' here to include it.
+ */
+const PREVIEW_KINDS: ReadonlySet<ArtifactKind> = new Set<ArtifactKind>(['spec', 'plan']);
 
 export function viewPlanFile(connectionManager: ConnectionManager, builderIdArg: string | undefined) {
   return viewArtifact(connectionManager, builderIdArg, 'plan');
@@ -120,8 +129,14 @@ async function viewArtifact(
     target = picked.path;
   }
 
-  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(target));
-  await vscode.window.showTextDocument(doc, { preview: false });
+  const uri = vscode.Uri.file(target);
+  if (PREVIEW_KINDS.has(kind)) {
+    // Render in the Codev Markdown Preview (read + comment), not the raw editor.
+    await vscode.commands.executeCommand('vscode.openWith', uri, MarkdownPreviewProvider.viewType);
+  } else {
+    const doc = await vscode.workspace.openTextDocument(uri);
+    await vscode.window.showTextDocument(doc, { preview: false });
+  }
 }
 
 function safeMtime(path: string): number {
