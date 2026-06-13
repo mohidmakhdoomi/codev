@@ -28,3 +28,9 @@ Note: building requires `packages/core` and `packages/types` to be built first (
 One thing for the human to eyeball at dev-approval: `collapseBuildersExcept` fires the tree-data change event synchronously from inside the `onDidExpandElement` handler (during `openBuilderRow`'s `reveal`). Behaves correctly in tests/logic, but worth a visual check that the open builder's file tree doesn't flicker.
 
 Sitting at dev-approval gate.
+
+Dev-approval feedback: architect disliked the loose `gen`/`openBuilderId`/`openGen` fields + the `generationOf` string parser. Refactored into a single `AccordionRowIds` class that stores the open row's literal id (no number reconstruction → no parser, more robust against stale-version races). Behavior identical; all accordion tests pass unchanged, `generationOf` tests replaced by direct `AccordionRowIds` unit tests. dev-approval then approved.
+
+## Review phase
+
+Wrote `codev/reviews/913-vscode-accordion-shouldn-t-aff.md`. No arch.md change (behavioral fix, no module-boundary/pattern change). Added two `[From 913]` lessons to lessons-learned.md: (1) the VSCode "no per-item collapse API; version the id" technique, (2) match UI-state persistence to the lifetime of what it describes. About to open the PR and let porch's verify block run the single advisory 3-way consult.
