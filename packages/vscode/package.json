@@ -50,7 +50,9 @@
         "viewType": "codev.markdownPreview",
         "displayName": "Codev Markdown Preview",
         "selector": [
-          { "filenamePattern": "**/*.md" }
+          { "filenamePattern": "**/codev/specs/**/*.md" },
+          { "filenamePattern": "**/codev/plans/**/*.md" },
+          { "filenamePattern": "**/codev/reviews/**/*.md" }
         ],
         "priority": "option"
       }
@@ -878,7 +880,7 @@
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm compile-tests && pnpm compile && pnpm lint",
-    "check-types": "tsc --noEmit",
+    "check-types": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
     "lint": "eslint src",
     "test": "vscode-test",
     "test:unit": "vitest run",

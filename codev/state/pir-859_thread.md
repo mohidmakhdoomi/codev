@@ -225,3 +225,16 @@ Architect directed fixing review-marker rendering at the source (the package) in
   core 29, artifact-canvas 39, vscode 395, compile ok.
 - Filed #1042 (html policy). #1036 fixed by the renderer change.
 NOTE: expands #859 beyond vscode-only into the shared package + amends D7 — review must reflect this.
+
+## dev-approval polish round 3 (2026-06-14)
+
+- customEditor selector scoped from **/*.md to **/codev/{specs,plans,reviews}/**/*.md (3 patterns).
+  Previously offered "Reopen With -> Codev Markdown Preview" for every .md; now only codev artifacts.
+  (priority:option already prevented default-editor hijack; this stops the over-broad offer.)
+- Added tsconfig.webview.json (DOM+ES2022 libs, types:[]) + webview-env.d.ts (declare module '*.css')
+  so the webview bundle IS type-checked. check-types now runs host tsc + webview tsc. Closes the
+  "webview excluded from typecheck" gap; host tsconfig keeps excluding the dir (no DOM in host).
+- Extracted the webview HTML out of preview-provider.ts into preview-template.ts
+  (renderMarkdownPreviewHtml + getNonce), mirroring #920's *.template.ts split. Provider now just
+  resolves URIs and calls the template.
+Build/tests green: compile (host+webview check-types, lint, 2 esbuild bundles) ok, vscode 395.

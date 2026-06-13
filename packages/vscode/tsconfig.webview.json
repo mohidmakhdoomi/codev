@@ -1,0 +1,16 @@
+{
+  // Type-checks the webview bundle (browser context) separately from the Node
+  // extension host (which has no DOM lib). esbuild builds this code; this config
+  // only `tsc --noEmit`-checks it. The host tsconfig.json EXCLUDES this directory.
+  "extends": "../config/tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["src/markdown-preview/webview"]
+}
