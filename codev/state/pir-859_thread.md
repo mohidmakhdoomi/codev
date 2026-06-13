@@ -211,3 +211,17 @@ Build/tests still green (core 31, vscode 395, compile). Still at dev-approval.
   #863 (comment 4699894519), not patched in the host.
 
 Build/tests green throughout (vscode 395, compile). Still at dev-approval.
+
+## Scope expansion: package render fix (2026-06-14)
+
+Architect directed fixing review-marker rendering at the source (the package) in this batch.
+- artifact-canvas renderer.ts: strip full-line HTML comments pre-parse (fence-aware) + cleaned→original
+  line map; data-line reports original lines. Fixes #1036 (markers no longer body text) AND the
+  multi-line split (comment removed -> paragraph rejoins). Convention flip no longer needed.
+- renderer html:false -> html:true + DOMPurify (issue #1042 filed; amends spir-945 D7). Safe static
+  HTML renders; scripts/handlers/js: stripped.
+- core: removed stripMarkersForRender (renderer owns hiding). host sends raw text.
+- Tests: artifact-canvas data-line +4, sanitization flipped. core -2 (strip tests). All green:
+  core 29, artifact-canvas 39, vscode 395, compile ok.
+- Filed #1042 (html policy). #1036 fixed by the renderer change.
+NOTE: expands #859 beyond vscode-only into the shared package + amends D7 — review must reflect this.

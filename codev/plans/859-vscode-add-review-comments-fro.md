@@ -195,3 +195,33 @@ block in the new canvas — no cosmetic drift.
 convention preserved (existing annotations untouched). Remaining open question for the `plan-approval`
 gate: confirm the parity-test approach for the core/canvas block-map duplication (vs. a later shared
 module), and whether the VSCode side of **#1036** should be closed by this PR or tracked as resolved-by-#859.
+
+---
+
+## Scope expansion (2026-06-14): fix marker rendering in the package
+
+Architect-directed, mid-implement. The host-side blank-replace workaround (above) only papered over
+a package limitation: the renderer ran markdown-it with `html: false`, which escaped `<!-- REVIEW -->`
+to **visible text** (issue #1036), and blanking the marker line **split multi-line paragraphs**. Both
+are rendering concerns that belong in the package, so they're fixed there in this batch (consumed by
+the future dashboard host too):
+
+1. **`@cluesmith/codev-artifact-canvas` renderer** (`renderer.ts`):
+   - **Strip full-line HTML comments before block parsing** (fence-aware) with a cleaned→original
+     line map; the `data-line` rule reports original lines via the map. Markers no longer render and
+     **multi-line blocks no longer split** — the comment line is removed, so the paragraph rejoins,
+     and `data-line` stays correct. This is the proper #1036 fix and removes the need for any
+     on-disk convention flip.
+   - **`html: false` → `html: true` + DOMPurify** (issue #1042, amends spir-945 **D7**): safe static
+     HTML (`<img>`, `<details>`, `<kbd>`, tables…) renders; scripts, event handlers, and
+     `javascript:`/`data:` URLs are stripped; document-supplied JS never executes.
+   - Tests updated: `data-line.test.ts` (+strip/line-map/no-split/fence), `sanitization.test.ts`
+     (D7 policy flip).
+2. **`@cluesmith/codev-core/review-markers`**: removed `stripMarkersForRender` (the renderer owns
+   hiding now). The codec is purely the on-disk read/write convention.
+3. **VSCode host** (`preview-provider.ts`): sends **raw** document text to the webview (the renderer
+   strips markers); no host-side hiding.
+
+Net: #1036 fixed properly in the renderer; richer HTML via #1042 (D7 amended); the multi-line-split
+limitation and the above/below convention question are both gone. Spec D7 amendment recorded on
+#1042 and here (the closed spir-945 spec file is not rewritten).
