@@ -29,6 +29,7 @@ import { addReviewComment } from './commands/review.js';
 import { activateGateToasts } from './notifications/gate-toast.js';
 import { activateReviewDecorations } from './review-decorations.js';
 import { activateReviewComments } from './comments/plan-review.js';
+import { MarkdownPreviewProvider } from './markdown-preview/preview-provider.js';
 import { BuilderSpawnHandler } from './builder-spawn-handler.js';
 import { BuilderTerminalLinkProvider, ReconnectTerminalLinkProvider } from './terminal-link-provider.js';
 import { computeBuildersToClose, roleIdsFromBuilders } from './prune-builder-terminals.js';
@@ -768,6 +769,18 @@ export async function activate(context: vscode.ExtensionContext) {
 		reg('codev.openBacklogSearch', () =>
 			BacklogSearchPanel.createOrShow(connectionManager!, overviewCache, context.extensionUri)),
 		reg('codev.searchBacklog', () => searchBacklog(overviewCache)),
+		reg('codev.openMarkdownPreview', async () => {
+			const uri = vscode.window.activeTextEditor?.document.uri;
+			if (!uri) {
+				vscode.window.showInformationMessage(
+					'Codev: open a spec/plan/review markdown file first, then run Open Markdown Preview.',
+				);
+				return;
+			}
+			await vscode.commands.executeCommand(
+				'vscode.openWith', uri, MarkdownPreviewProvider.viewType, vscode.ViewColumn.Beside,
+			);
+		}),
 		regCli('codev.referenceIssueInArchitect', async (arg: IssueCommandArg) => {
 			// Inline-button action on a backlog row: open + focus the architect
 			// terminal, then type `#<id> "<title>" ` into its prompt without
@@ -945,6 +958,22 @@ export async function activate(context: vscode.ExtensionContext) {
 	// OverviewData.currentUser, falling back to "architect"), matching the
 	// format produced by `codev.addReviewComment` and review.json snippet.
 	activateReviewComments(context, overviewCache);
+
+	// Codev Markdown Preview (#859): a read-only custom editor that renders a
+	// spec/plan/review in the shared artifact-canvas and adds review comments
+	// from the rendered surface. Opt-in via "Reopen With…" or
+	// `codev.openMarkdownPreview`; `priority: "option"` keeps the default `.md`
+	// editor and built-in preview untouched.
+	context.subscriptions.push(
+		vscode.window.registerCustomEditorProvider(
+			MarkdownPreviewProvider.viewType,
+			new MarkdownPreviewProvider(context.extensionUri, overviewCache),
+			{
+				webviewOptions: { retainContextWhenHidden: true },
+				supportsMultipleEditorsPerDocument: false,
+			},
+		),
+	);
 
 	// Toast on new gate-pending — surfaces blocked builders without forcing the
 	// user to watch the Builders tree. Respects `codev.gateToasts.enabled`.

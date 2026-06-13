@@ -43,6 +43,10 @@
     "./phase-grouping": {
       "types": "./dist/phase-grouping.d.ts",
       "default": "./dist/phase-grouping.js"
+    },
+    "./review-markers": {
+      "types": "./dist/review-markers.d.ts",
+      "default": "./dist/review-markers.js"
     }
   },
   "files": [

@@ -45,10 +45,30 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "customEditors": [
+      {
+        "viewType": "codev.markdownPreview",
+        "displayName": "Codev Markdown Preview",
+        "selector": [
+          { "filenamePattern": "**/codev/specs/**/*.md" },
+          { "filenamePattern": "**/codev/plans/**/*.md" },
+          { "filenamePattern": "**/codev/reviews/**/*.md" }
+        ],
+        "priority": "option"
+      }
+    ],
     "commands": [
       {
         "command": "codev.helloWorld",
         "title": "Codev: Show Connection State"
+      },
+      {
+        "command": "codev.openMarkdownPreview",
+        "title": "Codev: Open Markdown Preview",
+        "icon": {
+          "light": "icons/codev-light.svg",
+          "dark": "icons/codev-dark.svg"
+        }
       },
       {
         "command": "codev.forwardSelectionToBuilder",
@@ -303,7 +323,18 @@
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "codev.openMarkdownPreview",
+          "when": "resourceLangId == markdown && resourcePath =~ /\\/codev\\/(plans|specs|reviews)\\//",
+          "group": "navigation"
+        }
+      ],
       "commandPalette": [
+        {
+          "command": "codev.openMarkdownPreview",
+          "when": "resourceLangId == markdown && resourcePath =~ /\\/codev\\/(plans|specs|reviews)\\//"
+        },
         {
           "command": "codev.forwardSelectionToBuilder",
           "when": "false"
@@ -863,7 +894,7 @@
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm compile-tests && pnpm compile && pnpm lint",
-    "check-types": "tsc --noEmit",
+    "check-types": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
     "lint": "eslint src",
     "test": "vscode-test",
     "test:unit": "vitest run",
@@ -872,14 +903,19 @@
     "vscode:publish:pre": "sh scripts/publish.sh --pre-release"
   },
   "dependencies": {
+    "@cluesmith/codev-artifact-canvas": "workspace:*",
     "@cluesmith/codev-core": "workspace:*",
     "@cluesmith/codev-types": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/vscode": "~1.105.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "@types/ws": "^8.18.1",
     "typescript-eslint": "^8.48.1",
     "eslint": "^9.39.1",
