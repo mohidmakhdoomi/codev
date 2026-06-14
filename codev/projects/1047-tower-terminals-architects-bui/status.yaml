@@ -7,6 +7,7 @@ current_plan_phase: null
 gates:
   plan-approval:
     status: pending
+    requested_at: '2026-06-14T22:20:45.222Z'
   dev-approval:
     status: pending
   pr:
@@ -15,4 +16,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-14T22:12:29.323Z'
-updated_at: '2026-06-14T22:12:29.323Z'
+updated_at: '2026-06-14T22:20:45.223Z'
