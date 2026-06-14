@@ -1,5 +1,11 @@
 # Change Log
 
+## [Unreleased]
+
+### Bug fixes
+
+- **Terminals no longer freeze over time until you restart Tower.** After hours of use, architect and builder terminals could stop rendering output all at once, with a Tower restart the only (and unreliable) fix. The cause was a full-screen TUI (such as the Claude Code prompt) that redraws in place and emits very little newline-terminated output: the buffer Tower keeps for reconnection grew without bound, and the oversized snapshot it sent on connect blew past the terminal's 1 MB receive budget, so the terminal disconnected, reconnected, received the same oversized snapshot, and looped — thousands of times a minute — pegging Tower's CPU and starving every terminal. The buffer is now size-bounded, the reconnection snapshot is delivered in a paced way that no longer counts against the live backpressure budget, a reconnect now asks Tower only for what it missed instead of re-downloading the whole buffer (important when Tower runs remotely), and genuine live overload now drops ephemeral output (the terminal repaints) instead of reconnecting. Buffer caps are tunable via `CODEV_TERMINAL_MAX_PARTIAL_BYTES` and `CODEV_SHELLPER_MAX_REPLAY_BYTES` for remote-hosted setups.
+
 ## [3.1.9] - 2026-06-08
 
 Lockstep republish with `@cluesmith/codev@3.1.9` to keep CLI and extension versions aligned. No extension changes from 3.1.8 — see [3.1.8] below for the cycle's substantive content. The npm-side hotfix that triggered v3.1.9 didn't affect the extension; the v3.1.8 marketplace publish is functionally identical to v3.1.9.

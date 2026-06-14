@@ -51,3 +51,18 @@ Architect asked for the most resilient approach given Tower may be hosted locall
 - Caps env-configurable; Fix C removes the hard MAX_PARTIAL_BYTES<MAX_QUEUE coupling (replay no longer counts as backpressure).
 Key remote insight: reconnect-as-backpressure-remedy re-downloads the whole buffer over WAN = harmful; client must drop (like Tower already does) and resume-delta on reconnect. Sequenced commits A→B→D→C→E→instrumentation; reviewable incrementally; minimal safety net prevents storm even on partial landing.
 Plan updated, still at plan-approval gate.
+
+## Phase: implement (started 2026-06-15)
+plan-approval gate approved. Building in order A→B→D→C→E→instrumentation, commit per logical unit. Will pause at dev-approval (run worktree) — no review file this phase.
+
+## Implement progress (2026-06-15)
+Committed in order:
+- Fix A+E (8868ac86): RingBuffer scan-only pushData + byte-cap partial (DEFAULT_MAX_PARTIAL_BYTES=256KB, env CODEV_TERMINAL_MAX_PARTIAL_BYTES); createSessionRaw teardown + attachShellper idempotency.
+- Fix B (prev): ShellperReplayBuffer byte cap (DEFAULT_MAX_REPLAY_BYTES=2MB, env CODEV_SHELLPER_MAX_REPLAY_BYTES).
+- Fix C+D (f7e6b3a2): pause/resume replay bracket (server tower-websocket), client: replay excluded from backpressure + paced, live-overload DROPS (no reconnect), resume-delta reconnect (?resume=lastSeq), lastSeq reset on successor url.
+- Instrumentation (9f282745): partialBytes getters + TerminalManager.inspectPartials + 60s Tower monitor log/WARN.
+- Test fix (757a75a5): tower-websocket replay test now expects pause/replay/resume/seq.
+
+DEVIATION from plan (byte-addressable seq): kept seq LINE-based. The byte-cap already bounds replay to <=256KB (<MAX_QUEUE), so line-based resume (delta for newline streams, bounded partial for no-newline) achieves the resilience goal WITHOUT breaking the wire contract + 14 existing ring-buffer tests. Will flag at gate.
+
+Tests: ring-buffer (31), shellper-replay-buffer (new), vscode terminal-adapter (18, +5 new), full vscode suite (414) all green. Core suite: my changed-area tests green after test fix; remaining failures (session-manager integration, adopt/consult/update/hot-tier) are ENVIRONMENTAL (need dist/ + built skeleton from full `pnpm build`) — running full build to confirm.
