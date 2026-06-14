@@ -58,3 +58,9 @@ Issue #1012 — scaffold: `codev init` bootstraps `codev/resources/` with arch.m
 
 - Architect asked whether a builder/architect would know to remove the placeholder. Found the gap: review prompts + update-arch-docs skill never mention the placeholder, so the agent path could append below it. Hot-tier starters use an explicit `STARTER: replace…` comment; cold lacked one.
 - Added a `<!-- STARTER: replace … delete this comment -->` HTML comment to both `*.starter.md` files, mirroring the hot-tier convention. Satisfies the issue AC "clearly marked as a placeholder ready to be replaced." Full suite green; smoke confirms the comment lands in the materialized arch.md.
+
+## Review phase
+
+- dev-approval approved; advanced to review.
+- Wrote codev/reviews/1012-scaffold-codev-init-bootstraps.md. Routed cold-tier governance updates: arch.md "Governance Docs" section extended to cover copyColdTierDefaults; lessons-learned.md +2 Documentation entries (skeleton-sourced starters; explicit replace-me marker). No hot-tier changes (reference-tier detail, not capped facts).
+- PR #1046 opened (Fixes #1012), recorded with porch. porch done → structural checks pass. 3-way consult (gemini/codex/claude, type=impl) running in background — single advisory pass (max_iterations:1). Awaiting verdicts → pr gate.
