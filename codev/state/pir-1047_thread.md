@@ -30,3 +30,13 @@ Architect pushed back: do we have a real hypothesis, and is restart actually the
 Primary: (1) RingBuffer.pushData scan only `data` + byte-cap `partial` (front-trim); (2) ShellperReplayBuffer byte cap. Secondary/optional: listener hygiene (attachShellper idempotent, createSessionRaw teardown). Plus targeted instrumentation (log partial/replay sizes on the 30s heartbeat). Accelerated unit tests compress the leak into CI; replay-correctness test guards no-regression.
 
 Plan rewritten in codev/plans/1047-tower-terminals-architects-bui.md — still at plan-approval gate, awaiting review. Two open questions for reviewer: cap sizes, and whether to include listener-hygiene here or split it out.
+
+### CLINCHER: client-side replay storm (2026-06-15, from VSCode log)
+Architect supplied tmp/vscode-log.txt (42,143 lines, 58 min) + screenshot. Storm confirmed:
+- 14,026 "WebSocket connected" / 14,015 "Backpressure exceeded 1MB" / 14,026 "Connecting to" (1:1:1).
+- 14,017 reconnects target ONE terminal: f2dc55d1. Its disk log = 1.9 MB, 0 newlines → replay 1.9 MB > client MAX_QUEUE (1 MB).
+- Client handleData (terminal-adapter.ts:300-308): queuedBytes += payload; if >1MB → reconnect(). reconnect() (281-296) does backoff.reset() → instant retry, no backoff. Tower re-sends the 1.9 MB replay (tower-websocket.ts:62-65 getAll() = [partial]) → infinite loop.
+- This replay storm (Tower re-serializing multi-MB replay ~14k×/hr on the single event loop) is the DOMINANT CPU driver; O(n²) split is secondary. Only ~1 MB of no-newline output is needed to trigger.
+
+### Plan now has 3 coordinated fixes
+A: RingBuffer.pushData scan-only-data + byte-cap partial (< MAX_QUEUE). B: ShellperReplayBuffer byte cap. C: client backpressure path must not infinite-loop (backoff + re-trip guard; ideally pause/resume bracket so replay isn't counted as live backpressure). Plus instrumentation. Still at plan-approval gate.
