@@ -53,3 +53,8 @@ Issue #1012 — scaffold: `codev init` bootstraps `codev/resources/` with arch.m
 - Refactored: added `codev-skeleton/templates/arch.starter.md` + `lessons-learned.starter.md` (the 4-line placeholders); replaced inline `createColdTierDefaults` with copy-based `copyColdTierDefaults(targetDir, skeletonDir, opts)` that maps starter→dest (arch.starter.md→arch.md). Rich `templates/{arch,lessons-learned}.md` left untouched (manual-cp reference). copyHotTierDefaults untouched.
 - COLD_TIER_FILES is now `[{src,dest}]`. Callers pass skeletonDir/templatesDir and use `.copied`.
 - Tests updated to mock a skeleton dir; full suite green (163/3310). Smoke: init copies starters → arch.md/lessons-learned.md, no .starter.md leaks into project.
+
+## dev-approval iter: explicit replace-me marker
+
+- Architect asked whether a builder/architect would know to remove the placeholder. Found the gap: review prompts + update-arch-docs skill never mention the placeholder, so the agent path could append below it. Hot-tier starters use an explicit `STARTER: replace…` comment; cold lacked one.
+- Added a `<!-- STARTER: replace … delete this comment -->` HTML comment to both `*.starter.md` files, mirroring the hot-tier convention. Satisfies the issue AC "clearly marked as a placeholder ready to be replaced." Full suite green; smoke confirms the comment lands in the materialized arch.md.
