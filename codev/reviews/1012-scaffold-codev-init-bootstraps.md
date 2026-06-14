@@ -47,6 +47,7 @@ Fresh `codev init` projects had no `codev/resources/arch.md` or `lessons-learned
 - **`COLD_TIER_FILES` is a `{ src, dest }` mapping** (`arch.starter.md` → `arch.md`), unlike the hot tier's same-name copy. This is deliberate: the plain `templates/arch.md` is the rich reference template (with a "this file is not copied into projects" note) and must NOT be the copied starter, so the minimal starter lives in a separate `*.starter.md` source.
 - **`copyHotTierDefaults` is untouched** — the cold function is a sibling, so the load-bearing Spec 987 hot path carries zero risk from this change.
 - **`update` backfill**: cold files are already in `USER_DATA_PATTERNS` (`templates.ts`), so update's clean step never overwrote them; this change makes update *create* the missing ones (consistent with how 987 backfills the hot files).
+- **3-way consult outcome**: Gemini APPROVE (HIGH), Codex APPROVE (HIGH), Claude COMMENT (HIGH). Claude's COMMENT flagged apparent removals of unrelated governance entries (#859 from arch.md, #913 from lessons-learned.md). **Verified false positive**: `git diff <merge-base>...HEAD` showed the governance edits are purely additive (no removals); the branch was simply behind main, and those entries were added to main after the branch point. Resolved by rebasing onto current main — the branch is now 0 commits behind, `#859` is present, and the net governance diff remains additive (arch.md +1 sentence, lessons-learned.md +2 entries).
 
 ## How to Test Locally
 
