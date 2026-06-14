@@ -40,3 +40,14 @@ Architect supplied tmp/vscode-log.txt (42,143 lines, 58 min) + screenshot. Storm
 
 ### Plan now has 3 coordinated fixes
 A: RingBuffer.pushData scan-only-data + byte-cap partial (< MAX_QUEUE). B: ShellperReplayBuffer byte cap. C: client backpressure path must not infinite-loop (backoff + re-trip guard; ideally pause/resume bracket so replay isn't counted as live backpressure). Plus instrumentation. Still at plan-approval gate.
+
+### Scope decision (2026-06-15): "do all together" — remote-resilient full fix
+Architect asked for the most resilient approach given Tower may be hosted locally OR remotely (cloud/tunnel). Folded ALL into one coordinated PR:
+- A: RingBuffer scan-only + byte-cap partial + **byte-addressable seq/getSince** (so resume works for no-newline streams).
+- B: ShellperReplayBuffer byte cap.
+- C: client redesign — **delta reconnect (?resume=lastSeq)** + replay excluded from backpressure (pause/resume bracket) + **live overload DROPS not reconnects** (mirror Tower bufferedAmount drop) + keep backoff/give-up safety net.
+- D: Tower brackets replay with pause/resume + honors resume via byte-aware getSince.
+- E: listener hygiene folded in (attachShellper idempotent, createSessionRaw teardown) — matters more remotely (frequent reconnects).
+- Caps env-configurable; Fix C removes the hard MAX_PARTIAL_BYTES<MAX_QUEUE coupling (replay no longer counts as backpressure).
+Key remote insight: reconnect-as-backpressure-remedy re-downloads the whole buffer over WAN = harmful; client must drop (like Tower already does) and resume-delta on reconnect. Sequenced commits A→B→D→C→E→instrumentation; reviewable incrementally; minimal safety net prevents storm even on partial landing.
+Plan updated, still at plan-approval gate.
