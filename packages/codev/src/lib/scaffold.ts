@@ -189,73 +189,60 @@ export function copyHotTierDefaults(
   return { copied, skipped };
 }
 
-interface CreateColdTierDefaultsOptions {
-  skipExisting?: boolean;
-}
-
-interface CreateColdTierDefaultsResult {
-  created: string[];
-  skipped: string[];
-}
-
 /**
- * The cold-tier governance files and their minimal placeholder content (issue #1012).
+ * Cold-tier governance files: the skeleton starter to copy from → the project-local
+ * filename it materializes as (issue #1012).
  *
- * These are the on-demand reference archives the hot tier's "Map of …" sections point
- * into. Unlike the hot tier, they are NOT copied from the skeleton: the skeleton's
- * `templates/{arch,lessons-learned}.md` are rich framework reference templates (they even
- * carry a "this file is not copied into projects" note), so copying them verbatim would be
- * self-contradicting. Instead each project gets a trivial placeholder it grows over time —
- * enough for the review-phase read to succeed against a real, locally-owned file.
+ * The starter sources are minimal placeholders (`*.starter.md`) kept separate from the rich
+ * `templates/{arch,lessons-learned}.md` reference templates — those carry a "this file is not
+ * copied into projects" note and are the manual-`cp` opt-in, so they must not be the copied
+ * starter. Each project instead gets a trivial placeholder it grows over time, enough for the
+ * review-phase read to succeed against a real, locally-owned file.
  */
-export const COLD_TIER_STARTERS: Record<string, string> = {
-  'arch.md':
-    '# Architecture\n\n' +
-    'This document evolves as the project grows. Update it during the review phase ' +
-    'of any work that introduces or changes architectural patterns.\n\n' +
-    '_No architecture documented yet._\n',
-  'lessons-learned.md':
-    '# Lessons Learned\n\n' +
-    "Durable engineering wisdom captured across the project's work. Update it during " +
-    'the review phase of any work that surfaces a generally-applicable pattern, gotcha, ' +
-    'or constraint.\n\n' +
-    '_No lessons captured yet._\n',
-};
+export const COLD_TIER_FILES = [
+  { src: 'arch.starter.md', dest: 'arch.md' },
+  { src: 'lessons-learned.starter.md', dest: 'lessons-learned.md' },
+] as const;
 
 /**
- * Create the cold-tier governance files (arch.md, lessons-learned.md) in codev/resources/
- * with minimal placeholder content (issue #1012).
+ * Copy the cold-tier governance files (arch.md, lessons-learned.md) from the skeleton's
+ * `*.starter.md` placeholders into the project's codev/resources/.
  *
  * Companion to `copyHotTierDefaults`: Spec 987 materializes the hot tier on
  * init/adopt/update but left the cold tier — which the review prompts read and the hot-tier
  * maps point into — uncreated. `skipExisting` so a curated file is never overwritten (the
- * cold files are already registered as protected user data in templates.ts).
+ * cold files are already registered as protected user data in templates.ts). Results are
+ * keyed by the destination filename.
  */
-export function createColdTierDefaults(
+export function copyColdTierDefaults(
   targetDir: string,
-  options: CreateColdTierDefaultsOptions = {}
-): CreateColdTierDefaultsResult {
+  skeletonDir: string,
+  options: CopyResourceTemplatesOptions = {}
+): CopyResourceTemplatesResult {
   const { skipExisting = false } = options;
   const resourcesDir = path.join(targetDir, 'codev', 'resources');
-  const created: string[] = [];
+  const copied: string[] = [];
   const skipped: string[] = [];
 
   if (!fs.existsSync(resourcesDir)) {
     fs.mkdirSync(resourcesDir, { recursive: true });
   }
 
-  for (const [file, content] of Object.entries(COLD_TIER_STARTERS)) {
-    const destPath = path.join(resourcesDir, file);
+  for (const { src, dest } of COLD_TIER_FILES) {
+    const destPath = path.join(resourcesDir, dest);
+    const srcPath = path.join(skeletonDir, 'templates', src);
 
     if (skipExisting && fs.existsSync(destPath)) {
-      skipped.push(file);
+      skipped.push(dest);
       continue;
     }
-    fs.writeFileSync(destPath, content);
-    created.push(file);
+    if (fs.existsSync(srcPath)) {
+      fs.copyFileSync(srcPath, destPath);
+      copied.push(dest);
+    }
   }
 
-  return { created, skipped };
+  return { copied, skipped };
 }
 
 interface CopyRootFilesOptions {

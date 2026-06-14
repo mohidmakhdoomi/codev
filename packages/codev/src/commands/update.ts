@@ -26,7 +26,7 @@ import {
   copySkills,
   copyRootFiles,
   copyHotTierDefaults,
-  createColdTierDefaults,
+  copyColdTierDefaults,
 } from '../lib/scaffold.js';
 import { syncHotContextBlock } from '../lib/managed-block.js';
 import {
@@ -268,12 +268,12 @@ export async function update(options: UpdateOptions = {}): Promise<UpdateResult>
       }
     }
 
-    // Backfill the cold-tier governance files for existing adopters (issue #1012),
-    // skip-existing so a curated file is never overwritten.
+    // Backfill the cold-tier governance files for existing adopters from the skeleton's
+    // *.starter.md placeholders (issue #1012), skip-existing so a curated file is never overwritten.
     if (dryRun) {
       log(chalk.dim('  + (cold-tier) would create missing codev/resources/{arch,lessons-learned}.md'));
     } else {
-      for (const file of createColdTierDefaults(targetDir, { skipExisting: true }).created) {
+      for (const file of copyColdTierDefaults(targetDir, templatesDir, { skipExisting: true }).copied) {
         const rel = `codev/resources/${file}`;
         result.newFiles.push(rel);
         log(chalk.green('  + (new)'), rel);
