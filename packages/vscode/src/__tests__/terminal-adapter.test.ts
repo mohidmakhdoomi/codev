@@ -39,13 +39,14 @@ vi.mock('ws', () => {
     readyState = 0;
     binaryType = '';
     closed = false;
+    sent: unknown[] = [];
     private handlers: Record<string, Array<(...args: unknown[]) => void>> = {};
     constructor(public url: string) { FakeWebSocket.instances.push(this); }
     on(event: string, cb: (...args: unknown[]) => void): this {
       (this.handlers[event] ||= []).push(cb);
       return this;
     }
-    send(): void {}
+    send(data: unknown): void { this.sent.push(data); }
     close(): void { this.closed = true; }
     /** Test helper: synchronously dispatch a lifecycle event to handlers. */
     emit(event: string, ...args: unknown[]): void {
@@ -82,9 +83,18 @@ function sendControl(
   socket.emit('message', Buffer.concat([Buffer.from([FRAME_CONTROL]), json]));
 }
 
+/** Extract the resize control frames a fake socket has sent (#1047). */
+function sentResizes(socket: { sent: unknown[] }): Array<{ cols: number; rows: number }> {
+  return (socket.sent as Buffer[])
+    .filter((b) => b[0] === FRAME_CONTROL)
+    .map((b) => JSON.parse(b.subarray(1).toString('utf-8')) as { type: string; payload: { cols: number; rows: number } })
+    .filter((m) => m.type === 'resize')
+    .map((m) => m.payload);
+}
+
 // Imports AFTER mocks are registered.
 const WebSocket = (await import('ws')).default as unknown as {
-  instances: Array<{ closed: boolean; emit(e: string, ...a: unknown[]): void }>;
+  instances: Array<{ closed: boolean; readyState: number; sent: unknown[]; emit(e: string, ...a: unknown[]): void }>;
   OPEN: number;
 };
 const { CodevPseudoterminal, RECONNECT_LINK_TEXT } = await import('../terminal-adapter.js');
@@ -378,5 +388,42 @@ describe('PIR #1047 — oversized replay storm prevention', () => {
     const url = (currentSocket() as unknown as { url: string }).url;
     expect(url).toContain('/successor');
     expect(url).not.toContain('resume');
+  });
+});
+
+describe('PIR #1047 — post-connect repaint nudge', () => {
+  /** Open the adapter with known dimensions and an OPEN socket so sends record. */
+  function makeOpenAdapter(cols: number, rows: number) {
+    const { pty, writes } = makeAdapter();
+    (pty as unknown as { setDimensions(d: { columns: number; rows: number }): void })
+      .setDimensions({ columns: cols, rows: rows });
+    const socket = currentSocket();
+    socket.readyState = WebSocket.OPEN;
+    socket.emit('open');
+    return { pty, writes, socket };
+  }
+
+  it('forces a redraw nudge (rows-1 then rows) when the pane stays blank after connect', () => {
+    const { socket } = makeOpenAdapter(100, 40);
+    socket.sent.length = 0; // drop the on-open resize; isolate the nudge
+
+    vi.advanceTimersByTime(500);
+
+    // The nudge is a real size delta then back: 100x39 then 100x40.
+    expect(sentResizes(socket)).toEqual([
+      { cols: 100, rows: 39 },
+      { cols: 100, rows: 40 },
+    ]);
+  });
+
+  it('skips the nudge when output already rendered during the settle window', () => {
+    const { socket } = makeOpenAdapter(100, 40);
+    socket.sent.length = 0;
+
+    // Live output arrives before the settle delay → pane is no longer blank.
+    sendData(socket, Buffer.from('hello', 'utf-8'));
+    vi.advanceTimersByTime(500);
+
+    expect(sentResizes(socket).some((r) => r.rows === 39)).toBe(false);
   });
 });
