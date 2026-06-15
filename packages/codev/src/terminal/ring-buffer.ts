@@ -72,7 +72,20 @@ export class RingBuffer {
     return result;
   }
 
-  /** Get lines starting from a given sequence number (for resume). */
+  /**
+   * Get lines starting from a given sequence number (for resume).
+   *
+   * Note (#1047): `seq` advances only on completed (newline-terminated) lines.
+   * A full-screen TUI emits no newlines, so for such a session `seq` stays at
+   * whatever the last real line was and a client that is caught up to it gets
+   * `[]` here — the in-progress `partial` (the current screen) is NOT replayed
+   * on a delta resume. That gap is covered by the client's post-connect repaint
+   * nudge, which forces the app to redraw on (re)connect (see
+   * `terminal-adapter.ts`). True byte-granular resume for no-newline streams was
+   * considered and deliberately descoped (it would require a byte-addressable
+   * seq and breaks the existing line-based wire contract); the nudge makes it
+   * unnecessary for correctness.
+   */
   getSince(sinceSeq: number): string[] {
     const linesAvailable = this.count;
     const oldestSeq = this.seq - linesAvailable + 1;
