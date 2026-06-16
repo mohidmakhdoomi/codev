@@ -1,5 +1,23 @@
 # PIR Plan: Force a TUI redraw on VSCode window reactivation
 
+> **⚠️ SUPERSEDED DURING IMPLEMENTATION — read the review for what actually shipped:
+> [`codev/reviews/1052-vscode-terminal-renders-corrup.md`](../reviews/1052-vscode-terminal-renders-corrup.md).**
+> This plan (approved at the `plan-approval` gate) proposed a *refocus SIGWINCH redraw*, and was
+> later amended toward a *defer-the-connect-until-sized* approach. Both were **superseded** at the
+> `dev-approval` gate, where testing the running build localized the real cause and the fix evolved
+> to its final form. Net of what shipped:
+> - **The fix is a replay buffer-and-flush** (hold Tower's bracketed replay, paint it once after the
+>   terminal size *settles*, at the final width) — ported from the web dashboard's `flushInitialBuffer`.
+>   *Defer-until-sized* (this plan's amended approach) and two other attempts were tried and **reverted**;
+>   the diag log falsified them (VSCode always supplies a size on `open()`; a PTY SIGWINCH can't re-wrap
+>   xterm scrollback; an `onDidOverrideDimensions` reflow *regressed* scrolling).
+> - **The window-refocus redraw ships OFF by default**, behind `codev.terminal.repaintOnRefocus`, after an
+>   architect A/B test showed no observable effect — an opt-in escape hatch, not the automatic behavior
+>   this plan describes below.
+>
+> The sections below are the **original plan-time reasoning**, kept verbatim as the historical record of
+> what was approved before coding. They do **not** describe the shipped code — the review does.
+
 ## Understanding
 
 When a Codev terminal pane (architect or builder, backed by the shellper PTY relayed
