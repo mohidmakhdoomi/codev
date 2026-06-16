@@ -11,10 +11,11 @@ gates:
     approved_at: '2026-05-31T19:34:05.482Z'
   dev-approval:
     status: pending
+    requested_at: '2026-06-16T18:58:35.321Z'
   pr:
     status: pending
 iteration: 1
 build_complete: false
 history: []
 started_at: '2026-05-31T19:04:30.567Z'
-updated_at: '2026-05-31T19:35:10.282Z'
+updated_at: '2026-06-16T18:58:35.321Z'
