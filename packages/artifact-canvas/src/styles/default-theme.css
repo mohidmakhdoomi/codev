@@ -52,9 +52,12 @@
   outline: 2px solid var(--codev-canvas-accent);
 }
 
-/* v1 minimal indicator for a line carrying a review marker (#863 adds polished inline markers) */
+/* v1 minimal indicator for a line carrying a review marker (#863 adds polished inline markers).
+   The bar is an inset box-shadow on the left edge; padding-left keeps the text off the bar so
+   the gold rule doesn't crowd the prose it annotates. */
 .codev-canvas-has-marker {
   box-shadow: inset 3px 0 0 0 var(--codev-canvas-comment-marker);
+  padding-left: 10px;
 }
 
 .codev-artifact-canvas-body [data-line]:focus-visible {
