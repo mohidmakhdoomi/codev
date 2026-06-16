@@ -74,6 +74,18 @@ Folded-in rendering fixes that the original plan flagged as out-of-scope and sur
 
 A known limitation for editor-authored comments on continuation lines of multi-line blocks (they anchor to a line with no rendered `data-line` and don't appear in the canvas) is tracked as **#863** — the canvas's richer in-canvas anchoring belongs in the shared package rather than the host. Not data-loss: the marker stays in the file and renders in the editor's Comments-API thread.
 
+## Markdown preview: inline review-comment cards stop overlaying content; right-edge marker minimap (#863, PR #1056)
+
+Two improvements to the canvas-powered Codev Markdown Preview that shipped in v3.1.8 via #859.
+
+**Inline review-comment cards no longer overlay the targeted block.** The v1 marker rendering anchored comment cards as absolute-positioned overlays at the block's `data-line` y-coordinate, so cards sat on top of the first lines of the block they annotated and hid that content. Comment cards are now inserted *below* the annotated block, pushing subsequent content down by the stack's height. A thin left rule on the card stack ties back to the gutter where the `+` add-comment action lives, preserving the "this comment belongs to that block" visual association. Empty blocks (no comments) render no slot and consume no vertical space.
+
+**Right-edge marker minimap.** A vertical strip on the right edge of the preview shows one colored dot per review comment in the document, positioned proportional to where the comment lives in the preview viewport. Hovering a dot reveals author + first ~80 chars of body. Clicking smooth-scrolls the preview to that comment's card. Hidden entirely on docs with zero comments. Composes with the existing floating TOC; the two surfaces share the right gutter without fighting for space.
+
+**Multi-block markers render correctly.** Source lines that the renderer stamps multiple `data-line` attributes on (list items: both `<ul>` and `<li>` carry the same line; same for blockquotes and table rows) previously got a duplicate card stack per matching DOM node, plus invalid `<ul>` nested directly under `<ul>` markup. The render path now anchors the card stack and the `has-marker` decoration to the *outermost* element per line only (a `decoratedLines: Set<number>` guard), so each comment renders exactly once, attached to the right block. Regression test pins the list/blockquote case explicitly.
+
+Together these complete the preview as a review surface: read the rendered prose, see existing feedback in context (cards under each annotated block), see where feedback is concentrated spatially (right-edge minimap), click to navigate, all without leaving the preview pane.
+
 ## Tower + VSCode: terminal-freeze fix from the oversized-replay reconnect storm (#1047, PR #1050)
 
 Builder and architect terminals were becoming non-responsive together after the Tower process accumulated hours of uptime, recoverable only by `afx tower stop && afx tower start`. Root cause was a feedback loop between two existing components.
