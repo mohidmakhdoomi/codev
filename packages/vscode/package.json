@@ -791,6 +791,11 @@
           "default": true,
           "description": "Connect to Tower on activation"
         },
+        "codev.terminal.repaintOnRefocus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Force Codev terminals to redraw when the VSCode window regains focus (#1052). Disable to A/B test or as a kill-switch if it causes unwanted redraws."
+        },
         "codev.autoStartTower": {
           "type": "boolean",
           "default": true,

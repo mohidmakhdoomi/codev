@@ -197,11 +197,20 @@ export async function activate(context: vscode.ExtensionContext) {
 	// refocus recovers it — the same lever as a manual window resize. Fire only
 	// on the rising edge (unfocused → focused) so blur events and redundant
 	// focused-stays-true notifications don't trigger spurious redraws.
+	//
+	// Gated by `codev.terminal.repaintOnRefocus` (read at event time, so flipping
+	// the setting takes effect on the next focus change with no reload) — the
+	// kill-switch / A/B toggle for whether this path resolves a real refocus bug.
 	let windowFocused = vscode.window.state.focused;
 	context.subscriptions.push(
 		vscode.window.onDidChangeWindowState((state) => {
 			if (state.focused && !windowFocused) {
-				terminalManager?.repaintAllOnRefocus();
+				const enabled = vscode.workspace
+					.getConfiguration('codev')
+					.get<boolean>('terminal.repaintOnRefocus', true);
+				if (enabled) {
+					terminalManager?.repaintAllOnRefocus();
+				}
 			}
 			windowFocused = state.focused;
 		}));
