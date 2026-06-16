@@ -66,3 +66,11 @@ Full suite: 3338 passed, 48 skipped, 0 failures. Build green. Re-running `porch 
 Porch quirk: re-running `porch done` landed straight back at `gate_pending` (iter1) without re-issuing consult tasks — because the architect's REQUEST_CHANGES arrived via `afx send`, not a porch gate rejection, so the iteration never advanced. Ran a fresh advisory 2-way consult manually on the updated diff (iter2 outputs) since porch wouldn't re-trigger it.
 
 iter2 verdicts: gemini=APPROVE (HIGH), codex=REQUEST_CHANGES (MEDIUM, false positive: "plan lacks approval frontmatter"). Rebutted — the frontmatter convention is for architect-pre-approved artifacts; this plan was builder-authored and approved via porch's `plan-approval` gate (status.yaml), and no merged plan in codev/plans (0001–0009) carries that frontmatter. Documented the rebuttal in the review's "Consultation Findings & Dispositions" section; escalating to the human at the pr gate. Gate remains pending.
+
+### 2026-06-16 — Architect re-review: APPROVE + PR retargeted upstream
+
+Architect verified all 5 integration-review items at source (affected tests 193/193 green) and confirmed codex's frontmatter finding is a false positive (rebuttal sound). **APPROVE.**
+
+PR retargeting: this is an **upstream contribution to cluesmith/codev**. Architect opened the correct cross-fork PR → **cluesmith/codev#1059** (head `mohidmakhdoomi:builder/pir-929` → base `cluesmith/codev:main`). Fork PR #1 CLOSED as superseded (wrong base = fork main).
+
+**MERGE POLICY: pull-only on cluesmith — do NOT self-merge. A cluesmith maintainer merges #1059.** The porch pr gate is the human's to approve as bookkeeping only (no `gh pr merge` from me). Bookkeeping done: reset gh default repo → cluesmith, recorded PR #1059 in porch pr_history. Nothing further to push unless review feedback lands on #1059. Waiting at the pr gate; on gate approval I will NOT merge — I'll record/close out per the no-self-merge policy.
