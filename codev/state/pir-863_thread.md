@@ -56,3 +56,16 @@ Fix: stop using dangerouslySetInnerHTML for the body. Set body.innerHTML imperat
 standard React escape hatch for non-React DOM). Cards + has-marker decoration are now stable.
 Preserves nested-block markers and avoids HTML-splitting/layout risk. 50/50 tests pass; package +
 vscode webview bundle rebuilt.
+
+## Review phase
+
+dev-approval approved (reviewer caught + I fixed two things at the gate: card flash-then-vanish,
+and the marker accent bar crowding the text → added padding-left:10px).
+
+Wrote codev/reviews/863-vscode-markdown-preview-marker.md (Summary + Architecture Updates [none —
+internal-to-package] + Lessons Learned [added [From 863] React dangerouslySetInnerHTML re-commit
+wipes injected children → cold lessons-learned.md, Debugging section]). Opened PR #1056 (Fixes #863),
+recorded with porch. Ran `porch done 863` → single-pass 3-way consult in flight. Waiting at pr gate.
+
+Side discussion w/ architect: edit/delete/reply/resolve are out of scope here (storage-format
+blocked). Filed umbrella issue #1055 (Comment system v2) at architect's request.
