@@ -112,6 +112,22 @@ changing, THEN connect once at the final width (differs from reverted #2: keyed 
 stable", not "size present"). NOT YET IMPLEMENTED — escalating to architect first given the
 4-miss streak; consider a consult to de-risk.
 
+### THE ACTUAL FIX (attempt #5): buffer-and-flush, ported from the web client
+Tower investigation (tower-websocket.ts): replay is byte-identical for web + VSCode (no
+per-client logic). Web client does NOT have the bug → Tower is correct, fix is client-side.
+Read web's flushInitialBuffer (Terminal.tsx:463): it BUFFERS the replay, waits 500ms, fits,
+then paints ONCE at the settled width. VSCode adapter painted the replay IMMEDIATELY at the
+unsettled width → ghost status bar (drawn at 114, restranded when size→116). Diag screenshot
+confirmed: two INSERT bars, top one wider ("· ← for agents") = drawn at a different width.
+**Fix:** port buffer-and-flush into terminal-adapter.ts. Hold ALL output from `pause` until
+a debounced settle flush (REPLAY_SETTLE_MS=150, reset on each setDimensions), then paint once
+after sizing the PTY to the settled dims. Preserves #1047 (replay off backpressure budget,
+pause/resume) and #625 (resize deferred during hold). resetStreamState/close clear the hold.
+Tests: 4 new buffer-flush tests + updated #1047 oversized-replay test (advance past settle).
+426 unit pass, F5 compile/lint clean. Most-grounded attempt — ports the proven-working
+client, not a new theory. Awaiting F5 visual re-test of initial render (ghost bar gone?).
+Recommendation if confirmed: strip [#1052-diag] logs, finalize CHANGELOG, write review.
+
 ### dev-approval gate feedback (architect)
 - Naming: renamed `forceSigwinchRedraw` → `sendRepaintNudge` (SIGWINCH was the only
   identifier in the repo baking in the signal name; all others keep it in comments).
