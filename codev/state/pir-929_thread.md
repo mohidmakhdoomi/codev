@@ -62,3 +62,7 @@ Architect reviewed the running integration and returned a punch list. All addres
 - **NIT 3**: `.gemini/settings.json` added to both root `.gitignore` and the managed adopter `CODEV_GITIGNORE_ENTRIES` (gitignore.ts); gitignore/update test expectations updated.
 
 Full suite: 3338 passed, 48 skipped, 0 failures. Build green. Re-running `porch done` for a fresh single CMAP-2 pass, then re-requesting the pr gate.
+
+Porch quirk: re-running `porch done` landed straight back at `gate_pending` (iter1) without re-issuing consult tasks — because the architect's REQUEST_CHANGES arrived via `afx send`, not a porch gate rejection, so the iteration never advanced. Ran a fresh advisory 2-way consult manually on the updated diff (iter2 outputs) since porch wouldn't re-trigger it.
+
+iter2 verdicts: gemini=APPROVE (HIGH), codex=REQUEST_CHANGES (MEDIUM, false positive: "plan lacks approval frontmatter"). Rebutted — the frontmatter convention is for architect-pre-approved artifacts; this plan was builder-authored and approved via porch's `plan-approval` gate (status.yaml), and no merged plan in codev/plans (0001–0009) carries that frontmatter. Documented the rebuttal in the review's "Consultation Findings & Dispositions" section; escalating to the human at the pr gate. Gate remains pending.

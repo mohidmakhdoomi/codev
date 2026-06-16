@@ -66,6 +66,14 @@ No **HOT** (`lessons-critical.md`) change: the existing "Single source of truth 
 - **Override-aware harness resolution precedence (BLOCKER B fix)**: `getResolvedCommands.architect` is now `cliOverrides.architect || TOWER_ARCHITECT_CMD || config`. Within the Tower process `cliOverrides` is empty (it's set in the spawning `afx` process, not the long-lived server), so this matches the launch site's `TOWER_ARCHITECT_CMD || config`. An explicit `shell.architectHarness` / `shell.builderHarness` still wins over auto-detection by design — so a *deliberately* contradictory `architectHarness: claude` + gemini command is the user's call, not auto-resolved. Worth a sanity check that this precedence reads as intended.
 - **`getArchitectFiles` centralization (BLOCKER A fix)**: moved the inline write out of `launchInstance` into the shared `buildArchitectArgs` (`writeArchitectContextFiles`), and refactored the no-Tower `architect.ts` to call `buildArchitectArgs` instead of duplicating role injection. Confirm the no-Tower path's arg shape is unchanged (covered by `af-architect.test.ts`) and that the claude resume path — the one path that does *not* call `buildArchitectArgs` — correctly needs no context files (claude has no `getArchitectFiles`).
 
+## Consultation Findings & Dispositions
+
+The PR diff was reviewed by a 2-way advisory CMAP pass after the integration-review fixes landed:
+
+- **gemini: APPROVE** (HIGH confidence) — no issues.
+- **codex: REQUEST_CHANGES** (MEDIUM) — *"`codev/plans/929-...md` has no YAML approval frontmatter (`approved:` / `validated:`)."*
+  - **Disposition: REBUTTED (false positive).** The repo's frontmatter convention applies to artifacts the *architect pre-creates and pre-approves before spawning a builder* (CLAUDE.md: "When the architect creates and approves a spec or plan before spawning a builder, it must have YAML frontmatter…"). This plan was **builder-authored during the PIR plan phase and approved through porch's `plan-approval` gate** (recorded in `codev/projects/929-*/status.yaml`: `plan-approval: approved 2026-05-31`) — the gate *is* the approval record for builder-authored plans. None of the existing merged plans in `codev/plans/` carry that frontmatter either (verified: `0001`–`0009` start with a `#` heading / `## Metadata`, no `approved:` key). Adding a self-authored `approved:`/`validated:` block would *fabricate* an approval record that porch already holds authoritatively. No code change warranted. **Escalated to the human at the `pr` gate per PIR single-pass policy.**
+
 ## How to Test Locally
 
 For reviewers pulling the branch:
