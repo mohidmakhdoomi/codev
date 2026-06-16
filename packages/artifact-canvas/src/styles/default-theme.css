@@ -65,24 +65,73 @@
 .codev-artifact-canvas-body pre,
 .codev-artifact-canvas-body code { background: var(--codev-canvas-code-background); }
 
-/* Overlay: the "+" affordance + the active line's existing comments (author + text).
-   Anchored to the active block: positioned absolutely in the canvas, with `top` set inline from
-   the block's offset (the `+` lands in the left gutter beside the hovered/focused block). */
+/* Overlay: the "+" add-comment affordance only. Anchored to the active block: positioned
+   absolutely in the canvas, with `top` set inline to the first line's vertical center; the
+   `translateY(-50%)` lands the `+` centered on that line (in the left gutter) rather than floating
+   above the block's top edge (#863). */
 .codev-canvas-overlay {
   display: flex;
   gap: 8px;
-  align-items: flex-start;
+  align-items: center;
   position: absolute;
   left: 0;
   z-index: 5;
+  transform: translateY(-50%);
 }
-.codev-canvas-marker-list {
+
+/* Inline-below comment cards (#863): rendered in flow beneath the annotated block, so they push
+   following content down instead of overlapping it. The left rule ties the stack visually to the
+   gutter where the "+" lives. No stack is injected for a block with zero markers, so a comment-free
+   block consumes no extra vertical space. */
+.codev-canvas-marker-cards {
   list-style: none;
-  margin: 0;
-  padding: 4px 8px;
+  margin: 4px 0 10px;
+  padding-left: 8px;
+  border-left: 2px solid var(--codev-canvas-comment-marker);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.codev-canvas-marker-card {
+  border: 1px solid var(--codev-canvas-border);
   border-left: 3px solid var(--codev-canvas-comment-marker);
+  border-radius: 4px;
+  padding: 4px 8px;
   background: var(--codev-canvas-code-background);
   color: var(--codev-canvas-foreground);
   font-size: 0.9em;
 }
-.codev-canvas-marker-author { font-weight: 600; color: var(--codev-canvas-muted); }
+.codev-canvas-marker-card-icon { margin-right: 4px; }
+.codev-canvas-marker-card-author { font-weight: 600; color: var(--codev-canvas-muted); margin-right: 4px; }
+
+/* Right-edge marker minimap (#863): a fixed, narrow column of dots — one per REVIEW marker,
+   positioned proportional to the marker's place in the document. The column itself is
+   click-transparent (pointer-events: none) so only the dots are interactive, and it is narrow
+   enough to sit alongside a future floating TOC (#861) without fighting for space. */
+.codev-canvas-minimap {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 14px;
+  z-index: 4;
+  pointer-events: none;
+}
+.codev-canvas-minimap-dot {
+  position: absolute;
+  right: 3px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--codev-canvas-comment-marker);
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateY(-50%);
+}
+.codev-canvas-minimap-dot:hover,
+.codev-canvas-minimap-dot:focus-visible {
+  outline: 2px solid var(--codev-canvas-accent);
+  outline-offset: 1px;
+}

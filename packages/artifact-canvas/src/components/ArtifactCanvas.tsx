@@ -2,6 +2,7 @@ import * as React from 'react';
 import type { ArtifactCanvasProps, ReviewMarker } from '../types.js';
 import { renderMarkdown } from '../renderer/renderer.js';
 import { CommentAffordance } from '../overlays/CommentAffordance.js';
+import { MarkerMinimap } from '../overlays/MarkerMinimap.js';
 
 /**
  * ArtifactCanvas — the composed review surface (Phase 3).
@@ -17,6 +18,40 @@ import { CommentAffordance } from '../overlays/CommentAffordance.js';
  * optional `onError` prop; the component never throws out of an event handler, and a failed
  * `list()` leaves the prior markers in place (spec D2).
  */
+/**
+ * Build an inline-below comment-card stack for one annotated block (#863). Returns a `<ul>` to be
+ * inserted as the block's next sibling. Markers render in `markers` order — i.e. the order
+ * `parseReviewMarkers` produces (creation order). Author and body are set via `textContent`, so
+ * document-supplied text can never inject markup into the canvas.
+ */
+function buildMarkerCards(line: number, markers: ReviewMarker[]): HTMLUListElement {
+  const stack = document.createElement('ul');
+  stack.className = 'codev-canvas-marker-cards';
+  // Human-facing line numbers are 1-based; the data model stays 0-based (spec D5).
+  stack.setAttribute('aria-label', `Comments on line ${line + 1}`);
+  for (const m of markers) {
+    const card = document.createElement('li');
+    card.className = 'codev-canvas-marker-card';
+
+    const icon = document.createElement('span');
+    icon.className = 'codev-canvas-marker-card-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '💬';
+
+    const author = document.createElement('span');
+    author.className = 'codev-canvas-marker-card-author';
+    author.textContent = m.author;
+
+    const body = document.createElement('span');
+    body.className = 'codev-canvas-marker-card-body';
+    body.textContent = m.text;
+
+    card.append(icon, author, body);
+    stack.append(card);
+  }
+  return stack;
+}
+
 export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
   const { uri, fileAdapter, markerAdapter, onAddComment, onError, refreshKey } = props;
 
@@ -112,12 +147,20 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
 
   const html = React.useMemo(() => renderMarkdown(content), [content]);
 
-  // Decorate the rendered (innerHTML) DOM after each render: make blocks keyboard-focusable and
-  // mark lines that carry a ReviewMarker (v1 minimal marker rendering — deferred #4; #863 adds
-  // polished inline markers + the canvas minimap).
+  // Decorate the rendered (innerHTML) DOM after each render: mark lines that carry a ReviewMarker
+  // and inject an inline-below comment-card stack for each annotated block (#863). The stack is a
+  // real DOM sibling inserted *after* the block, so it sits in normal flow and pushes subsequent
+  // content down — it never overlaps the block (the layout fix that replaced the absolutely-
+  // positioned hover overlay marker-list). Card author/body use textContent, never innerHTML, so
+  // document-supplied marker text can't inject markup.
   React.useEffect(() => {
     const root = bodyRef.current;
     if (!root) return;
+    // Remove previously-injected stacks first: a markers-only re-render doesn't reset the
+    // dangerouslySetInnerHTML body, so without this the stacks would accumulate (an html change
+    // resets innerHTML and clears them for us — this covers the other case). Idempotent either way.
+    root.querySelectorAll('.codev-canvas-marker-cards').forEach((n) => n.remove());
+
     const byLine = new Map<number, ReviewMarker[]>();
     for (const m of markers) {
       const arr = byLine.get(m.line) ?? [];
@@ -130,12 +173,12 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
     root.querySelectorAll<HTMLElement>('[data-line]').forEach((el) => {
       const line = Number(el.getAttribute('data-line'));
       const ms = byLine.get(line);
+      el.removeAttribute('title'); // the inline cards show author+text now — no tooltip needed
       if (ms && ms.length > 0) {
         el.classList.add('codev-canvas-has-marker');
-        el.setAttribute('title', ms.map((m) => `${m.author}: ${m.text}`).join('\n'));
+        el.after(buildMarkerCards(line, ms)); // inline-below, in flow (#863)
       } else {
         el.classList.remove('codev-canvas-has-marker');
-        el.removeAttribute('title');
       }
     });
     // Reconcile the overlay anchor against the *reloaded* DOM (iter-5 Codex): if a watch/refreshKey
@@ -156,20 +199,25 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
   };
 
   // Activate the hovered/focused block AND anchor the overlay to it: record the block's vertical
-  // offset so the `+` affordance renders next to that block instead of at the bottom of the canvas.
-  // (`offsetTop` is relative to `.codev-artifact-canvas`, which is the positioned ancestor.)
+  // offset so the `+` affordance renders beside that block. We anchor to the *first line's vertical
+  // center* (offsetTop + half the line height) rather than the block's top edge, and the overlay
+  // CSS applies `translateY(-50%)` so the `+` lands centered on the first line, not floating above
+  // it (#863 bundled polish from the issue comment). (`offsetTop` is relative to
+  // `.codev-artifact-canvas`, the positioned ancestor.)
   const activateFromTarget = (target: EventTarget | null): void => {
     const el = (target as HTMLElement | null)?.closest?.('[data-line]') as HTMLElement | null;
     if (!el) return;
     const n = Number(el.getAttribute('data-line'));
     if (Number.isNaN(n)) return;
     setActiveLine(n);
-    setOverlayTop(el.offsetTop);
+    const cs = getComputedStyle(el);
+    let lineHeight = parseFloat(cs.lineHeight);
+    if (!Number.isFinite(lineHeight)) {
+      const fontSize = parseFloat(cs.fontSize);
+      lineHeight = Number.isFinite(fontSize) ? fontSize * 1.2 : 0;
+    }
+    setOverlayTop(el.offsetTop + lineHeight / 2);
   };
-
-  // Markers on the currently-active (hovered/focused) line — surfaced author + text via the
-  // overlay (deferred #4: minimal v1 marker rendering; #863 adds polished inline markers).
-  const activeMarkers = activeLine === null ? [] : markers.filter((m) => m.line === activeLine);
 
   return React.createElement(
     'div',
@@ -190,29 +238,16 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
       },
       dangerouslySetInnerHTML: { __html: html },
     }),
+    // The overlay now carries ONLY the "+" add-comment affordance. Existing markers render as
+    // always-visible inline cards below their block (injected above), not in this hover overlay —
+    // that's the layout fix that stopped the cards overlapping the block content (#863).
     activeLine !== null
       ? React.createElement(
           'div',
           { className: 'codev-canvas-overlay', style: { top: overlayTop } },
           React.createElement(CommentAffordance, { line: activeLine, onActivate: onAddComment }),
-          activeMarkers.length > 0
-            ? React.createElement(
-                'ul',
-                {
-                  className: 'codev-canvas-marker-list',
-                  'aria-label': `Comments on line ${activeLine + 1}`,
-                },
-                activeMarkers.map((m, i) =>
-                  React.createElement(
-                    'li',
-                    { key: String(i), className: 'codev-canvas-marker' },
-                    React.createElement('span', { className: 'codev-canvas-marker-author' }, m.author),
-                    `: ${m.text}`,
-                  ),
-                ),
-              )
-            : null,
         )
       : null,
+    React.createElement(MarkerMinimap, { markers, bodyRef }),
   );
 }
