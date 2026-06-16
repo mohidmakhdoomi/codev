@@ -75,6 +75,23 @@ fires) so if it STILL fails the user can paste the Codev output channel and I ge
 instead of a 3rd guess. 430 unit tests pass, F5 compile/lint clean. **Unconfirmed — awaiting
 F5 test. If it works: strip diag logs + finalize CHANGELOG.**
 
+### DATA-DRIVEN PRUNE (diag log captured)
+Architect ran F5 + pasted `[#1052-diag]` log. Decisive facts:
+- `open() initialDimensions=114x40` (NOT undefined) → **defer-until-sized (attempt #2)
+  FALSIFIED** — it never engages. Removed entirely: `awaitingInitialSize`,
+  `initialConnectTimer`, `INITIAL_SIZE_FALLBACK_MS`, open/unsized branch, setDimensions
+  deferred-connect branch, close cleanup, 5 defer tests. open() reverts to always-connect.
+- replay is tiny/instant (pause→resume same ms) → "oversized replay renders corrupted" not
+  the mechanism here.
+- post-replay `forceXtermReflow` override(113x39)→release DID fire (mechanically works).
+- **Smoking gun:** pane resized 114x40 → **116x41 at +148ms** (setDimensions AFTER our
+  reflow already released). Geometry still settling; every redraw lever fires during the
+  settling window against a stale size. → next fix direction (if reflow ineffective):
+  debounce reflow until size stabilizes.
+Still KEPT (not decided by this log): refocus path (attempt #1, different trigger, not
+exercised) + post-replay reflow (attempt #3, live candidate). 425 unit tests pass.
+Awaiting architect's visual result (fixed or not) before next step.
+
 ### dev-approval gate feedback (architect)
 - Naming: renamed `forceSigwinchRedraw` → `sendRepaintNudge` (SIGWINCH was the only
   identifier in the repo baking in the signal name; all others keep it in comments).

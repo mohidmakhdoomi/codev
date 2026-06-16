@@ -8,7 +8,6 @@ const CHUNK_SIZE = 16384; // 16KB — chunk onDidWrite to avoid CPU spikes
 const MAX_QUEUE = 1048576; // 1MB — drop live output if the unrendered queue exceeds this
 const DROP_WARN_INTERVAL_MS = 5000; // throttle backpressure-drop warnings (#1047)
 const REPAINT_NUDGE_DELAY_MS = 500; // settle delay before forcing a redraw-SIGWINCH (#1047), matching the web client's 500ms
-const INITIAL_SIZE_FALLBACK_MS = 2000; // if VS Code never reports a size, connect anyway rather than hang (#1052)
 const OVERRIDE_RELEASE_MS = 100; // hold the dimension override briefly so xterm renders the shrunk frame before release (#1052)
 
 // Reconnect backoff. The exponential curve (1000 * 2^attempt, capped at 30s),
@@ -71,16 +70,6 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
   private renderedSinceConnect = false;
   private repaintNudgeTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Defer the initial connect until VS Code reports the real terminal size
-  // (#1052). VS Code may call open() with `initialDimensions === undefined`
-  // before the terminal is laid out; connecting then lets Tower replay the
-  // full-screen TUI frame while the PTY is still at node-pty's 80×24 default, so
-  // it renders at the wrong width and the pane comes up corrupted (overlapping
-  // frames, cursor near the top) until a manual resize. We instead wait for the
-  // first setDimensions() so the PTY is correctly sized before the first frame
-  // is ever drawn. A fallback timer connects anyway if no size ever arrives.
-  private awaitingInitialSize = false;
-  private initialConnectTimer: ReturnType<typeof setTimeout> | null = null;
   // Armed on a fresh full-replay connect; on the replay's `resume` we force an
   // xterm reflow to clear any corruption the first render left behind (#1052).
   private reflowAfterReplay = false;
@@ -114,34 +103,15 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
     this.writeEmitter.fire('');
     this.log('INFO', `[#1052-diag] open() initialDimensions=${initialDimensions ? `${initialDimensions.columns}x${initialDimensions.rows}` : 'undefined'}`);
     if (initialDimensions) {
-      this.log('INFO', '[#1052-diag] PATH open/sized → connect immediately');
       this.lastDimensions = { cols: initialDimensions.columns, rows: initialDimensions.rows };
-      this.connect();
-      return;
     }
-    this.log('INFO', '[#1052-diag] PATH open/unsized → defer connect until first setDimensions');
-    // No size yet (#1052): defer the connect — and thus the replay — until the
-    // first setDimensions() so the PTY is sized before the first frame renders.
-    // A fallback timer connects anyway if a size never arrives, so the terminal
-    // can't hang permanently in the unsized state.
-    this.awaitingInitialSize = true;
-    this.initialConnectTimer = setTimeout(() => {
-      this.initialConnectTimer = null;
-      if (this.disposed || !this.awaitingInitialSize) { return; }
-      this.log('INFO', '[#1052-diag] PATH fallback-timer fired → connect without a reported size');
-      this.awaitingInitialSize = false;
-      this.connect();
-    }, INITIAL_SIZE_FALLBACK_MS);
+    this.connect();
   }
 
   close(): void {
     this.disposed = true;
     this.clearRepaintNudge();
     this.clearOverrideRelease();
-    if (this.initialConnectTimer) {
-      clearTimeout(this.initialConnectTimer);
-      this.initialConnectTimer = null;
-    }
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -177,21 +147,8 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
   }
 
   setDimensions(dimensions: vscode.TerminalDimensions): void {
-    this.log('INFO', `[#1052-diag] setDimensions ${dimensions.columns}x${dimensions.rows} awaitingInitialSize=${this.awaitingInitialSize} replaying=${this.replaying}`);
+    this.log('INFO', `[#1052-diag] setDimensions ${dimensions.columns}x${dimensions.rows} replaying=${this.replaying}`);
     this.lastDimensions = { cols: dimensions.columns, rows: dimensions.rows };
-    // First real size after a deferred open (#1052): connect now that the PTY
-    // can be sized correctly before the replay. connect()'s open handler sends
-    // the resize, so we return without a (no-op) sendResize on a dead socket.
-    if (this.awaitingInitialSize) {
-      this.log('INFO', '[#1052-diag] PATH setDimensions/deferred-connect → first real size, connecting now');
-      this.awaitingInitialSize = false;
-      if (this.initialConnectTimer) {
-        clearTimeout(this.initialConnectTimer);
-        this.initialConnectTimer = null;
-      }
-      this.connect();
-      return;
-    }
     if (this.replaying) {
       // Defer resize during replay to prevent garbled rendering (Bugfix #625)
       this.log('INFO', '[#1052-diag] PATH setDimensions/during-replay → deferring resize until resume');
