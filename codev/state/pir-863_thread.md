@@ -69,3 +69,18 @@ recorded with porch. Ran `porch done 863` → single-pass 3-way consult in fligh
 
 Side discussion w/ architect: edit/delete/reply/resolve are out of scope here (storage-format
 blocked). Filed umbrella issue #1055 (Comment system v2) at architect's request.
+
+## PR-stage 3-way consult (single advisory pass)
+
+- gemini=APPROVE (off-track run — explored wrong dir, no weight)
+- claude=APPROVE (HIGH, no key issues; 2 non-blocking notes: emoji portability, key=index → no change)
+- codex=REQUEST_CHANGES (HIGH) — REAL: card stack injected per-[data-line] match, but renderer
+  stamps same data-line on nested blocks (ul+li) → duplicate stack + invalid ul>ul DOM for
+  list/blockquote/table markers. Minimap NOT affected (maps over markers, querySelector=outermost).
+
+FIXED: anchor stack+has-marker to first (outermost) match per line via decoratedLines Set.
+Regression test "anchors a single card stack to the OUTERMOST block…" — confirmed fails without
+fix (expected 2 to be 1), passes with. 51/51 green. Rebuttal at codev/projects/863-*/...rebuttals.md.
+
+Pushed to PR #1056. Notified architect (led with REQUEST_CHANGES + disposition; escalated that
+PIR won't re-review). pr gate PENDING — waiting for human approval, then merge.
