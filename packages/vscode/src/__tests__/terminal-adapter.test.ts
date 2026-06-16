@@ -485,3 +485,50 @@ describe('PIR #1052 — forceRepaint on window refocus', () => {
     expect(sentResizes(socket)).toEqual([]);
   });
 });
+
+describe('PIR #1052 — clean redraw after a fresh connect replay', () => {
+  function makeOpenAdapter(cols: number, rows: number) {
+    const { pty, writes } = makeAdapter();
+    (pty as unknown as { setDimensions(d: { columns: number; rows: number }): void })
+      .setDimensions({ columns: cols, rows: rows });
+    const socket = currentSocket();
+    socket.readyState = WebSocket.OPEN;
+    socket.emit('open');
+    return { pty: pty as unknown as { reconnect(): void }, writes, socket };
+  }
+
+  it('forces a redraw nudge when a fresh full replay completes, even though it rendered', () => {
+    const { socket } = makeOpenAdapter(100, 40);
+    socket.sent.length = 0; // drop the on-open resize
+
+    // A bracketed full replay (pause → buffered output → resume). The output
+    // renders (so renderedSinceConnect is true and the blank-pane timer would
+    // skip), but the fresh replay can still be visually corrupted.
+    sendControl(socket, { type: 'pause', payload: {} });
+    sendData(socket, Buffer.from('replayed alt-screen frame', 'utf-8'));
+    sendControl(socket, { type: 'resume', payload: {} });
+
+    expect(sentResizes(socket)).toEqual([
+      { cols: 100, rows: 39 },
+      { cols: 100, rows: 40 },
+    ]);
+  });
+
+  it('does NOT nudge after a reconnect delta replay (lastSeq > 0), avoiding a reflow', () => {
+    const { pty, socket } = makeOpenAdapter(100, 40);
+    // Advance lastSeq so the next connect requests a delta, not a full replay.
+    sendControl(socket, { type: 'seq', payload: { seq: 42 } });
+
+    pty.reconnect();
+    const socket2 = currentSocket();
+    socket2.readyState = WebSocket.OPEN;
+    socket2.emit('open');
+    socket2.sent.length = 0; // drop the on-open resize
+
+    sendControl(socket2, { type: 'pause', payload: {} });
+    sendData(socket2, Buffer.from('delta output', 'utf-8'));
+    sendControl(socket2, { type: 'resume', payload: {} });
+
+    expect(sentResizes(socket2).some((r) => r.rows === 39)).toBe(false);
+  });
+});

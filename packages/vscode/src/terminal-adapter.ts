@@ -61,6 +61,14 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
   // nudge the size (a brief 1-row change, then back) to force the SIGWINCH.
   private renderedSinceConnect = false;
   private repaintNudgeTimer: ReturnType<typeof setTimeout> | null = null;
+  // True while this connection is replaying a *full* buffer (a fresh open or a
+  // successor session, not a reconnect delta). The connect-time nudge above only
+  // fires when the pane stays blank, but a full replay of a full-screen TUI's
+  // alt-screen buffer often *renders* into a corrupted state (mid-stream cursor
+  // / frame), which suppresses that nudge. We force one clean redraw when such a
+  // replay ends (#1052). Reconnect deltas are excluded so an already-correct
+  // pane isn't reflowed (#1050 intent).
+  private nudgeAfterReplay = false;
 
   // Reconnect-loop state. The adapter owns reconnection end-to-end (#936) —
   // backoff scheduling, give-up after MAX_RECONNECT_ATTEMPTS, and a terminal
@@ -191,6 +199,11 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
       // Force a redraw-SIGWINCH after the connection settles if nothing has
       // rendered (#1047), mirroring the web dashboard's post-connect resize.
       this.renderedSinceConnect = false;
+      // A fresh connection (lastSeq 0) requests a full replay; arm a guaranteed
+      // redraw for when that replay ends, since rendering it can land corrupted
+      // and the blank-pane nudge above would skip it (#1052). Reconnect deltas
+      // (lastSeq > 0) keep the no-reflow behavior.
+      this.nudgeAfterReplay = this.lastSeq <= 0;
       this.scheduleRepaintNudge();
     });
 
@@ -488,6 +501,13 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
         if (this.pendingResize) {
           this.sendResize(this.pendingResize.cols, this.pendingResize.rows);
           this.pendingResize = null;
+        }
+        // A fresh full replay just finished writing the alt-screen buffer, which
+        // can render corrupted (overlapping frames, cursor near the top) and stay
+        // that way until a manual resize. Force one clean redraw now (#1052).
+        if (this.nudgeAfterReplay) {
+          this.nudgeAfterReplay = false;
+          this.sendRepaintNudge();
         }
         break;
       case 'error':
