@@ -201,7 +201,6 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.window.onDidChangeWindowState((state) => {
 			if (state.focused && !windowFocused) {
-				outputChannel?.appendLine('[#1052-diag] PATH window-refocus rising edge → repaintAllOnRefocus');
 				terminalManager?.repaintAllOnRefocus();
 			}
 			windowFocused = state.focused;

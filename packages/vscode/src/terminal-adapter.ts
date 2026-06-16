@@ -102,7 +102,6 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
     // when the terminal becomes the active editor (microsoft/vscode#108298),
     // which manifests as a blank pane when openTerminal calls show(false).
     this.writeEmitter.fire('');
-    this.log('INFO', `[#1052-diag] open() initialDimensions=${initialDimensions ? `${initialDimensions.columns}x${initialDimensions.rows}` : 'undefined'}`);
     if (initialDimensions) {
       this.lastDimensions = { cols: initialDimensions.columns, rows: initialDimensions.rows };
     }
@@ -147,18 +146,15 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
   }
 
   setDimensions(dimensions: vscode.TerminalDimensions): void {
-    this.log('INFO', `[#1052-diag] setDimensions ${dimensions.columns}x${dimensions.rows} replaying=${this.replaying} holding=${this.replayHoldBuffer !== null}`);
     this.lastDimensions = { cols: dimensions.columns, rows: dimensions.rows };
     if (this.replayHoldBuffer !== null) {
       // Held window (#1052; supersedes #625's replay-only defer): keep the resize
       // pending so the PTY is sized at flush, and — if the settle flush is already
       // armed — reset its debounce, since the size is still moving.
-      this.log('INFO', '[#1052-diag] PATH setDimensions/holding → defer resize, reset settle flush');
       this.pendingResize = { cols: dimensions.columns, rows: dimensions.rows };
       if (this.replayFlushTimer) { this.armReplayFlush(); }
       return;
     }
-    this.log('INFO', '[#1052-diag] PATH setDimensions/live → sendResize now');
     this.sendResize(dimensions.columns, dimensions.rows);
   }
 
@@ -208,15 +204,11 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
       // overlap streaming content. Pause/replay messages arrive *after*
       // this outbound resize, so the order is auth → resize → replay → resume.
       if (this.lastDimensions) {
-        this.log('INFO', `[#1052-diag] PATH ws-open → resync PTY size ${this.lastDimensions.cols}x${this.lastDimensions.rows}`);
         this.sendResize(this.lastDimensions.cols, this.lastDimensions.rows);
-      } else {
-        this.log('INFO', '[#1052-diag] PATH ws-open → NO lastDimensions (PTY left at default size)');
       }
       // Force a redraw-SIGWINCH after the connection settles if nothing has
       // rendered (#1047), mirroring the web dashboard's post-connect resize.
       this.renderedSinceConnect = false;
-      this.log('INFO', `[#1052-diag] PATH ws-open → lastSeq=${this.lastSeq}`);
       this.scheduleRepaintNudge();
     });
 
@@ -445,10 +437,8 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
       // Skip while holding a replay (#1052): flushReplay() owns the resize then,
       // and nudging mid-hold would paint/redraw at a not-yet-settled width.
       if (this.disposed || this.renderedSinceConnect || this.replayHoldBuffer !== null) {
-        this.log('INFO', `[#1052-diag] PATH nudge-timer → SKIP (disposed=${this.disposed} rendered=${this.renderedSinceConnect} holding=${this.replayHoldBuffer !== null})`);
         return;
       }
-      this.log('INFO', '[#1052-diag] PATH nudge-timer → blank pane, sending SIGWINCH nudge');
       this.sendRepaintNudge();
     }, REPAINT_NUDGE_DELAY_MS);
   }
@@ -481,10 +471,9 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
    * or mid-replay (the connect path owns the redraw then).
    */
   forceRepaint(): void {
-    if (this.disposed) { this.log('INFO', '[#1052-diag] PATH forceRepaint(refocus) → SKIP disposed'); return; }
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) { this.log('INFO', '[#1052-diag] PATH forceRepaint(refocus) → SKIP socket not OPEN'); return; }
-    if (this.replaying) { this.log('INFO', '[#1052-diag] PATH forceRepaint(refocus) → SKIP mid-replay'); return; }
-    this.log('INFO', '[#1052-diag] PATH forceRepaint(refocus) → SIGWINCH nudge');
+    if (this.disposed) { return; }
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) { return; }
+    if (this.replaying) { return; }
     this.sendRepaintNudge();
   }
 
@@ -546,7 +535,6 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
     } else if (this.lastDimensions) {
       this.sendResize(this.lastDimensions.cols, this.lastDimensions.rows);
     }
-    this.log('INFO', `[#1052-diag] PATH flushReplay → painting ${buffered.length} held bytes at settled size`);
     if (buffered.length > 0) {
       this.renderedSinceConnect = true;
       this.writeChunked(buffered);
@@ -561,13 +549,11 @@ export class CodevPseudoterminal implements vscode.Pseudoterminal {
       case 'pong':
         break;
       case 'pause':
-        this.log('INFO', '[#1052-diag] PATH ctrl/pause → replay starting, holding output');
         this.replaying = true;
         // Begin holding: subsequent data accumulates instead of painting (#1052).
         if (this.replayHoldBuffer === null) { this.replayHoldBuffer = ''; }
         break;
       case 'resume':
-        this.log('INFO', '[#1052-diag] PATH ctrl/resume → replay received, arming settle flush');
         this.replaying = false;
         // Replay fully received. Arm the debounced flush; setDimensions resets it
         // while the size is still moving, so the paint lands at the settled width.
