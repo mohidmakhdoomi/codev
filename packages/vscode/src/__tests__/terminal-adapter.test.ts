@@ -427,3 +427,61 @@ describe('PIR #1047 — post-connect repaint nudge', () => {
     expect(sentResizes(socket).some((r) => r.rows === 39)).toBe(false);
   });
 });
+
+describe('PIR #1052 — forceRepaint on window refocus', () => {
+  function makeOpenAdapter(cols: number, rows: number) {
+    const { pty, writes } = makeAdapter();
+    (pty as unknown as { setDimensions(d: { columns: number; rows: number }): void })
+      .setDimensions({ columns: cols, rows: rows });
+    const socket = currentSocket();
+    socket.readyState = WebSocket.OPEN;
+    socket.emit('open');
+    return { pty: pty as unknown as { forceRepaint(): void; close(): void }, writes, socket };
+  }
+
+  it('forces a redraw nudge (rows-1 then rows) even after output has rendered', () => {
+    const { pty, socket } = makeOpenAdapter(100, 40);
+    // The pane has already painted (the refocus case): renderedSinceConnect is
+    // true, which would suppress the connect-time nudge — but forceRepaint is
+    // ungated and must still fire.
+    sendData(socket, Buffer.from('hello', 'utf-8'));
+    socket.sent.length = 0;
+
+    pty.forceRepaint();
+
+    expect(sentResizes(socket)).toEqual([
+      { cols: 100, rows: 39 },
+      { cols: 100, rows: 40 },
+    ]);
+  });
+
+  it('no-ops when the socket is not OPEN', () => {
+    const { pty, socket } = makeOpenAdapter(100, 40);
+    socket.sent.length = 0;
+    socket.readyState = WebSocket.OPEN + 1; // anything but OPEN
+
+    pty.forceRepaint();
+
+    expect(sentResizes(socket)).toEqual([]);
+  });
+
+  it('no-ops while a connect-time replay is in flight', () => {
+    const { pty, socket } = makeOpenAdapter(100, 40);
+    sendControl(socket, { type: 'pause', payload: {} }); // enter replay
+    socket.sent.length = 0;
+
+    pty.forceRepaint();
+
+    expect(sentResizes(socket)).toEqual([]);
+  });
+
+  it('no-ops after the adapter is disposed', () => {
+    const { pty, socket } = makeOpenAdapter(100, 40);
+    socket.sent.length = 0;
+    pty.close();
+
+    pty.forceRepaint();
+
+    expect(sentResizes(socket)).toEqual([]);
+  });
+});
