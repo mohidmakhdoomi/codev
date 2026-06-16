@@ -184,14 +184,24 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
     // (tabindex is stamped at render time by the renderer, not here — keeps focusability free of
     // this effect's timing.) This effect only applies marker decoration, which depends on the
     // asynchronously-loaded markers.
+    // The renderer stamps the same `data-line` on multiple nested blocks for one source line
+    // (e.g. both a `ul` and its `li`; see renderer/__tests__/data-line.test.ts). Anchor the card
+    // stack + decoration to the FIRST match per line only — querySelectorAll yields tree order, so
+    // the first match is the outermost block for that line. Without this guard a list/blockquote
+    // marker injects a duplicate stack and, worse, invalid DOM: the stack is itself a `<ul>`, so
+    // `el.after(...)` on the inner `<li>` nests `ul > ul`. (Codex review iter-1.)
+    const decoratedLines = new Set<number>();
     root.querySelectorAll<HTMLElement>('[data-line]').forEach((el) => {
       const line = Number(el.getAttribute('data-line'));
       const ms = byLine.get(line);
       el.removeAttribute('title'); // the inline cards show author+text now — no tooltip needed
-      if (ms && ms.length > 0) {
+      if (ms && ms.length > 0 && !decoratedLines.has(line)) {
+        decoratedLines.add(line);
         el.classList.add('codev-canvas-has-marker');
         el.after(buildMarkerCards(line, ms)); // inline-below, in flow (#863)
       } else {
+        // Inner siblings that share the line (and genuinely unmarked blocks) get no card and no
+        // decoration; any stale class from a prior markers-only re-render is cleared here too.
         el.classList.remove('codev-canvas-has-marker');
       }
     });
