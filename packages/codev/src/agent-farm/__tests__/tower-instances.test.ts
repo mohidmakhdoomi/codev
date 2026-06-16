@@ -21,6 +21,7 @@ import {
   killTerminalWithShellper,
   stopInstance,
   removeArchitect,
+  waitForTerminalExit,
   type InstanceDeps,
 } from '../servers/tower-instances.js';
 
@@ -123,6 +124,52 @@ describe('tower-instances', () => {
       initInstances(deps2);
       shutdownInstances();
       // No error means it worked
+    });
+  });
+
+  // =========================================================================
+  // waitForTerminalExit
+  // =========================================================================
+
+  describe('waitForTerminalExit', () => {
+    it('resolves immediately when the session has already exited (Bugfix #905 regression)', async () => {
+      // Bugfix #905 made shellper exits propagate before teardown attaches its
+      // once('exit') listener. A session that already fired 'exit' must NOT wait
+      // out the 5s safety timeout — it should short-circuit on status.
+      const once = vi.fn();
+      const manager = {
+        getSession: vi.fn().mockReturnValue({ status: 'exited', once }),
+      } as unknown as Parameters<typeof waitForTerminalExit>[0];
+
+      await expect(waitForTerminalExit(manager, 'term-1', 5000)).resolves.toBeUndefined();
+      // Must not even attach the listener for an already-exited session.
+      expect(once).not.toHaveBeenCalled();
+    });
+
+    it('resolves immediately when the session is missing', async () => {
+      const manager = {
+        getSession: vi.fn().mockReturnValue(undefined),
+      } as unknown as Parameters<typeof waitForTerminalExit>[0];
+
+      await expect(waitForTerminalExit(manager, 'gone', 5000)).resolves.toBeUndefined();
+    });
+
+    it('waits for the exit event on a still-running session', async () => {
+      let exitHandler: (() => void) | null = null;
+      const manager = {
+        getSession: vi.fn().mockReturnValue({
+          status: 'running',
+          once: (event: string, cb: () => void) => {
+            if (event === 'exit') exitHandler = cb;
+          },
+        }),
+      } as unknown as Parameters<typeof waitForTerminalExit>[0];
+
+      const promise = waitForTerminalExit(manager, 'term-2', 5000);
+      expect(exitHandler).toBeTypeOf('function');
+      // Fire the event the listener is waiting for.
+      exitHandler!();
+      await expect(promise).resolves.toBeUndefined();
     });
   });
 
