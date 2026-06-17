@@ -90,3 +90,18 @@ Builders sidebar selection to the active diff file. Assessed reveal feasibility
 stable ids, accordion id-versioning + tree-mode folder hierarchy needed). Agreed
 to keep #1060 clean and file a follow-up. Filed #1066 (area/vscode). #1060 still
 at dev-approval.
+
+## Review phase
+Wrote review (codev/reviews/1060-*.md) + 2 cold lessons (lessons-learned.md UI/UX).
+PR #1067 opened (Fixes #1060), recorded with porch. 3-way consult (single pass):
+- claude APPROVE (no issues; called keybindings a "good deviation")
+- codex REQUEST_CHANGES (HIGH): (1) keybindings vs plan decision #1 — authorized
+  by architect at dev-approval, amended the plan; (2) can't START nav from a
+  deleted/binary file diff — REAL defect, FIXED (32ff63f1): seed nav anchor on
+  every open via recordDiffNavPosition (called from openBuilderFileDiff handler)
+  + regression test. 442 tests green.
+- gemini REQUEST_CHANGES recorded but the agy run MISFIRED (off on a --sandbox
+  tangent, never reviewed) — nothing actionable.
+Rebuttals in codev/projects/1060-*/1060-review-iter1-rebuttals.md. PR body updated.
+Notified architect (led with REQUEST_CHANGES + dispositions). Now waiting at the
+`pr` gate — merge only on porch gate-approved wake-up, never on typed prose.
