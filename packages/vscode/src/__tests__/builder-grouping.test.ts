@@ -2,16 +2,12 @@
  * Unit tests for the Builders-view grouping strategies (#952). Each axis
  * (`stage` | `area`) is a `BuilderGrouping` that owns its bucketing, row prefix,
  * and flatten rule; this pins those per-axis decisions in one place. Pure /
- * vscode-free, so it runs under the vitest harness with a fake expansion store.
+ * vscode-free, so it runs under the vitest harness.
  */
 
 import { describe, it, expect } from 'vitest';
 import type { OverviewBuilder } from '@cluesmith/codev-types';
-import type { GroupExpansionStore } from '../views/area-group-expansion.js';
 import { stageGrouping, areaGrouping } from '../views/builder-grouping.js';
-
-/** A no-op store — the strategies only carry the reference; routing/persistence is tested elsewhere. */
-const fakeStore: GroupExpansionStore = { read: () => ({}), set: () => {} };
 
 function builder(overrides: Partial<OverviewBuilder>): OverviewBuilder {
   return {
@@ -25,11 +21,10 @@ function builder(overrides: Partial<OverviewBuilder>): OverviewBuilder {
 }
 
 describe('stageGrouping', () => {
-  const g = stageGrouping(fakeStore);
+  const g = stageGrouping();
 
-  it('id is stage and exposes the passed expansion store', () => {
+  it('id is stage', () => {
     expect(g.id).toBe('stage');
-    expect(g.expansion).toBe(fakeStore);
   });
 
   it('buckets by protocolPhase → stage, in lifecycle order, empty stages omitted', () => {
@@ -54,11 +49,10 @@ describe('stageGrouping', () => {
 });
 
 describe('areaGrouping', () => {
-  const g = areaGrouping(fakeStore);
+  const g = areaGrouping();
 
-  it('id is area and exposes the passed expansion store', () => {
+  it('id is area', () => {
     expect(g.id).toBe('area');
-    expect(g.expansion).toBe(fakeStore);
   });
 
   it('buckets by area (alphabetical, Uncategorized last)', () => {

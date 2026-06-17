@@ -10,7 +10,6 @@ import { BuilderFileTreeItem } from './builder-file-tree-item.js';
 import { BuilderFolderTreeItem } from './builder-folder-tree-item.js';
 import { buildFilePathTree, type FilePathNode } from './file-path-tree.js';
 import type { BuilderDiffCache } from './builder-diff-cache.js';
-import { AreaGroupExpansionStore, type GroupExpansionStore } from './area-group-expansion.js';
 import {
   type BuilderGrouping,
   type BuildersGroupBy,
@@ -74,54 +73,59 @@ export function orderForDisplay(builders: OverviewBuilder[], now: number = Date.
  *    root rows (zero regression for unlabeled repos).
  *
  * In both modes blocked builders sort to the top with a gate icon and wait-time
- * suffix; active builders below. Expand/collapse state persists per group name in
- * `workspaceState` under a per-axis key (`codev.buildersStageGroupExpansion` /
- * `codev.buildersGroupExpansion`) so the two modes don't clobber each other.
+ * suffix; active builders below.
+ *
+ * Group expand/collapse state is **not** persisted (#913): groups always render
+ * Expanded on a fresh session, and VSCode's native per-id in-session memory
+ * keeps any group the user collapses during the session collapsed until reload.
+ * (Backlog still persists its group state — different lifecycle.)
  */
 export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.changeEmitter.event;
-  // One grouping strategy per axis, each owning its own collapse-state store
-  // (separate `workspaceState` keys so collapsing IMPLEMENT in stage mode
-  // doesn't clobber a `vscode` group in area mode; area reuses the original
-  // `codev.buildersGroupExpansion` key so pre-#952 state survives). `active()`
-  // picks the one matching the `codev.buildersGroupBy` setting.
+  // One grouping strategy per axis; `active()` picks the one matching the
+  // `codev.buildersGroupBy` setting. Strategies no longer own a collapse-state
+  // store (#913 dropped Builders-view group persistence).
   private readonly groupings: Record<BuildersGroupBy, BuilderGrouping>;
-  // Stable routing wrapper handed to `persistAreaGroupExpansion`: the view's
-  // expand/collapse events write to whichever strategy's store is active at the
-  // moment of the event, and renders read from the same one. A getter-returning
-  // property wouldn't work — `persistAreaGroupExpansion` captures `.expansion`
-  // once at registration, so the routing must live inside the object.
-  readonly expansion: GroupExpansionStore = {
-    read: () => this.active().expansion.read(),
-    set: (name, expanded) => this.active().expansion.set(name, expanded),
-  };
   // Populated each time `rootChildren()` returns groups; consulted by
   // `getParent` so the accordion's `reveal(builderItem)` can walk the
   // parent chain in grouping mode. Empty in the single-`Uncategorized`
   // flatten case (area mode only — builders are root again), so `getParent`
   // returns `undefined` and the accordion works unchanged on that branch.
   private groupParentByBuilderId = new Map<string, BuilderGroupTreeItem>();
+  // Accordion row-id versioning (#913) — see AccordionRowIds.
+  private readonly rowIds = new AccordionRowIds();
 
   constructor(
     private cache: OverviewCache,
     private readonly diffCache: BuilderDiffCache,
-    workspaceState: vscode.Memento,
   ) {
     this.groupings = {
-      stage: stageGrouping(new AreaGroupExpansionStore(workspaceState, 'codev.buildersStageGroupExpansion')),
-      area: areaGrouping(new AreaGroupExpansionStore(workspaceState, 'codev.buildersGroupExpansion')),
+      stage: stageGrouping(),
+      area: areaGrouping(),
     };
     cache.onDidChange(() => this.changeEmitter.fire());
+  }
+
+  /**
+   * Accordion (#913): collapse every builder row except the one just expanded,
+   * without touching group headers. The open row keeps its exact id (so VSCode
+   * keeps it expanded); every other row is re-versioned to a fresh, never-seen
+   * id, which VSCode renders with the provider's default `Collapsed` state.
+   * Group headers carry no version suffix, so the accordion can't touch them.
+   */
+  collapseBuildersExcept(item: BuilderTreeItem): void {
+    this.rowIds.keepOnly(item.builderId, item.id);
+    this.changeEmitter.fire();
   }
 
   /**
    * The grouping strategy for the active axis, read from the
    * `codev.buildersGroupBy` setting (#952). Defaults to `stage` — the action
    * axis. Toggled via the Builders title-bar button (`codev.groupBuildersByArea`
-   * / `codev.groupBuildersByPhase`). All per-axis behavior (bucketing, expansion
-   * store, row prefix, flatten rule) lives on the returned strategy, so callers
-   * never branch on the mode themselves.
+   * / `codev.groupBuildersByPhase`). All per-axis behavior (bucketing, row
+   * prefix, flatten rule) lives on the returned strategy, so callers never
+   * branch on the mode themselves.
    */
   private active(): BuilderGrouping {
     const mode = vscode.workspace
@@ -199,14 +203,17 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
       return groups[0].items.map(b => this.makeBuilderRow(b, now));
     }
 
-    const expansion = grouping.expansion.read();
+    // Groups always render Expanded (#913) — no persisted state. VSCode's
+    // native per-id memory keeps a user-collapsed group collapsed for the
+    // rest of the session; on a fresh session this default applies again.
     this.groupParentByBuilderId.clear();
     return groups.map(g => {
-      const expanded = expansion[g.key] ?? true;
-      const state = expanded
-        ? vscode.TreeItemCollapsibleState.Expanded
-        : vscode.TreeItemCollapsibleState.Collapsed;
-      const groupItem = new BuilderGroupTreeItem(g.key, g.items.length, state, rollupGroupState(g.items, now));
+      const groupItem = new BuilderGroupTreeItem(
+        g.key,
+        g.items.length,
+        vscode.TreeItemCollapsibleState.Expanded,
+        rollupGroupState(g.items, now),
+      );
       for (const b of g.items) {
         this.groupParentByBuilderId.set(b.id, groupItem);
       }
@@ -230,10 +237,12 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     const isBlocked = !!b.blocked;
     const isIdle = !isBlocked && isIdleWaiting(b, now);
     const item = new BuilderTreeItem(b.id, builderRowLabel(b, isIdle, now, this.active().rowPrefix(b)));
-    // Stable id (not the churning label) so VSCode persists expansion across
-    // the frequent overview-poll refreshes, and so the accordion's
-    // collapseAll+reveal can target this row reliably.
-    item.id = b.id;
+    // Versioned id (#913). The base `b.id` is stable (not the churning label) so
+    // VSCode preserves a row's expansion across the frequent overview-poll
+    // refreshes; the `#<version>` suffix is the accordion lever (see
+    // AccordionRowIds). Group ids carry no suffix, so the accordion can't touch
+    // them.
+    item.id = this.rowIds.idFor(b.id);
     // Expandable so the second-level changed-files list can hang off it.
     // The row keeps its open-terminal command (single click); the chevron
     // toggles the file list.
@@ -371,6 +380,75 @@ function builderHasReviewFile(b: OverviewBuilder): boolean {
     );
   } catch {
     return false;
+  }
+}
+
+/**
+ * Builder-row id versioning for the accordion (#913). VSCode has no "collapse
+ * this row" API and replays its remembered expand-state for any id it has seen,
+ * so the only way to force a row collapsed is to render it under a never-seen
+ * id. Every row id is `<builderId>#<version>`; bumping the version (`keepOnly`)
+ * hands every row a fresh — hence collapsed — id, except the one being held
+ * open, which keeps the exact id it was clicked at so VSCode keeps it expanded.
+ *
+ * The open row's id is stored verbatim (not reconstructed from a number), so a
+ * render that lands between a bump and the next click can't leave the open row
+ * pointing at a stale version.
+ */
+export class AccordionRowIds {
+  private version = 0;
+  private openBuilderId: string | undefined;
+  private openRowId: string | undefined;
+
+  /** The id to render for `builderId` this pass. */
+  idFor(builderId: string): string {
+    if (builderId === this.openBuilderId && this.openRowId) {
+      return this.openRowId;
+    }
+    return `${builderId}#${this.version}`;
+  }
+
+  /** Hold `builderId` open at its current `rowId`; re-version everyone else. */
+  keepOnly(builderId: string, rowId: string | undefined): void {
+    this.openBuilderId = builderId;
+    this.openRowId = rowId;
+    this.version += 1;
+  }
+}
+
+/**
+ * The accordion's "is one builder already held open" guard (#913). Decides
+ * whether an `onDidExpandElement` should collapse the other rows, and suppresses
+ * the re-fire that `reveal({expand:true})` triggers for the row just opened.
+ *
+ * Resetting the guard on every toggle (`setEnabled`) is load-bearing: without
+ * it, disabling the accordion, opening a second builder, then re-enabling would
+ * leave the previously-open builder still recorded as open — so re-expanding it
+ * would be skipped by the guard and the other rows would never collapse. After
+ * a toggle the next expand of *any* builder, including the previously-open one,
+ * must collapse the rest.
+ */
+export class AccordionGate {
+  private openBuilderId: string | undefined;
+
+  constructor(private enabled: boolean) {}
+
+  /**
+   * True if expanding `builderId` should collapse the other builder rows.
+   * Returns false when the accordion is off or when this builder is already the
+   * open one (the re-fire guard).
+   */
+  shouldCollapseOthers(builderId: string): boolean {
+    if (!this.enabled) { return false; }
+    if (builderId === this.openBuilderId) { return false; }
+    this.openBuilderId = builderId;
+    return true;
+  }
+
+  /** React to a config toggle; clears the open-builder guard either way. */
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    this.openBuilderId = undefined;
   }
 }
 

@@ -12,7 +12,7 @@ import { MOBILE_BREAKPOINT } from '../lib/constants.js';
 import { uploadPasteImage } from '../lib/api.js';
 import { ScrollController } from '../lib/scrollController.js';
 import { EscapeBuffer } from '../lib/escapeBuffer.js';
-import { BackoffController } from '@cluesmith/codev-core/reconnect-policy';
+import { BackoffController, classifyUpgradeError } from '@cluesmith/codev-core/reconnect-policy';
 
 /**
  * Floating controls overlay for terminal windows — refresh (re-fit + resize)
@@ -99,6 +99,18 @@ function TerminalControls({
 const FRAME_CONTROL = 0x00;
 const FRAME_DATA = 0x01;
 
+/**
+ * Grace window after a permanent (session-unknown) close before the terminal
+ * declares the session gone (#991). On a Tower restart a persistent session
+ * comes back under a new id; `onPermanentClose` triggers a state re-fetch, and
+ * the parent remounts this component onto the successor's `wsPath` (the effect
+ * is keyed on `wsPath`). We stay in 'reconnecting' and defer the give-up
+ * message for this window so a successful self-heal doesn't flash a misleading
+ * "session no longer exists" line. If no successor arrives in time, we fall
+ * back to the give-up message. ~4s spans several 1s state-poll cycles.
+ */
+const PERMANENT_RECOVERY_MS = 4000;
+
 interface TerminalProps {
   /** WebSocket path for the terminal session, e.g. /ws/terminal/<id> */
   wsPath: string;
@@ -108,6 +120,14 @@ interface TerminalProps {
   persistent?: boolean;
   /** Extra controls to render in the terminal toolbar (Bugfix #522) */
   toolbarExtra?: React.ReactNode;
+  /**
+   * Called when the socket hits a permanent (session-unknown) close — the
+   * session id is gone for good (#991). The parent re-fetches workspace state
+   * so a persistent session that came back under a new id (Tower restart)
+   * resolves its successor, and the new `wsPath` remounts this terminal onto
+   * the live session. Wired to the dashboard's state `refresh`.
+   */
+  onPermanentClose?: () => void;
 }
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp'];
@@ -189,7 +209,7 @@ function handleNativePaste(event: ClipboardEvent, term: XTerm): void {
  * Terminal component — renders an xterm.js instance connected to the
  * node-pty backend via WebSocket using the hybrid binary protocol.
  */
-export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra }: TerminalProps) {
+export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra, onPermanentClose }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -401,6 +421,10 @@ export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra }: Termi
       initialBuffer: '',
       flushTimer: null as ReturnType<typeof setTimeout> | null,
       skipReplay: false,  // When true, discard replay data and just send SIGWINCH
+      // #991: pending give-up timer for a permanent close. While it runs we sit
+      // in 'reconnecting' awaiting a successor-id remount; on expiry we surface
+      // the session-gone message. Cleared on remount/unmount and on successor.
+      recoveryTimer: null as ReturnType<typeof setTimeout> | null,
     };
     // Shared backoff curve + give-up threshold (#961). Unified with the VSCode
     // terminal at 6 attempts (was 50) so the same "terminal stopped
@@ -522,14 +546,37 @@ export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra }: Termi
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (rc.disposed) return;
 
-        // The web terminal stays on blind retry for stale sessions: Tower 404s
-        // an unknown session at the HTTP-upgrade stage, which a browser only
-        // sees as close code 1006 (indistinguishable from a transport blip).
-        // The session-unknown fast-path the VSCode terminal has needs a
-        // browser-visible Tower close code first — tracked in #971.
+        // Session-unknown fast-path (#971): Tower accepts a browser upgrade to a
+        // gone session and immediately closes with an app-range code (4404) the
+        // classifier marks 'permanent'. Don't burn the backoff budget on a dead
+        // id. A transport blip is close 1006 ('transient') and still blind-
+        // retries below.
+        if (classifyUpgradeError({ code: event.code }) === 'permanent') {
+          // #991: the old id is gone, but a persistent session that came back
+          // under a new id (Tower restart) can be recovered. Ask the parent to
+          // re-fetch workspace state; once the successor id appears, the new
+          // `wsPath` remounts this terminal (the effect is keyed on `wsPath`),
+          // tearing this instance down before the timer below fires. Stay in
+          // 'reconnecting' and defer the give-up message so a successful heal
+          // doesn't flash "session no longer exists".
+          setConnStatus('reconnecting');
+          onPermanentClose?.();
+          if (!rc.recoveryTimer) {
+            rc.recoveryTimer = setTimeout(() => {
+              rc.recoveryTimer = null;
+              if (rc.disposed) return;
+              // No successor arrived in the grace window — the session really
+              // is gone. Surface the give-up message and the refresh affordance.
+              setConnStatus('disconnected');
+              term.write('\r\n\x1b[31m[Codev: This terminal session no longer exists. Press the refresh button to reconnect.]\x1b[0m\r\n');
+            }, PERMANENT_RECOVERY_MS);
+          }
+          return;
+        }
+
         if (backoff.recordFailure() === 'give-up') {
           setConnStatus('disconnected');
           return;
@@ -700,6 +747,7 @@ export function Terminal({ wsPath, onFileOpen, persistent, toolbarExtra }: Termi
       rc.disposed = true;
       if (rc.timer) clearTimeout(rc.timer);
       if (rc.flushTimer) clearTimeout(rc.flushTimer);
+      if (rc.recoveryTimer) clearTimeout(rc.recoveryTimer);
       clearTimeout(refitTimer1);
       if (fitTimer) clearTimeout(fitTimer);
       if (textarea) {

@@ -7,7 +7,7 @@
  * Extracted from packages/codev/src/agent-farm/lib/tower-client.ts
  */
 
-import type { DashboardState, OverviewData, IssueView, IssueSearchResponse, ResolvedWorktreeConfig } from '@cluesmith/codev-types';
+import type { DashboardState, OverviewData, IssueView, IssueSearchResponse, ResolvedWorktreeConfig, TowerVersionInfo } from '@cluesmith/codev-types';
 import { DEFAULT_TOWER_PORT } from './constants.js';
 import { ensureLocalKey } from './auth.js';
 
@@ -72,6 +72,14 @@ export interface TowerWorkspaceStatus {
 
 export interface TowerHealth {
   status: 'healthy' | 'degraded';
+  /**
+   * Readiness (#997): true once the startup terminal-session reconcile has
+   * completed. Distinct from `status` (process liveness) — after a Tower
+   * restart, `/api/state` only reflects the full role→terminalId mapping once
+   * `ready` is true. Optional for back-compat with older Tower builds that
+   * predate the field.
+   */
+  ready?: boolean;
   uptime: number;
   activeWorkspaces: number;
   totalWorkspaces: number;
@@ -189,6 +197,20 @@ export class TowerClient {
   async getHealth(): Promise<TowerHealth | null> {
     const result = await this.request<TowerHealth>('/health');
     return result.ok ? result.data! : null;
+  }
+
+  /**
+   * Probe the *running* Tower process's version (#983, `GET /api/version`).
+   *
+   * Returns the raw request result rather than a bare `TowerVersionInfo | null`
+   * so the caller can tell the cases apart: `status === 404` means the Tower is
+   * too old to expose the endpoint (a divergence signal in its own right),
+   * while `status === 0` means unreachable. Keeping that distinction here would
+   * bake preflight policy into the wire client — the VS Code preflight owns the
+   * interpretation.
+   */
+  async getVersion(): Promise<{ ok: boolean; status: number; data?: TowerVersionInfo; error?: string }> {
+    return this.request<TowerVersionInfo>('/api/version');
   }
 
   async listWorkspaces(): Promise<TowerWorkspace[]> {

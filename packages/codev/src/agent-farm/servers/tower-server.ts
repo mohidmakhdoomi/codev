@@ -52,6 +52,7 @@ import type { RouteContext } from './tower-routes.js';
 import { setWorktreeConfigNotifier, stopAllWorktreeConfigWatchers } from './worktree-config-watcher.js';
 import { DEFAULT_TOWER_PORT } from '../lib/tower-client.js';
 import { validateHost } from '../utils/server-utils.js';
+import { version } from '../../version.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,6 +63,15 @@ const rateLimitCleanupInterval = startRateLimitCleanup();
 // Shellper session manager (initialized at startup)
 let shellperManager: SessionManager | null = null;
 let shellperCleanupInterval: NodeJS.Timeout | null = null;
+let terminalPartialMonitorInterval: NodeJS.Timeout | null = null;
+
+// Observability for Issue #1047: the ring-buffer partial is kept whole (no
+// byte cap) so reconnection replay stays faithful, which means a no-newline
+// full-screen TUI grows it without bound. This monitor surfaces that growth so
+// we can tell whether it's ever a real memory concern. Logged periodically;
+// warned past this size.
+const PARTIAL_WARN_BYTES = 4 * 1024 * 1024;
+const TERMINAL_MONITOR_INTERVAL_MS = 60_000;
 
 // Parse arguments with Commander
 const program = new Command()
@@ -77,6 +87,10 @@ const args = program.args;
 const portArg = opts.port || args[0] || String(DEFAULT_TOWER_PORT);
 const port = parseInt(portArg, 10);
 const logFilePath = opts.logFile;
+
+// #983: stamped once at process boot so `GET /api/version` reports when *this*
+// running Tower started — distinguishing it from a freshly-installed binary.
+const startedAt = new Date().toISOString();
 
 // Bridge mode: Tower binds to non-localhost when explicitly enabled.
 // BRIDGE_MODE=1 is the opt-in flag; without it, no non-localhost bind is possible.
@@ -149,6 +163,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   // 4. Stop rate limit cleanup, shellper periodic cleanup, and SSE heartbeat
   clearInterval(rateLimitCleanupInterval);
   if (shellperCleanupInterval) clearInterval(shellperCleanupInterval);
+  if (terminalPartialMonitorInterval) clearInterval(terminalPartialMonitorInterval);
   clearInterval(sseHeartbeatInterval);
 
   // 4b. Flush and stop send buffer (Spec 403) — delivers any deferred messages
@@ -296,6 +311,8 @@ if (hasReactDashboard) {
 const routeCtx: RouteContext = {
   log,
   port,
+  version,
+  startedAt,
   templatePath,
   reactDashboardPath,
   hasReactDashboard,
@@ -383,6 +400,28 @@ server.listen(port, bindHost, async () => {
     registerKnownWorkspace,
     getKnownWorkspacePaths,
   });
+
+  // Issue #1047 observability: periodically report terminal ring-buffer
+  // partial sizes so a no-newline TUI stream (the freeze trigger) is visible
+  // in the Tower log. Cheap (O(sessions) once a minute) and .unref()'d so it
+  // never holds the process open.
+  terminalPartialMonitorInterval = setInterval(() => {
+    try {
+      const partials = getTerminalManager().inspectPartials();
+      if (partials.length === 0) return;
+      let maxBytes = 0;
+      for (const p of partials) {
+        if (p.partialBytes > maxBytes) maxBytes = p.partialBytes;
+        if (p.partialBytes >= PARTIAL_WARN_BYTES) {
+          log('WARN', `Terminal ${p.id} (${p.label}) ring-buffer partial at ${Math.round(p.partialBytes / 1024)} KB — large no-newline TUI stream growing unbounded (#1047)`);
+        }
+      }
+      log('INFO', `Terminal partial monitor: ${partials.length} session(s), max partial ${Math.round(maxBytes / 1024)} KB`);
+    } catch (err) {
+      log('ERROR', `Terminal partial monitor failed: ${(err as Error).message}`);
+    }
+  }, TERMINAL_MONITOR_INTERVAL_MS);
+  terminalPartialMonitorInterval.unref();
 
   // Spec 403: Start send buffer for typing-aware message delivery
   startSendBuffer(log);

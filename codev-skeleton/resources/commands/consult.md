@@ -19,7 +19,7 @@ consult stats [options]
 
 | Model | Alias | Backend | Notes |
 |-------|-------|---------|-------|
-| `gemini` | `pro` | gemini-cli | File access via --yolo, fast |
+| `gemini` | `pro` | Antigravity CLI (`agy`) | Agentic file access (`--sandbox --add-dir`), OAuth/subscription login. Skips non-blockingly if `agy` is missing/unauthed. |
 | `codex` | `gpt` | @openai/codex | Read-only sandbox, thorough |
 | `claude` | `opus` | Claude Agent SDK | Balanced analysis with tool use |
 | `hermes` | - | hermes CLI (`hermes chat -q`) | Uses Hermes agent as consult backend |
@@ -130,7 +130,7 @@ consult -m hermes --protocol spir --type spec
 
 | Model | Typical Time | Approach |
 |-------|--------------|----------|
-| Gemini | ~120-150s | File access via --yolo, pure text output |
+| Gemini | ~120-180s | Antigravity CLI (`agy`); agentic file access via `--sandbox`, plain text output |
 | Codex | ~200-250s | Shell command exploration, read-only sandbox |
 | Claude | ~60-120s | Agent SDK with Read/Glob/Grep tools |
 
@@ -145,14 +145,29 @@ npm install -g @anthropic-ai/claude-code
 # Codex
 npm install -g @openai/codex
 
-# Gemini
-# See: https://github.com/google-gemini/gemini-cli
+# Gemini lane → Antigravity CLI (`agy`), replacing the retired Gemini CLI
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+agy   # run once and sign in (OAuth / Google subscription)
 ```
 
-Configure API keys:
+Configure auth:
 - Claude: `ANTHROPIC_API_KEY`
 - Codex: `OPENAI_API_KEY`
-- Gemini: `GOOGLE_API_KEY` or `GEMINI_API_KEY`
+- Gemini (`agy`): **OAuth / subscription** — run `agy` once and sign in (no API key). If `agy`
+  is missing or unauthenticated, the gemini lane skips non-blockingly (the run proceeds without it).
+
+### Claude auth: subscription vs. metered API
+
+`consult -m claude` runs on the Claude Agent SDK. When `CLAUDE_CODE_OAUTH_TOKEN`
+(a Claude subscription/OAuth token) is present, consult strips `ANTHROPIC_API_KEY`
+and `ANTHROPIC_AUTH_TOKEN` from the SDK subprocess env so the consultation
+authenticates against the **subscription** rather than the **metered Opus API**.
+The Agent SDK otherwise prioritizes `ANTHROPIC_API_KEY`, which silently routes
+CMAP/review traffic to the metered API (issue #985). When no OAuth token is set,
+the API key is used as before so CI / key-only environments keep working.
+
+> **Caveat:** dedicated Agent-SDK subscription credit starts **2026-06-15**.
+> Before that date, subscription auth draws from the interactive Max quota.
 
 ## The Consultant Role
 

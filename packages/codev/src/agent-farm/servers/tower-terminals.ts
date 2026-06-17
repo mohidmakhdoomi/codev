@@ -83,6 +83,77 @@ export function isReconciling(): boolean {
   return _reconciling;
 }
 
+// ============================================================================
+// Startup-readiness barrier (#997)
+// ============================================================================
+//
+// On a Tower restart the HTTP server begins serving before
+// reconcileTerminalSessions() has re-registered persistent (shellper-backed)
+// sessions in the workspaceTerminals map. During that window /api/state,
+// /api/overview, and WS upgrades see a half-populated role→terminalId map and
+// a client cannot distinguish "successor not registered yet" from "session
+// gone". This barrier lets the readers of reconcile's output wait until the
+// startup reconcile has settled exactly once.
+//
+// Unlike isReconciling() (false both before and after reconcile), this is a
+// monotonic "has the startup reconcile completed" signal: it flips false→true
+// once and stays true (outside test resets). It is resolved in
+// reconcileTerminalSessions()'s finally — including the early !_deps return and
+// a thrown reconcile — so a failed or skipped reconcile can never wedge serving
+// forever (non-blocking-on-failure).
+
+let _startupReconcileSettled = false;
+let _resolveStartupReady!: () => void;
+let _startupReadyPromise = new Promise<void>((resolve) => { _resolveStartupReady = resolve; });
+
+/** Defensive cap on how long a request waits for the barrier (env-overridable). */
+const STARTUP_READY_TIMEOUT_MS = Math.max(
+  parseInt(process.env.CODEV_STARTUP_READY_TIMEOUT_MS || '10000', 10) || 10000,
+  0,
+);
+
+/** Mark the startup reconcile as settled (idempotent); releases any waiters. */
+export function markStartupReconcileSettled(): void {
+  if (_startupReconcileSettled) return;
+  _startupReconcileSettled = true;
+  _resolveStartupReady();
+}
+
+/** Synchronous readiness check — true once the startup reconcile completed (#997). Served by GET /health. */
+export function isStartupReconcileSettled(): boolean {
+  return _startupReconcileSettled;
+}
+
+/**
+ * Await completion of the startup reconcile (#997). Resolves immediately once
+ * settled. Bounded by `timeoutMs` (default {@link STARTUP_READY_TIMEOUT_MS}) as
+ * defense against a pathological reconcile that never returns: on timeout it
+ * logs and resolves anyway, so a single request degrades to possibly-incomplete
+ * state rather than hanging forever. Pass 0 to wait indefinitely.
+ */
+export function whenStartupReconcileSettled(timeoutMs: number = STARTUP_READY_TIMEOUT_MS): Promise<void> {
+  if (_startupReconcileSettled) return Promise.resolve();
+  if (timeoutMs <= 0) return _startupReadyPromise;
+  return new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => { if (done) return; done = true; clearTimeout(timer); resolve(); };
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      _deps?.log('WARN', `Startup reconcile not settled within ${timeoutMs}ms — serving possibly-incomplete terminal state`);
+      resolve();
+    }, timeoutMs);
+    if (typeof timer.unref === 'function') timer.unref();
+    _startupReadyPromise.then(finish);
+  });
+}
+
+/** Test-only: reset the barrier to its pre-reconcile pending state. */
+export function __resetStartupReconcileSettledForTest(): void {
+  _startupReconcileSettled = false;
+  _startupReadyPromise = new Promise<void>((resolve) => { _resolveStartupReady = resolve; });
+}
+
 /** Tear down the terminal module */
 export function shutdownTerminals(): void {
   if (terminalManager) {
@@ -162,6 +233,10 @@ export function getWorkspaceTerminalsEntry(workspacePath: string): WorkspaceTerm
  * future endpoint consistent without each having to remember to opt in.
  */
 export async function getRehydratedTerminalsEntry(workspacePath: string): Promise<WorkspaceTerminals> {
+  // #997: wait for the startup reconcile to finish re-registering persistent
+  // sessions before reading the map, so /api/state and /api/overview return a
+  // complete role→terminalId mapping on the first post-restart read.
+  await whenStartupReconcileSettled();
   const proxyUrl = `/workspace/${encodeWorkspacePath(workspacePath)}/`;
   await getTerminalsForWorkspace(workspacePath, proxyUrl);
   return getWorkspaceTerminalsEntry(workspacePath);
@@ -474,13 +549,22 @@ export function processExists(pid: number): boolean {
  * the sole source of truth for their persistence (see file_tabs table).
  */
 export async function reconcileTerminalSessions(): Promise<void> {
-  if (!_deps) return;
+  if (!_deps) {
+    // Nothing to reconcile (e.g. a non-server context). Still release the
+    // readiness barrier so handlers gating on it don't wait forever (#997).
+    markStartupReconcileSettled();
+    return;
+  }
 
   _reconciling = true;
   try {
     await _reconcileTerminalSessionsInner();
   } finally {
     _reconciling = false;
+    // #997: the startup reconcile has completed (or failed) — release request
+    // handlers waiting on the readiness barrier. Idempotent: a later reconcile
+    // call (none today, but defensively) is harmless.
+    markStartupReconcileSettled();
   }
 }
 
@@ -641,9 +725,12 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
     const replayData = client.getReplayData() ?? Buffer.alloc(0);
     const label = dbSession.label || (dbSession.type === 'architect' ? 'Architect' : (dbSession.role_id || 'unknown'));
 
-    // Create a PtySession backed by the reconnected shellper client
-    // Use stored cwd (worktree path for builders) instead of workspace_path (Bugfix #506)
-    const session = manager.createSessionRaw({ label, cwd: sessionCwd });
+    // Create a PtySession backed by the reconnected shellper client.
+    // Reuse the persisted terminal id (#991) so the session keeps its identity
+    // across the restart — clients holding `/ws/terminal/<id>` reconnect to the
+    // same valid url instead of a dead one. Use stored cwd (worktree path for
+    // builders) instead of workspace_path (Bugfix #506).
+    const session = manager.createSessionRaw({ label, cwd: sessionCwd, id: dbSession.id });
     const ptySession = manager.getSession(session.id);
     if (ptySession) {
       const shellperSessId = extractShellperSessionId(dbSession.shellper_socket) ?? dbSession.id;
@@ -666,7 +753,8 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
       entry.shells.set(dbSession.role_id || dbSession.id, session.id);
     }
 
-    // Update SQLite with new terminal ID
+    // Refresh the SQLite row. The id is preserved (#991), so this re-saves the
+    // session under the same terminal id with its refreshed shellper info.
     db.prepare('DELETE FROM terminal_sessions WHERE id = ?').run(dbSession.id);
     saveTerminalSession(session.id, workspacePath, dbSession.type, dbSession.role_id, dbSession.shellper_pid,
       dbSession.shellper_socket, dbSession.shellper_pid, dbSession.shellper_start_time, dbSession.label, sessionCwd);
@@ -828,8 +916,11 @@ export async function getTerminalsForWorkspace(
         if (client) {
           const replayData = client.getReplayData() ?? Buffer.alloc(0);
           const label = dbSession.label || (dbSession.type === 'architect' ? 'Architect' : (dbSession.role_id || dbSession.id));
-          // Use stored cwd (worktree path for builders) instead of workspace_path (Bugfix #506)
-          const newSession = manager.createSessionRaw({ label, cwd: dbSession.cwd ?? dbSession.workspace_path });
+          // Reuse the persisted terminal id (#991) so the session keeps its
+          // identity across the reconnect — clients holding `/ws/terminal/<id>`
+          // stay valid. Use stored cwd (worktree path for builders) instead of
+          // workspace_path (Bugfix #506).
+          const newSession = manager.createSessionRaw({ label, cwd: dbSession.cwd ?? dbSession.workspace_path, id: dbSession.id });
           const ptySession = manager.getSession(newSession.id);
           if (ptySession) {
             const shellperSessId = extractShellperSessionId(dbSession.shellper_socket) ?? dbSession.id;
@@ -865,13 +956,13 @@ export async function getTerminalsForWorkspace(
               }
             });
           }
-          const originalSessionId = dbSession.id;
+          // Refresh the SQLite row under the same (preserved) id.
           deleteTerminalSession(dbSession.id);
           saveTerminalSession(newSession.id, dbSession.workspace_path, dbSession.type, dbSession.role_id, dbSession.shellper_pid,
             dbSession.shellper_socket, dbSession.shellper_pid, dbSession.shellper_start_time, dbSession.label, dbSession.cwd);
           dbSession.id = newSession.id;
           session = manager.getSession(newSession.id);
-          _deps.log('INFO', `On-the-fly reconnect succeeded for ${originalSessionId} → ${newSession.id}`);
+          _deps.log('INFO', `On-the-fly reconnect succeeded for ${newSession.id} (id preserved)`);
         }
       } catch (err) {
         _deps.log('WARN', `On-the-fly reconnect failed for ${dbSession.id}: ${(err as Error).message}`);

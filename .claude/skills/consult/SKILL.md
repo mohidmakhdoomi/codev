@@ -20,7 +20,7 @@ The `-m` / `--model` flag is **always required** except for `consult stats`.
 
 | Flag value | Alias | Notes |
 |------------|-------|-------|
-| `gemini` | `pro` | Fast (~120-150s), file access via --yolo |
+| `gemini` | `pro` | Antigravity CLI (`agy`); agentic file access (`--sandbox`), OAuth login; skips non-blockingly if unavailable |
 | `codex` | `gpt` | Thorough (~200-250s), shell exploration |
 | `claude` | `opus` | Agent SDK with tool use (~60-120s) |
 
@@ -30,7 +30,7 @@ The `-m` / `--model` flag is **always required** except for `consult stats`.
 -m, --model <model>         Model to use (required except stats)
 --prompt <text>              Inline prompt (general mode)
 --prompt-file <path>         Prompt file path (general mode)
---protocol <name>            Protocol: spir, aspir, air, bugfix, tick, maintain
+--protocol <name>            Protocol: spir, aspir, air, bugfix, maintain
 -t, --type <type>            Review type (see below)
 --issue <number>             Issue number (required in architect context)
 --output <path>              Save result to file

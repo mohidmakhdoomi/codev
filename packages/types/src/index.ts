@@ -35,6 +35,7 @@ export {
   type TeamApiMessage,
   type TeamApiResponse,
   type TunnelStatus,
+  type TowerVersionInfo,
   type ProtocolStats,
   type AnalyticsResponse,
 } from './api.js';

@@ -1,0 +1,97 @@
+id: '778'
+title: gemini-cli-antigravity-cli-jun
+protocol: spir
+phase: review
+plan_phases:
+  - id: agy_backend
+    title: 'Phase 1: agy backend dispatch (OAuth, agentic file-reading, non-blocking skip)'
+    status: complete
+  - id: docs_skeleton_e2e
+    title: 'Phase 2: Doctor + docs + skeleton consistency + e2e verification'
+    status: complete
+current_plan_phase: null
+gates:
+  spec-approval:
+    status: approved
+    requested_at: '2026-06-02T01:32:17.767Z'
+    approved_at: '2026-06-02T05:35:02.131Z'
+  plan-approval:
+    status: approved
+    requested_at: '2026-06-02T05:57:40.957Z'
+    approved_at: '2026-06-02T20:33:37.524Z'
+  pr:
+    status: approved
+    requested_at: '2026-06-05T13:16:51.483Z'
+    approved_at: '2026-06-06T02:50:18.266Z'
+  verify-approval:
+    status: pending
+iteration: 1
+build_complete: true
+history:
+  - iteration: 1
+    plan_phase: agy_backend
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: COMMENT
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-agy_backend-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-agy_backend-iter1-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-agy_backend-iter1-claude.txt
+  - iteration: 2
+    plan_phase: agy_backend
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: REQUEST_CHANGES
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-agy_backend-iter2-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-agy_backend-iter2-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-agy_backend-iter2-claude.txt
+  - iteration: 1
+    plan_phase: docs_skeleton_e2e
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-docs_skeleton_e2e-iter1-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-docs_skeleton_e2e-iter1-codex.txt
+      - model: claude
+        verdict: COMMENT
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-docs_skeleton_e2e-iter1-claude.txt
+  - iteration: 2
+    plan_phase: docs_skeleton_e2e
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-docs_skeleton_e2e-iter2-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-docs_skeleton_e2e-iter2-codex.txt
+      - model: claude
+        verdict: COMMENT
+        file: >-
+          /Users/mwk/Development/cluesmith/codev/.builders/spir-778/codev/projects/778-gemini-cli-antigravity-cli-jun/778-docs_skeleton_e2e-iter2-claude.txt
+started_at: '2026-06-02T01:16:31.004Z'
+updated_at: '2026-06-06T02:50:18.267Z'
+pr_ready_for_human: false

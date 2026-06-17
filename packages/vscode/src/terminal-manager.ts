@@ -5,6 +5,7 @@ import type { OverviewCache } from './views/overview-data.js';
 import { encodeWorkspacePath } from '@cluesmith/codev-core/workspace';
 import { resolveAgentName } from '@cluesmith/codev-core/agent-names';
 import type { TerminalType } from '@cluesmith/codev-core/tower-client';
+import { resolveBuilderTerminal, mainCheckoutRoot } from './terminal-resolve.js';
 
 const MAX_TERMINALS = 10;
 
@@ -27,6 +28,12 @@ export class TerminalManager {
   private readonly _onDidChangeDevTerminals = new vscode.EventEmitter<void>();
   /** Fires whenever the set of open dev terminals changes (start/stop/swap/cleanup). */
   readonly onDidChangeDevTerminals = this._onDidChangeDevTerminals.event;
+  /**
+   * When each dev terminal began running, keyed by builderId. `listDevTerminals`
+   * carries only ids, so the Codev Dev surface (#921) reads start times here to
+   * render uptime. Set on a fresh open (not a refocus), cleared on close.
+   */
+  private readonly devStartedAt = new Map<string, number>();
   private readonly overviewCache: OverviewCache;
 
   constructor(
@@ -146,6 +153,22 @@ export class TerminalManager {
   }
 
   /**
+   * Type `text` into a builder terminal's input *without* a trailing newline
+   * (no submit) — the builder-side analogue of `injectArchitectText`, backing
+   * the "Forward to Builder" CodeLens (#789). Returns false if no terminal is
+   * registered for `builderId`; callers ensure it's open first (via
+   * `openBuilderByRoleOrId`, whose resolved id keys the lookup).
+   */
+  injectBuilderText(builderId: string, text: string): boolean {
+    const key = `builder-${builderId}`;
+    const entry = this.terminals.get(key);
+    if (!entry) { return false; }
+    entry.terminal.show();
+    entry.terminal.sendText(text, false);
+    return true;
+  }
+
+  /**
    * Open a builder terminal. If a terminal already exists for this builder
    * but points at a different (stale) Tower session, dispose it before
    * opening a new one — happens when a builder is re-spawned and Tower
@@ -176,36 +199,107 @@ export class TerminalManager {
    * Resolve a builder by `roleId` or `id` via Tower workspace state, then
    * open its terminal. Used by the sidebar tree views, terminal link
    * provider, and command palette so the lookup logic lives in one place.
+   *
+   * The resolve is retried with a short backoff (`resolveBuilderTerminal`):
+   * Tower's `/api/state` can momentarily omit a live builder while its session
+   * registry rehydrates/reconnects, and that transient miss self-heals on the
+   * next call (PIR #982). Only a persistent miss surfaces the recovery toast.
+   *
+   * Returns the resolved **canonical** builder id on success (the key under
+   * which the terminal is registered), or `undefined` when the builder can't
+   * be opened. The "Forward to Builder" inject path (#789) uses this to target
+   * the same terminal that was opened, even when called with a bare numeric id;
+   * other callers ignore the return value.
    */
-  async openBuilderByRoleOrId(roleOrId: string, focus = false): Promise<void> {
+  async openBuilderByRoleOrId(roleOrId: string, focus = false): Promise<string | undefined> {
     const client = this.connectionManager.getClient();
     const workspacePath = this.connectionManager.getWorkspacePath();
     if (!client || !workspacePath) {
       vscode.window.showErrorMessage('Codev: Not connected to Tower');
-      return;
+      return undefined;
     }
     try {
-      const state = await client.getWorkspaceState(workspacePath);
-      const builders = state?.builders ?? [];
-      // Use resolveAgentName so the bare numeric IDs the sidebar passes
-      // (e.g. '153' from OverviewBuilder) tail-match canonical
-      // 'builder-spir-153' IDs from Tower's runtime state.
-      const { builder, ambiguous } = resolveAgentName(roleOrId, builders);
-      if (ambiguous) {
+      // resolveBuilderTerminal uses resolveAgentName internally so the bare
+      // numeric IDs the sidebar passes (e.g. '153' from OverviewBuilder)
+      // tail-match canonical 'builder-spir-153' IDs from Tower's runtime state.
+      const outcome = await resolveBuilderTerminal(
+        roleOrId,
+        async () => {
+          const state = await client.getWorkspaceState(workspacePath);
+          return state?.builders ?? [];
+        },
+        { sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)) },
+      );
+      if (outcome.kind === 'ambiguous') {
         vscode.window.showWarningMessage(
-          `Codev: Multiple builders match "${roleOrId}": ${ambiguous.map(b => b.name).join(', ')}`,
+          `Codev: Multiple builders match "${roleOrId}": ${outcome.matches.map(b => b.name).join(', ')}`,
         );
-        return;
+        return undefined;
       }
-      if (!builder?.terminalId) {
-        vscode.window.showWarningMessage(`Codev: No active terminal for ${roleOrId}`);
-        return;
+      if (outcome.kind === 'missing') {
+        await this.promptNoTerminalRecovery(roleOrId, workspacePath, focus);
+        return undefined;
       }
-      await this.openBuilder(builder.terminalId, builder.id, `Codev: ${builder.name}`, focus);
+      const { builder, terminalId } = outcome;
+      await this.openBuilder(terminalId, builder.id, `Codev: ${builder.name}`, focus);
+      return builder.id;
     } catch (err) {
       this.log('ERROR', `Failed to open builder ${roleOrId}: ${(err as Error).message}`);
       vscode.window.showErrorMessage(`Codev: Failed to open ${roleOrId}`);
+      return undefined;
     }
+  }
+
+  /**
+   * Actionable toast for when a builder row is clicked but no live terminal
+   * resolves after the bounded retry (PIR #982). Replaces the old dead-end
+   * `No active terminal` warning. Leads with **Retry** — the common case is a
+   * session still settling (a longer startup-reconciliation window than the
+   * auto-retry budget covers) — and offers **Recover Builders** as the
+   * last-resort path for a genuinely lost session (e.g. a dead shellper).
+   *
+   * Recover opens a terminal running `afx workspace recover` (its default
+   * dry-run preview) at the main checkout root, mirroring `run-worktree-setup`.
+   * It deliberately stops at the preview rather than `--apply`: recover is
+   * workspace-wide (it can't target one builder), so the user reviews the scope
+   * before reviving. The cwd is resolved via `mainCheckoutRoot` so the command
+   * runs from the main checkout even when VSCode is rooted at a builder worktree
+   * window (where `getWorkspacePath()` resolves to the worktree, not main).
+   */
+  private async promptNoTerminalRecovery(roleOrId: string, workspacePath: string, focus: boolean): Promise<void> {
+    const RETRY = 'Retry';
+    const RECOVER = 'Recover Builders';
+    const who = this.friendlyBuilderId(roleOrId);
+    const choice = await vscode.window.showWarningMessage(
+      `Codev: ${who}'s terminal isn't available yet — it may still be starting, or its session was dropped. ` +
+        `Retry, or recover builders if it was lost.`,
+      RETRY,
+      RECOVER,
+    );
+    if (choice === RETRY) {
+      await this.openBuilderByRoleOrId(roleOrId, focus);
+    } else if (choice === RECOVER) {
+      const terminal = vscode.window.createTerminal({
+        name: 'Codev: Recover Builders',
+        cwd: mainCheckoutRoot(workspacePath),
+      });
+      terminal.show();
+      terminal.sendText('afx workspace recover');
+    }
+  }
+
+  /**
+   * A short, friendly identity for a builder (`#<issueId>`) from the overview
+   * cache, falling back to the raw `roleOrId` when no row matches. Used only
+   * for the recovery toast's prose so it names the row the user clicked.
+   */
+  private friendlyBuilderId(roleOrId: string): string {
+    const data = this.overviewCache.getData();
+    if (!data?.builders?.length) { return roleOrId; }
+    const shortId = roleOrId.split('-').pop() ?? roleOrId;
+    const { builder } = resolveAgentName(shortId, data.builders);
+    const num = builder?.issueId ?? builder?.id;
+    return num ? `#${num}` : roleOrId;
   }
 
   /**
@@ -233,7 +327,20 @@ export class TerminalManager {
     // Tab title matches the builder-tab format (`Codev: <name>`) with a
     // `(dev)` suffix so the pairing is obvious in the tab strip.
     await this.openTerminal(terminalId, 'dev', `Codev: ${builderName} (dev)`, key, focus);
+    // Fresh open (the refocus path returned above), so stamp the start time for
+    // uptime. A re-spawn that replaced a stale terminal lands here too and
+    // correctly resets the clock.
+    this.devStartedAt.set(builderId, Date.now());
     this._onDidChangeDevTerminals.fire();
+  }
+
+  /**
+   * Wall-clock ms (epoch) when the dev terminal for `builderId` started, or
+   * undefined if no dev is tracked for it (e.g. a dev that predates this
+   * extension activation). Read by the Codev Dev surface (#921) for uptime.
+   */
+  getDevStartedAt(builderId: string): number | undefined {
+    return this.devStartedAt.get(builderId);
   }
 
   /**
@@ -248,6 +355,7 @@ export class TerminalManager {
     existing.pty.close();
     existing.terminal.dispose();
     this.terminals.delete(key);
+    this.devStartedAt.delete(builderId);
     this._onDidChangeDevTerminals.fire();
   }
 
@@ -269,7 +377,10 @@ export class TerminalManager {
       this.terminals.delete(key);
       if (key.startsWith('dev-')) { devClosed = true; }
     }
-    if (devClosed) { this._onDidChangeDevTerminals.fire(); }
+    if (devClosed) {
+      this.devStartedAt.delete(builderId);
+      this._onDidChangeDevTerminals.fire();
+    }
   }
 
   /**
@@ -358,7 +469,18 @@ export class TerminalManager {
     } else if (type === 'architect') {
       location = { viewColumn: vscode.ViewColumn.One };
     } else {
-      location = { viewColumn: vscode.ViewColumn.Two };
+      // Builder/shell terminals prefer the second editor group so they live
+      // beside the architect's pane. But `ViewColumn.Two` is fixed by ordinal:
+      // targeting it when only one group is open forces VS Code to spawn a new
+      // group, reshaping the user's layout (#804). Attach to the second group
+      // only when it already exists; otherwise fall back to the first/default
+      // group so single-column users stay undisturbed.
+      const hasSecondGroup = vscode.window.tabGroups.all.length >= 2;
+      if (hasSecondGroup) {
+        location = { viewColumn: vscode.ViewColumn.Two };
+      } else {
+        location = { viewColumn: vscode.ViewColumn.One };
+      }
     }
 
     const terminal = vscode.window.createTerminal({ name, pty, location, iconPath: this.iconPath });
@@ -373,8 +495,20 @@ export class TerminalManager {
     const disposable = vscode.window.onDidCloseTerminal((t) => {
       if (t !== terminal) { return; }
       pty.close();
-      if (this.terminals.get(mapKey)?.terminal === terminal) {
+      const wasTracked = this.terminals.get(mapKey)?.terminal === terminal;
+      if (wasTracked) {
         this.terminals.delete(mapKey);
+      }
+      // A dev terminal closed via this generic path (tab ✕, or the dev process
+      // exiting) must refresh the dev surfaces (#921) too — the explicit
+      // closeDevTerminal/closeBuilderTerminal paths fire the event, but a manual
+      // close reaches only here, which previously just unmapped and left the
+      // chip / tab / `codev.devServerRunning` stranded as "running". Guarded by
+      // `wasTracked` so the explicit-close path (which deletes first, then
+      // dispose()s the terminal) doesn't double-fire.
+      if (wasTracked && mapKey.startsWith('dev-')) {
+        this.devStartedAt.delete(mapKey.slice('dev-'.length));
+        this._onDidChangeDevTerminals.fire();
       }
       disposable.dispose();
     });
@@ -395,6 +529,23 @@ export class TerminalManager {
         managed.pty.reconnect();
         return;
       }
+    }
+  }
+
+  /**
+   * Force every managed terminal to repaint via a SIGWINCH nudge — the
+   * opt-in window-refocus escape hatch (#1052), gated off by default behind
+   * `codev.terminal.repaintOnRefocus` (see extension.ts). The initial-render fix
+   * (replay buffer-and-flush) covers the confirmed corruption; this path is only
+   * for setups that still report stale content after refocus. It nudges *all*
+   * managed terminals (≤ MAX_TERMINALS) rather than just the active one — a
+   * coarse choice, acceptable because it's off by default and `forceRepaint`
+   * no-ops on a disconnected/replaying adapter. If it ever ships on by default,
+   * narrow this to the visible/active terminal(s) first.
+   */
+  repaintAllOnRefocus(): void {
+    for (const entry of this.terminals.values()) {
+      entry.pty.forceRepaint();
     }
   }
 

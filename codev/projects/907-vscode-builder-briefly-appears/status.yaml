@@ -1,0 +1,32 @@
+id: '907'
+title: vscode-builder-briefly-appears
+protocol: pir
+phase: verified
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: approved
+    requested_at: '2026-06-06T06:00:17.735Z'
+    approved_at: '2026-06-06T06:12:27.923Z'
+  dev-approval:
+    status: approved
+    requested_at: '2026-06-06T06:17:06.838Z'
+    approved_at: '2026-06-06T08:42:45.983Z'
+  pr:
+    status: approved
+    requested_at: '2026-06-06T08:49:07.919Z'
+    approved_at: '2026-06-06T08:51:15.772Z'
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-06-06T05:49:46.629Z'
+updated_at: '2026-06-06T08:51:35.570Z'
+pr_history:
+  - phase: review
+    pr_number: 1003
+    branch: builder/pir-907
+    created_at: '2026-06-06T08:45:29.383Z'
+    merged: true
+    merged_at: '2026-06-06T08:51:35.569Z'
+pr_ready_for_human: false

@@ -1,6 +1,5 @@
 # SPIR Protocol
 
-> **Quick Reference**: See `codev/resources/workflow-reference.md` for stage diagrams and common commands.
 
 ## Prerequisites
 
@@ -212,7 +211,7 @@ When filing an issue for SPIR, you can pin architectural decisions you don't wan
 - All consultation feedback incorporated directly into this document
 - Include a "Consultation Log" section summarizing key feedback and changes
 - Version control captures evolution through commits
-**Template**: `templates/spec.md`
+**Structure**: developed through the specify phase
 **Review Required**: Yes - Human approval AFTER consultations
 
 ### P - Plan (Structured Decomposition)
@@ -298,7 +297,7 @@ Each phase should be:
 - Include phase status tracking within this document
 - **DO NOT include time estimates** - Focus on deliverables and dependencies, not hours/days
 - Version control captures evolution through commits
-**Template**: `templates/plan.md`
+**Structure**: follows the plan template provided by the plan phase
 **Review Required**: Yes - Technical lead approval AFTER consultations
 
 ### (IDE) - Implementation Loop
@@ -572,8 +571,8 @@ Execute for each phase in the plan. This is a strict cycle that must be complete
    - Enhance documentation
 
 3. **Update Architecture Documentation**
-   - Update `codev/resources/arch.md` and `codev/resources/lessons-learned.md` with new modules, utilities, architectural changes, and durable engineering wisdom uncovered during this work
-   - Use the **`update-arch-docs` skill** (at `.claude/skills/update-arch-docs/SKILL.md`) to apply changes — the skill encodes the discipline for what NOT to include and the two-doc framing (arch.md owns system shape; lessons-learned.md owns durable engineering wisdom)
+   - Route new system-shape facts and durable wisdom by tier (Spec 987): behavior-changing + cross-cutting → the HOT `codev/resources/arch-critical.md` / `lessons-critical.md` (capped, always-injected; demote a weaker entry to cold if full); reference detail → the COLD `codev/resources/arch.md` / `lessons-learned.md`
+   - Use the **`update-arch-docs` skill** (at `.claude/skills/update-arch-docs/SKILL.md`) to apply changes — it encodes the hot/cold two-tier discipline (caps + cold-doc maps for the hot files; reference archive for the cold files) and what NOT to include
    - Follow guidance in the MAINTAIN protocol's Step 3 ("Sync Documentation") for structure, the "Lives where" routing matrix, and pruning checklists
    - Ensure both docs reflect current state
 
@@ -710,7 +709,7 @@ spir/0001-user-authentication/database-schema
 
 ## Templates
 
-Templates for each phase are available in the `templates/` directory:
+Each phase has a template that ships in the package skeleton; the phase prompts deliver the structure you need, so you do not fetch these files directly:
 - `spec.md` - Specification template
 - `plan.md` - Planning template (includes phase status tracking)
 - `review.md` - Review and lessons learned template

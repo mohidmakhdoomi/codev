@@ -99,7 +99,7 @@ Verifies that all required dependencies are installed and properly configured:
 
 **AI CLI Dependencies (at least one required):**
 - Claude (`@anthropic-ai/claude-code`)
-- Gemini (`gemini-cli`)
+- Gemini (Antigravity CLI, `agy`)
 - Codex (`@openai/codex`)
 
 **Exit Codes:**

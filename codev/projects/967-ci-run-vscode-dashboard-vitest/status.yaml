@@ -1,0 +1,30 @@
+id: '967'
+title: ci-run-vscode-dashboard-vitest
+protocol: pir
+phase: review
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: approved
+    requested_at: '2026-06-03T21:44:04.587Z'
+    approved_at: '2026-06-05T01:50:44.407Z'
+  dev-approval:
+    status: approved
+    requested_at: '2026-06-05T01:52:03.197Z'
+    approved_at: '2026-06-05T09:26:25.529Z'
+  pr:
+    status: approved
+    requested_at: '2026-06-05T09:30:45.947Z'
+    approved_at: '2026-06-05T09:32:07.415Z'
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-06-03T21:40:18.973Z'
+updated_at: '2026-06-05T09:32:07.416Z'
+pr_history:
+  - phase: review
+    pr_number: 993
+    branch: builder/pir-967
+    created_at: '2026-06-05T09:28:39.588Z'
+pr_ready_for_human: false

@@ -9,9 +9,10 @@
 import http from 'node:http';
 import type net from 'node:net';
 import { WebSocketServer, WebSocket } from 'ws';
+import { WS_CLOSE_SESSION_UNKNOWN } from '@cluesmith/codev-core/reconnect-policy';
 import { encodeData, encodeControl, decodeFrame } from '../../terminal/ws-protocol.js';
 import type { PtySession } from '../../terminal/pty-session.js';
-import { getTerminalManager } from './tower-terminals.js';
+import { getTerminalManager, isStartupReconcileSettled, whenStartupReconcileSettled } from './tower-terminals.js';
 import { normalizeWorkspacePath } from './tower-utils.js';
 import { decodeWorkspacePath } from '../lib/tower-client.js';
 import { addSubscriber, removeSubscriber } from './tower-messages.js';
@@ -57,11 +58,17 @@ export function handleTerminalWebSocket(ws: WebSocket, session: PtySession, req:
     replayLines = session.attach(client);
   }
 
-  // Send replay data as binary data frame
+  // Send replay data as binary data frame, bracketed by pause/resume control
+  // frames (#1047). The bracket tells the client "this is the one-shot buffer
+  // snapshot" so it paces the write and excludes it from its live-backpressure
+  // budget. Without it, a client counts a large replay as live overload and
+  // (historically) looped forever reconnecting for the same oversized replay.
   if (replayLines.length > 0) {
     const replayData = replayLines.join('\n');
     if (ws.readyState === WebSocket.OPEN) {
+      ws.send(encodeControl({ type: 'pause', payload: {} }));
       ws.send(encodeData(replayData));
+      ws.send(encodeControl({ type: 'resume', payload: {} }));
     }
   }
 
@@ -140,6 +147,40 @@ export function handleTerminalWebSocket(ws: WebSocket, session: PtySession, req:
 // ============================================================================
 
 /**
+ * Reject an upgrade request that targets an unknown terminal session.
+ *
+ * Two client shapes need different signals (#971):
+ * - **Browser** clients can't read a failed *upgrade*'s HTTP status — a failed
+ *   WS handshake only surfaces as `onclose` code `1006`, indistinguishable from
+ *   a transport blip. So we accept the upgrade and immediately close with an
+ *   app-range code ({@link WS_CLOSE_SESSION_UNKNOWN}) the dashboard reads via
+ *   `CloseEvent.code` to fast-path its give-up instead of blind-retrying.
+ * - **Node `ws`** clients (the VSCode terminal) get the HTTP-stage `404`: they
+ *   rely on the `"Unexpected server response: 404"` upgrade error (#936), so
+ *   this path must stay byte-for-byte unchanged to avoid regressing them.
+ *
+ * Discriminator: the `Origin` header, which browsers always send on a WS
+ * upgrade and the Node `ws` terminal client never sets. A browser arriving
+ * without `Origin` degrades gracefully to the Node path (blind retry) — no
+ * worse than today's behavior.
+ */
+function rejectUnknownSession(
+  req: http.IncomingMessage,
+  socket: net.Socket,
+  head: Buffer,
+  wss: WebSocketServer,
+): void {
+  if (req.headers.origin) {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws.close(WS_CLOSE_SESSION_UNKNOWN, 'session-unknown');
+    });
+    return;
+  }
+  socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+  socket.destroy();
+}
+
+/**
  * Set up the WebSocket upgrade handler on the HTTP server.
  * Parses upgrade requests and routes them to the appropriate terminal session:
  * - Direct route: /ws/terminal/:id
@@ -157,12 +198,16 @@ export function setupUpgradeHandler(
     const terminalMatch = reqUrl.pathname.match(/^\/ws\/terminal\/([^/]+)$/);
     if (terminalMatch) {
       const terminalId = terminalMatch[1];
+      // #997: don't reject a terminal id as unknown while the startup reconcile
+      // is still re-registering persistent sessions — wait for it to settle so a
+      // client reconnecting to its preserved id (#991) isn't spuriously 404'd.
+      // Fast-path the settled (normal post-startup) case to avoid per-upgrade overhead.
+      if (!isStartupReconcileSettled()) await whenStartupReconcileSettled();
       const manager = getTerminalManager();
       const session = manager.getSession(terminalId);
 
       if (!session) {
-        socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-        socket.destroy();
+        rejectUnknownSession(req, socket, head, wss);
         return;
       }
 
@@ -229,12 +274,14 @@ export function setupUpgradeHandler(
     const wsMatch = reqUrl.pathname.match(/^\/workspace\/[^/]+\/ws\/terminal\/([^/]+)$/);
     if (wsMatch) {
       const terminalId = wsMatch[1];
+      // #997: same readiness gate as the direct route above — wait out the
+      // startup reconcile window before treating an id as unknown.
+      if (!isStartupReconcileSettled()) await whenStartupReconcileSettled();
       const manager = getTerminalManager();
       const session = manager.getSession(terminalId);
 
       if (!session) {
-        socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-        socket.destroy();
+        rejectUnknownSession(req, socket, head, wss);
         return;
       }
 

@@ -25,7 +25,8 @@ const { mockGetInstances, mockGetTerminalManager, mockGetSession,
   mockOverviewGetOverview, mockOverviewInvalidate,
   mockReadCloudConfig,
   mockComputeAnalytics,
-  mockGetKnownWorkspacePaths } = vi.hoisted(() => ({
+  mockGetKnownWorkspacePaths,
+  mockIsStartupReconcileSettled } = vi.hoisted(() => ({
   mockGetInstances: vi.fn(),
   mockGetTerminalManager: vi.fn(),
   mockGetSession: vi.fn(),
@@ -49,6 +50,7 @@ const { mockGetInstances, mockGetTerminalManager, mockGetSession,
   mockReadCloudConfig: vi.fn(),
   mockComputeAnalytics: vi.fn(),
   mockGetKnownWorkspacePaths: vi.fn(() => []),
+  mockIsStartupReconcileSettled: vi.fn(() => true),
 }));
 
 vi.mock('../lib/cloud-config.js', () => ({
@@ -80,6 +82,7 @@ vi.mock('../servers/tower-terminals.js', () => ({
   deleteFileTab: vi.fn(),
   getTerminalsForWorkspace: mockGetTerminalsForWorkspace,
   getRehydratedTerminalsEntry: mockGetRehydratedTerminalsEntry,
+  isStartupReconcileSettled: mockIsStartupReconcileSettled,
 }));
 
 vi.mock('../servers/tower-tunnel.js', () => ({
@@ -128,6 +131,8 @@ function makeCtx(overrides: Partial<RouteContext> = {}): RouteContext {
   return {
     log: vi.fn(),
     port: 4100,
+    version: '9.9.9',
+    startedAt: '2026-01-01T00:00:00.000Z',
     templatePath: '/tmp/tower.html',
     reactDashboardPath: '/tmp/dashboard/dist',
     hasReactDashboard: false,
@@ -264,6 +269,38 @@ describe('tower-routes', () => {
       expect(parsed.status).toBe('healthy');
       expect(parsed.activeWorkspaces).toBe(1);
       expect(parsed.totalWorkspaces).toBe(2);
+    });
+
+    it('reports readiness from the startup-reconcile barrier (#997)', async () => {
+      mockGetInstances.mockResolvedValue([]);
+
+      // Pre-reconcile: barrier not yet settled → ready:false
+      mockIsStartupReconcileSettled.mockReturnValueOnce(false);
+      const notReady = makeRes();
+      await handleRequest(makeReq('GET', '/health'), notReady.res, makeCtx());
+      expect(JSON.parse(notReady.body()).ready).toBe(false);
+
+      // Post-reconcile: barrier settled → ready:true
+      mockIsStartupReconcileSettled.mockReturnValueOnce(true);
+      const ready = makeRes();
+      await handleRequest(makeReq('GET', '/health'), ready.res, makeCtx());
+      expect(JSON.parse(ready.body()).ready).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // Version probe (#983)
+  // =========================================================================
+
+  describe('GET /api/version', () => {
+    it('returns the running Tower version and start time from context', async () => {
+      const req = makeReq('GET', '/api/version');
+      const { res, statusCode, body } = makeRes();
+      await handleRequest(req, res, makeCtx({ version: '3.2.1', startedAt: '2026-06-06T12:00:00.000Z' }));
+
+      expect(statusCode()).toBe(200);
+      const parsed = JSON.parse(body());
+      expect(parsed).toEqual({ version: '3.2.1', startedAt: '2026-06-06T12:00:00.000Z' });
     });
   });
 

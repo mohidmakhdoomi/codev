@@ -17,6 +17,7 @@ import {
   loadProtocolRole,
 } from '../commands/spawn-roles.js';
 import type { TemplateContext } from '../commands/spawn-roles.js';
+import { logger } from '../utils/logger.js'; // mocked below; vi.fn()s for assertions
 
 // Mock dependencies
 vi.mock('../utils/logger.js', () => ({
@@ -39,21 +40,32 @@ const skeletonMock = vi.hoisted(() => ({ root: '' as string }));
 vi.mock('../../lib/skeleton.js', async () => {
   const fs = await import('node:fs');
   const path = await import('node:path');
+  // Mirrors the real four-tier resolver: .codev/ → codev/ → cache → skeleton.
+  // The cache tier is omitted (irrelevant to these tests).
+  const resolveCodevFile = (relativePath: string, workspaceRoot?: string): string | null => {
+    const root = workspaceRoot || process.cwd();
+    const overridePath = path.join(root, '.codev', relativePath);
+    if (fs.existsSync(overridePath)) return overridePath;
+    const localPath = path.join(root, 'codev', relativePath);
+    if (fs.existsSync(localPath)) return localPath;
+    if (skeletonMock.root) {
+      const skeletonPath = path.join(skeletonMock.root, relativePath);
+      if (fs.existsSync(skeletonPath)) return skeletonPath;
+    }
+    return null;
+  };
+  // Mirror of the real resolveCodevIncludes, using the mocked resolver.
+  const resolveCodevIncludes = (content: string, workspaceRoot?: string, depth = 0): string => {
+    if (depth > 5) return content;
+    return content.replace(/\{\{>\s*([^}\s]+)\s*\}\}/g, (_m, rel: string) => {
+      const resolved = resolveCodevFile(rel, workspaceRoot);
+      if (!resolved) return '';
+      return resolveCodevIncludes(fs.readFileSync(resolved, 'utf-8'), workspaceRoot, depth + 1);
+    });
+  };
   return {
-    // Mirrors the real four-tier resolver: .codev/ → codev/ → cache → skeleton.
-    // The cache tier is omitted (irrelevant to these tests).
-    resolveCodevFile: (relativePath: string, workspaceRoot?: string): string | null => {
-      const root = workspaceRoot || process.cwd();
-      const overridePath = path.join(root, '.codev', relativePath);
-      if (fs.existsSync(overridePath)) return overridePath;
-      const localPath = path.join(root, 'codev', relativePath);
-      if (fs.existsSync(localPath)) return localPath;
-      if (skeletonMock.root) {
-        const skeletonPath = path.join(skeletonMock.root, relativePath);
-        if (fs.existsSync(skeletonPath)) return skeletonPath;
-      }
-      return null;
-    },
+    resolveCodevFile,
+    resolveCodevIncludes,
     getSkeletonDir: (): string => skeletonMock.root,
   };
 });
@@ -145,8 +157,8 @@ describe('spawn-roles', () => {
   // =========================================================================
 
   describe('buildPromptFromTemplate', () => {
-    it('falls back to inline prompt when no template file exists', () => {
-      // Config with non-existent protocols dir
+    it('throws (no silent fallback) when a protocol has no builder-prompt.md (#1011)', () => {
+      // Non-existent protocols dir → no builder-prompt.md resolves anywhere.
       const config = {
         codevDir: '/nonexistent/codev',
         workspaceRoot: '/workspace',
@@ -160,10 +172,9 @@ describe('spawn-roles', () => {
         mode_strict: true,
         input_description: 'a feature',
       };
-      const result = buildPromptFromTemplate(config, 'spir', context);
-      expect(result).toContain('SPIR Builder (strict mode)');
-      expect(result).toContain('a feature');
-      expect(result).toContain('STRICT');
+      // Fail fast rather than synthesize a degraded prompt that points the builder
+      // at codev/protocols/... by literal path (bypasses the resolver, breaks fresh installs).
+      expect(() => buildPromptFromTemplate(config, 'spir', context)).toThrow(/no builder-prompt\.md/);
     });
   });
 
@@ -319,7 +330,12 @@ describe('spawn-roles', () => {
       );
       fs.writeFileSync(
         path.join(skeletonRoot, 'protocols', 'spir', 'builder-prompt.md'),
-        '# {{protocol_name}} prompt for {{input_description}}',
+        // #1011: the {{protocol_reference}} placeholder is filled fresh at spawn
+        // from protocol.md (and its {{> ...}} includes). Unconditional — every
+        // shipped protocol ships a protocol.md (guarded by the completeness test
+        // below), so there is no {{#if}} guard.
+        '# {{protocol_name}} prompt for {{input_description}}\n' +
+          '## Protocol Reference (full text)\n{{protocol_reference}}\n',
       );
       fs.mkdirSync(path.join(skeletonRoot, 'protocols', 'bugfix'), { recursive: true });
       fs.writeFileSync(
@@ -339,6 +355,27 @@ describe('spawn-roles', () => {
       expect(() => validateProtocol(makeConfig(), 'bogus')).toThrow(
         /Protocol not found: bogus[\s\S]*Available protocols:[\s\S]*spir/,
       );
+    });
+
+    it('validateProtocol warns (non-fatally) when a protocol has protocol.json but no protocol.md (issue #1011)', () => {
+      // The beforeEach creates spir/ with protocol.json but no protocol.md.
+      expect(() => validateProtocol(makeConfig(), 'spir')).not.toThrow(); // non-fatal
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('no protocol.md'));
+    });
+
+    it('validateProtocol does NOT warn when protocol.md is present', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      fs.writeFileSync(path.join(skeletonRoot, 'protocols', 'spir', 'protocol.md'), '# SPIR');
+      validateProtocol(makeConfig(), 'spir');
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('validateProtocol fails fast when a protocol has no builder-prompt.md (#1011)', () => {
+      // The skeleton's bugfix/ ships protocol.json but no builder-prompt.md. Rather
+      // than fall back to a prompt that points at codev/protocols/... by literal
+      // path, spawning must fail fast.
+      expect(() => validateProtocol(makeConfig(), 'bugfix')).toThrow(/no builder-prompt\.md/);
     });
 
     it('loadProtocol falls back to skeleton', () => {
@@ -361,6 +398,79 @@ describe('spawn-roles', () => {
       };
       const prompt = buildPromptFromTemplate(makeConfig(), 'spir', ctx);
       expect(prompt).toContain('SPIR prompt for a v3 feature');
+    });
+
+    it('fills {{protocol_reference}} with protocol.md content fresh at delivery (issue #1011)', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      fs.writeFileSync(
+        path.join(skeletonRoot, 'protocols', 'spir', 'protocol.md'),
+        '# SPIR Protocol\n\nMETA_DOC_SENTINEL: gate semantics and when-to-use guidance.',
+      );
+
+      const ctx: TemplateContext = {
+        protocol_name: 'SPIR',
+        mode: 'strict',
+        mode_soft: false,
+        mode_strict: true,
+        input_description: 'a v3 feature',
+      };
+      const prompt = buildPromptFromTemplate(makeConfig(), 'spir', ctx);
+
+      // Still carries the rendered builder-prompt template...
+      expect(prompt).toContain('SPIR prompt for a v3 feature');
+      // ...plus the protocol meta-doc, substituted into the {{protocol_reference}}
+      // placeholder under the template's delimiter heading (read fresh, not committed).
+      expect(prompt).toContain('## Protocol Reference (full text)');
+      expect(prompt).toContain('META_DOC_SENTINEL: gate semantics and when-to-use guidance.');
+    });
+
+    it('resolves {{> ...}} template includes inside protocol.md fresh at delivery (issue #1011)', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      // protocol.md references a template via an include directive rather than a
+      // committed copy — the resolver reads the template fresh, so it can't drift.
+      fs.mkdirSync(path.join(skeletonRoot, 'protocols', 'spir', 'templates'), { recursive: true });
+      fs.writeFileSync(
+        path.join(skeletonRoot, 'protocols', 'spir', 'templates', 'plan.md'),
+        'TEMPLATE_SENTINEL: the canonical plan template body.',
+      );
+      fs.writeFileSync(
+        path.join(skeletonRoot, 'protocols', 'spir', 'protocol.md'),
+        '# SPIR Protocol\n\nUse the template below:\n\n{{> protocols/spir/templates/plan.md}}\n',
+      );
+
+      const ctx: TemplateContext = {
+        protocol_name: 'SPIR',
+        mode: 'strict',
+        mode_soft: false,
+        mode_strict: true,
+        input_description: 'a v3 feature',
+      };
+      const prompt = buildPromptFromTemplate(makeConfig(), 'spir', ctx);
+
+      // The include directive is gone (resolved), replaced by the template body.
+      expect(prompt).not.toContain('{{> protocols/spir/templates/plan.md}}');
+      expect(prompt).toContain('TEMPLATE_SENTINEL: the canonical plan template body.');
+    });
+
+    it('builds the prompt without error when protocol.md is absent (issue #1011)', () => {
+      // The skeleton-fallback beforeEach creates spir/ with no protocol.md. The
+      // reference is now unconditional (no {{#if}} guard), so {{protocol_reference}}
+      // resolves to empty rather than the prompt omitting the section — the build
+      // must still succeed without error. (Shipped protocols can't hit this: the
+      // completeness test guarantees every shipped protocol has a protocol.md.)
+      const ctx: TemplateContext = {
+        protocol_name: 'SPIR',
+        mode: 'strict',
+        mode_soft: false,
+        mode_strict: true,
+        input_description: 'a v3 feature',
+      };
+      const prompt = buildPromptFromTemplate(makeConfig(), 'spir', ctx);
+
+      expect(prompt).toContain('SPIR prompt for a v3 feature');
+      expect(prompt).not.toContain('{{protocol_reference}}'); // placeholder resolved (to empty), not left raw
     });
 
     it('local codev/protocols/ takes precedence over skeleton', async () => {

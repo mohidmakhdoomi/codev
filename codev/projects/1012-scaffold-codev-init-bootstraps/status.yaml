@@ -1,0 +1,30 @@
+id: '1012'
+title: scaffold-codev-init-bootstraps
+protocol: pir
+phase: review
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: approved
+    requested_at: '2026-06-12T19:28:14.611Z'
+    approved_at: '2026-06-13T06:18:30.528Z'
+  dev-approval:
+    status: approved
+    requested_at: '2026-06-13T06:25:00.899Z'
+    approved_at: '2026-06-14T00:18:04.391Z'
+  pr:
+    status: approved
+    requested_at: '2026-06-14T00:30:03.080Z'
+    approved_at: '2026-06-16T07:04:32.679Z'
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-06-12T19:24:46.703Z'
+updated_at: '2026-06-16T07:04:32.679Z'
+pr_history:
+  - phase: review
+    pr_number: 1046
+    branch: builder/pir-1012
+    created_at: '2026-06-14T00:21:22.368Z'
+pr_ready_for_human: false

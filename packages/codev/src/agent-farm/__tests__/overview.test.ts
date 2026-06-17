@@ -348,6 +348,102 @@ describe('overview', () => {
       const result = parseStatusYaml(yaml);
       expect(result.gateApprovedAt).toEqual({});
     });
+
+    it('defaults merged to false when pr_history is absent (#966)', () => {
+      const result = parseStatusYaml("id: '0100'\nphase: review");
+      expect(result.merged).toBe(false);
+    });
+
+    it('parses merged: true from the pr_history entry (#966)', () => {
+      const yaml = [
+        "id: '2019'",
+        'protocol: bugfix',
+        'phase: review',
+        'gates:',
+        '  pr:',
+        '    status: pending',
+        "    requested_at: '2026-06-02T15:14:59.000Z'",
+        'pr_history:',
+        '  - phase: review',
+        '    pr_number: 2030',
+        '    branch: builder/spir-2019',
+        "    created_at: '2026-06-02T15:10:00.000Z'",
+        '    merged: true',
+        "    merged_at: '2026-06-02T15:14:34.000Z'",
+        'pr_ready_for_human: true',
+      ].join('\n');
+
+      const result = parseStatusYaml(yaml);
+      expect(result.merged).toBe(true);
+      // sanity: the surrounding fields still parse correctly around the new section
+      expect(result.gates['pr']).toBe('pending');
+      expect(result.gateRequestedAt['pr']).toBe('2026-06-02T15:14:59.000Z');
+    });
+
+    it('parses merged: false (open PR) in pr_history (#966)', () => {
+      const yaml = [
+        "id: '0100'",
+        'phase: review',
+        'pr_history:',
+        '  - phase: review',
+        '    pr_number: 50',
+        '    branch: builder/bugfix-100',
+        "    created_at: '2026-06-02T15:10:00.000Z'",
+        '    merged: false',
+      ].join('\n');
+
+      const result = parseStatusYaml(yaml);
+      expect(result.merged).toBe(false);
+    });
+
+    it('reflects the LAST pr_history entry — earlier merged PR + later open PR (#966)', () => {
+      // SPIR/PIR checkpoint workflow: an earlier checkpoint PR merged, but a later
+      // PR is still open and awaiting review. The current pr gate is for the LATEST
+      // PR (not merged), so the builder is genuinely PR-ready.
+      const yaml = [
+        "id: '0100'",
+        'protocol: spir',
+        'phase: review',
+        'pr_history:',
+        '  - phase: implement',
+        '    pr_number: 40',
+        '    branch: builder/spir-100',
+        "    created_at: '2026-06-01T00:00:00.000Z'",
+        '    merged: true',
+        "    merged_at: '2026-06-01T01:00:00.000Z'",
+        '  - phase: review',
+        '    pr_number: 41',
+        '    branch: builder/spir-100',
+        "    created_at: '2026-06-02T00:00:00.000Z'",
+        '    merged: false',
+      ].join('\n');
+
+      const result = parseStatusYaml(yaml);
+      expect(result.merged).toBe(false);
+    });
+
+    it('reflects the LAST pr_history entry when the later entry has no merged key (#966)', () => {
+      // The later (open) PR has no `merged` key at all — must still read as not-merged.
+      const yaml = [
+        "id: '0100'",
+        'protocol: spir',
+        'phase: review',
+        'pr_history:',
+        '  - phase: implement',
+        '    pr_number: 40',
+        '    branch: builder/spir-100',
+        "    created_at: '2026-06-01T00:00:00.000Z'",
+        '    merged: true',
+        "    merged_at: '2026-06-01T01:00:00.000Z'",
+        '  - phase: review',
+        '    pr_number: 41',
+        '    branch: builder/spir-100',
+        "    created_at: '2026-06-02T00:00:00.000Z'",
+      ].join('\n');
+
+      const result = parseStatusYaml(yaml);
+      expect(result.merged).toBe(false);
+    });
   });
 
   // ==========================================================================
@@ -730,6 +826,7 @@ describe('overview', () => {
         planPhases: [],
         startedAt: '2026-05-26T00:00:00.000Z',
         prReadyForHuman: null,
+        merged: false,
         ...overrides,
       };
     }
@@ -763,6 +860,28 @@ describe('overview', () => {
       }))).toBe(false);
     });
 
+    it('returns false when the PR has merged but the pr gate is still pending (#966)', () => {
+      // Repro: porch left the `pr` gate pending after an out-of-band merge. The
+      // merged PR is in recentlyClosed (never pendingPRs), so a stale prReady:true
+      // would suppress the builder row without emitting a PR row → vanishes.
+      expect(derivePrReady(makeParsed({
+        protocol: 'bugfix',
+        phase: 'review',
+        gates: { pr: 'pending' },
+        gateRequestedAt: { pr: '2026-06-02T15:14:59Z' },
+        merged: true,
+      }))).toBe(false);
+    });
+
+    it('still returns true when the pr gate is pending, requested, and NOT merged (#966)', () => {
+      // The companion to the merged case: an open PR genuinely awaiting review.
+      expect(derivePrReady(makeParsed({
+        gates: { pr: 'pending' },
+        gateRequestedAt: { pr: '2026-05-26T12:00:00Z' },
+        merged: false,
+      }))).toBe(true);
+    });
+
     it('reads the pr gate directly and ignores pr_ready_for_human (#927)', () => {
       // Field true but gate not pending → not ready (kills the sticky-field hazard #919).
       expect(derivePrReady(makeParsed({
@@ -790,6 +909,39 @@ describe('overview', () => {
 
     it('returns false when no pr-gate signal is present', () => {
       expect(derivePrReady(makeParsed({ protocol: 'spir', phase: 'implement' }))).toBe(false);
+    });
+
+    it('repro #966: merged-but-gate-pending builder surfaces via the gate row, not as PR-ready', () => {
+      // Full chain on the real #966 repro shape: porch recorded
+      // merged: true but left the pr gate pending. The builder must NOT
+      // read as PR-ready (else NeedsAttentionList suppresses its row while no PR
+      // row exists — it vanishes). It must instead surface as a blocked "PR review"
+      // gate row, since the pr gate is genuinely still pending. This is why fixing
+      // derivePrReady alone is sufficient (no NeedsAttentionList change needed).
+      const yaml = [
+        "id: '2019'",
+        'protocol: bugfix',
+        'phase: review',
+        'gates:',
+        '  pr:',
+        '    status: pending',
+        "    requested_at: '2026-06-02T15:14:59.000Z'",
+        'pr_history:',
+        '  - phase: review',
+        '    pr_number: 2030',
+        '    branch: builder/spir-2019',
+        "    created_at: '2026-06-02T15:10:00.000Z'",
+        '    merged: true',
+        "    merged_at: '2026-06-02T15:14:34.000Z'",
+        'pr_ready_for_human: true',
+      ].join('\n');
+
+      const parsed = parseStatusYaml(yaml);
+      // No longer suppressed as a (now-merged) PR-ready builder...
+      expect(derivePrReady(parsed)).toBe(false);
+      // ...and surfaces via the gate-row path instead (pr gate still pending).
+      expect(detectBlocked(parsed)).toBe('PR review');
+      expect(detectBlockedSince(parsed)).toBe('2026-06-02T15:14:59.000Z');
     });
   });
 
@@ -1679,6 +1831,32 @@ describe('overview', () => {
       expect(data.pendingPRs[2].reviewStatus).toBe('REVIEW_REQUIRED');
     });
 
+    it('flows reviewRequests and isDraft through to pendingPRs', async () => {
+      mockFetchPRList.mockResolvedValue([
+        { number: 1, title: 'Draft PR', url: 'https://github.com/org/repo/pull/1', reviewDecision: '', body: '', createdAt: '2026-01-01T00:00:00Z', reviewRequests: ['alice', 'bob'], isDraft: true },
+      ]);
+      mockFetchIssueList.mockResolvedValue([]);
+
+      const cache = new OverviewCache();
+      const data = await cache.getOverview(tmpDir);
+
+      expect(data.pendingPRs[0].reviewRequests).toEqual(['alice', 'bob']);
+      expect(data.pendingPRs[0].isDraft).toBe(true);
+    });
+
+    it('defaults reviewRequests to [] and isDraft to false when the forge omits them', async () => {
+      mockFetchPRList.mockResolvedValue([
+        { number: 1, title: 'Bare PR', url: 'https://github.com/org/repo/pull/1', reviewDecision: '', body: '', createdAt: '2026-01-01T00:00:00Z' },
+      ]);
+      mockFetchIssueList.mockResolvedValue([]);
+
+      const cache = new OverviewCache();
+      const data = await cache.getOverview(tmpDir);
+
+      expect(data.pendingPRs[0].reviewRequests).toEqual([]);
+      expect(data.pendingPRs[0].isDraft).toBe(false);
+    });
+
     it('passes workspace root as cwd to gh CLI calls', async () => {
       mockFetchPRList.mockResolvedValue([]);
       mockFetchIssueList.mockResolvedValue([]);
@@ -1775,6 +1953,106 @@ describe('overview', () => {
       expect(data.builders).toHaveLength(1);
       // Falls back to slug from status.yaml
       expect(data.builders[0].issueTitle).toBe('some-fix');
+    });
+
+    // ------------------------------------------------------------------
+    // Resolved-area enrichment cache (PIR #907)
+    //
+    // Regression coverage for the transient UNCATEGORIZED flash during
+    // cleanup. `area` is resolved from the *open*-issues list; when a
+    // builder's issue is absent from that list (closed on PR merge, torn
+    // down mid-cleanup, or a failed fetch) the record used to fall back to
+    // the UNCATEGORIZED_AREA default while the builder was still present,
+    // making it jump groups in the Builders tree. The cache now replays the
+    // resolved area instead.
+    // ------------------------------------------------------------------
+
+    it('keeps the resolved area when the issue leaves the open list (PIR #907)', async () => {
+      createBuilderWorktree(tmpDir, 'pir-907-area-fix', [
+        "id: '0907'",
+        'protocol: pir',
+        'phase: implement',
+        'gates:',
+      ].join('\n'), '0907-area-fix');
+
+      const cache = new OverviewCache();
+
+      // First refresh: issue is open and labeled area/vscode.
+      mockFetchIssueList.mockResolvedValue([
+        issueItem(907, 'Builder flash bug', [{ name: 'area/vscode' }]),
+      ]);
+      const first = await cache.getOverview(tmpDir);
+      expect(first.builders).toHaveLength(1);
+      expect(first.builders[0].area).toBe('vscode');
+
+      // Issue closes (e.g. PR merged) → drops out of the open-issues list.
+      cache.invalidate();
+      mockFetchIssueList.mockResolvedValue([]);
+      const second = await cache.getOverview(tmpDir);
+      expect(second.builders).toHaveLength(1);
+      // Must NOT regress to 'Uncategorized' — stays in its real group until
+      // it disappears entirely.
+      expect(second.builders[0].area).toBe('vscode');
+    });
+
+    it('keeps the resolved area when the issue fetch fails (PIR #907)', async () => {
+      createBuilderWorktree(tmpDir, 'pir-907-area-fetchfail', [
+        "id: '0907'",
+        'protocol: pir',
+        'phase: implement',
+        'gates:',
+      ].join('\n'), '0907-area-fetchfail');
+
+      const cache = new OverviewCache();
+
+      mockFetchIssueList.mockResolvedValue([
+        issueItem(907, 'Builder flash bug', [{ name: 'area/vscode' }]),
+      ]);
+      const first = await cache.getOverview(tmpDir);
+      expect(first.builders[0].area).toBe('vscode');
+
+      cache.invalidate();
+      mockFetchIssueList.mockResolvedValue(null);
+      const second = await cache.getOverview(tmpDir);
+      expect(second.builders[0].area).toBe('vscode');
+    });
+
+    it('still classifies a genuinely unlabeled builder as Uncategorized (PIR #907)', async () => {
+      createBuilderWorktree(tmpDir, 'pir-908-no-area', [
+        "id: '0908'",
+        'protocol: pir',
+        'phase: implement',
+        'gates:',
+      ].join('\n'), '0908-no-area');
+
+      const cache = new OverviewCache();
+
+      // Issue is present across two refreshes but carries no area/* label.
+      mockFetchIssueList.mockResolvedValue([
+        issueItem(908, 'No area label', [{ name: 'bug' }]),
+      ]);
+      const first = await cache.getOverview(tmpDir);
+      expect(first.builders[0].area).toBe('Uncategorized');
+
+      cache.invalidate();
+      const second = await cache.getOverview(tmpDir);
+      expect(second.builders[0].area).toBe('Uncategorized');
+    });
+
+    it('classifies as Uncategorized when never previously resolved (PIR #907)', async () => {
+      createBuilderWorktree(tmpDir, 'pir-909-absent', [
+        "id: '0909'",
+        'protocol: pir',
+        'phase: implement',
+        'gates:',
+      ].join('\n'), '0909-absent');
+
+      const cache = new OverviewCache();
+
+      // Issue never appears in the open list → no resolved area to replay.
+      mockFetchIssueList.mockResolvedValue([]);
+      const data = await cache.getOverview(tmpDir);
+      expect(data.builders[0].area).toBe('Uncategorized');
     });
 
     it('uses separate cache per workspace (Bugfix #333)', async () => {

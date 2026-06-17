@@ -20,7 +20,7 @@ The `-m` / `--model` flag is **always required** except for `consult stats`.
 
 | Flag value | Alias | Notes |
 |------------|-------|-------|
-| `gemini` | `pro` | Fast (~120-150s), file access via --yolo |
+| `gemini` | `pro` | Antigravity CLI (`agy`); agentic file access (`--sandbox`), OAuth login; skips non-blockingly if unavailable |
 | `codex` | `gpt` | Thorough (~200-250s), shell exploration |
 | `claude` | `opus` | Agent SDK with tool use (~60-120s) |
 

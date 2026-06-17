@@ -37,7 +37,7 @@ mkdir -p experiments/1_experiment_name
 cd experiments/1_experiment_name
 
 # Initialize notes.md from template
-cp codev/protocols/experiment/templates/notes.md notes.md
+touch notes.md   # then fill it from the embedded template at the end of this protocol
 ```
 
 Or ask your AI assistant: "Create a new experiment for [goal]"
@@ -83,33 +83,6 @@ Update `notes.md` with:
 ```bash
 git add experiments/1_experiment_name/
 git commit -m "[Experiment 1] Brief description of findings"
-```
-
-## notes.md Template
-
-See `templates/notes.md` for the full template. Key sections:
-
-```markdown
-# Experiment ####: Name
-
-**Status**: In Progress | Complete | Disproved | Aborted
-
-**Date**: YYYY-MM-DD
-
-## Goal
-What are you trying to learn?
-
-## Time Investment
-Wall clock time vs active developer time
-
-## Code
-- [experiment.py](experiment.py) - Brief description
-
-## Results
-What happened? What did you learn?
-
-## Next Steps
-What should be done based on findings?
 ```
 
 ## Best Practices
@@ -222,3 +195,9 @@ Determine if Redis caching improves API response times for repeated queries.
 ## Next Steps
 Create SPIR spec for production caching implementation.
 ```
+
+## Template: notes.md
+
+Create `notes.md` with the following content:
+
+{{> protocols/experiment/templates/notes.md}}

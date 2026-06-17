@@ -1,0 +1,30 @@
+id: '863'
+title: vscode-markdown-preview-marker
+protocol: pir
+phase: review
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: approved
+    requested_at: '2026-06-16T07:47:50.246Z'
+    approved_at: '2026-06-16T08:05:51.252Z'
+  dev-approval:
+    status: approved
+    requested_at: '2026-06-16T08:14:42.799Z'
+    approved_at: '2026-06-16T12:04:46.502Z'
+  pr:
+    status: approved
+    requested_at: '2026-06-16T12:15:30.869Z'
+    approved_at: '2026-06-16T12:21:46.756Z'
+iteration: 1
+build_complete: true
+history: []
+started_at: '2026-06-16T07:43:36.724Z'
+updated_at: '2026-06-16T12:21:46.756Z'
+pr_history:
+  - phase: review
+    pr_number: 1056
+    branch: builder/pir-863
+    created_at: '2026-06-16T12:08:43.047Z'
+pr_ready_for_human: false

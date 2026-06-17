@@ -120,12 +120,20 @@ export function isIntentionallyStopping(workspacePath: string): boolean {
  * because the session was already gone), the promise still resolves so we
  * don't block the stop indefinitely.
  */
-function waitForTerminalExit(manager: TerminalManager, terminalId: string, timeoutMs = 5000): Promise<void> {
+export function waitForTerminalExit(manager: TerminalManager, terminalId: string, timeoutMs = 5000): Promise<void> {
   const session = manager.getSession(terminalId);
   // Defensive: if the session is gone or doesn't look like an EventEmitter
   // (e.g. a test stub), there's nothing to wait for — resolve immediately so
   // callers aren't blocked.
   if (!session || typeof (session as { once?: unknown }).once !== 'function') {
+    return Promise.resolve();
+  }
+  // The session may have already exited before we attach the listener below.
+  // `once('exit')` only catches *future* emissions, so a session that already
+  // fired 'exit' would otherwise wait out the full safety timeout. Bugfix #905
+  // made shellper exits propagate earlier (EXIT is now replayed to clients that
+  // connect after the PTY exits), which surfaced this: short-circuit instead.
+  if ((session as { status?: string }).status === 'exited') {
     return Promise.resolve();
   }
   return new Promise<void>((resolve) => {

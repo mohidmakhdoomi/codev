@@ -110,21 +110,32 @@ npm install -g @anthropic-ai/claude-code
 claude --version
 ```
 
-### Gemini CLI
+### Antigravity CLI (`agy`) — the `gemini` consult lane
+
+Replaces the retired Gemini CLI (Google stopped serving Gemini CLI for Pro/Ultra/free tiers on
+2026-06-18). The `gemini` consult lane now dispatches to the Antigravity CLI (`agy`).
 
 | Requirement | Value |
 |-------------|-------|
-| Purpose | Multi-agent consultation, alternative perspectives |
-| Documentation | [github.com/google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli) |
+| Purpose | Multi-agent consultation (the `gemini` lane), alternative perspectives |
+| Documentation | [antigravity.google/docs/cli-using](https://antigravity.google/docs/cli-using) |
+| Auth | OAuth / Google subscription (no API key) — run `agy` once and sign in |
 
 **Installation:**
 
 ```bash
-npm install -g @anthropic-ai/gemini-cli
+curl -fsSL https://antigravity.google/cli/install.sh | bash   # installs to ~/.local/bin/agy
+
+# Sign in (one-time, interactive)
+agy            # complete the OAuth flow
 
 # Verify
-gemini --version
+agy --version
 ```
+
+> Note: the `agy` on the IDE's PATH (`~/.antigravity/.../bin/agy`) is a symlink to the Antigravity
+> IDE, not the headless CLI — Codev resolves the real CLI itself. If `agy` is missing or
+> unauthenticated, the `gemini` consult lane skips non-blockingly (the run proceeds without it).
 
 ### Codex CLI
 
@@ -152,7 +163,7 @@ codex --version
 | git | 2.5.0 | Yes |
 | gh | latest | Yes |
 | Claude Code | latest | At least one AI CLI |
-| Gemini CLI | latest | At least one AI CLI |
+| Antigravity CLI (`agy`) | latest | At least one AI CLI |
 | Codex CLI | latest | At least one AI CLI |
 
 ---
@@ -207,6 +218,18 @@ echo $PATH
 
 # Common fix: add npm global bin to PATH
 export PATH="$PATH:$(npm config get prefix)/bin"
+```
+
+### Terminal connection issues
+
+Ensure no firewall is blocking the ports (default: 4200-4299):
+
+```bash
+# Check if port is in use
+lsof -i :4200
+
+# Clean up stale port allocations
+afx ports cleanup
 ```
 
 ### gh authentication issues

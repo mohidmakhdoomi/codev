@@ -22,6 +22,7 @@ import {
 } from '../../lib/github.js';
 import type { ForgePR, ForgeIssueListItem } from '../../lib/github.js';
 import { loadProtocol } from '../../commands/porch/protocol.js';
+import { ResolvedEnrichmentCache } from './resolved-enrichment-cache.js';
 import type {
   PlanPhase,
   OverviewBuilder,
@@ -54,6 +55,19 @@ interface ParsedStatus {
    * value and the v3.1.3 fallback derivation.
    */
   prReadyForHuman: boolean | null;
+  /**
+   * Whether the PR tied to the current `pr` gate has already been merged
+   * (Issue #966). Read from the LAST entry of porch's `pr_history` list — the
+   * most-recent PR is the one the current `pr` gate was requested for. The
+   * last-entry semantics handle SPIR/PIR checkpoint workflows where an earlier
+   * PR merged but a later PR is still open and awaiting review.
+   *
+   * `derivePrReady` consults this so a merged-but-gate-still-pending builder
+   * (porch left the gate pending after an out-of-band merge — see #966) no
+   * longer reads as a PR awaiting human review. Defaults to `false` when
+   * `pr_history` is absent or its last entry has no `merged: true`.
+   */
+  merged: boolean;
 }
 
 /**
@@ -73,10 +87,11 @@ export function parseStatusYaml(content: string): ParsedStatus {
     planPhases: [],
     startedAt: '',
     prReadyForHuman: null,
+    merged: false,
   };
 
   const lines = content.split('\n');
-  let section: 'none' | 'gates' | 'plan_phases' = 'none';
+  let section: 'none' | 'gates' | 'plan_phases' | 'pr_history' = 'none';
   let currentGate = '';
   let currentPlanPhase: Partial<PlanPhase> | null = null;
 
@@ -116,6 +131,12 @@ export function parseStatusYaml(content: string): ParsedStatus {
 
     if (/^plan_phases:\s*$/.test(line)) {
       section = 'plan_phases';
+      continue;
+    }
+
+    if (/^pr_history:\s*$/.test(line)) {
+      if (currentPlanPhase) { pushPlanPhase(result, currentPlanPhase); currentPlanPhase = null; }
+      section = 'pr_history';
       continue;
     }
 
@@ -173,6 +194,30 @@ export function parseStatusYaml(content: string): ParsedStatus {
       const itemStatusMatch = line.match(/^\s{4}status:\s*(\S+)/);
       if (itemStatusMatch && currentPlanPhase) {
         currentPlanPhase.status = itemStatusMatch[1];
+        continue;
+      }
+    }
+
+    // pr_history section (#966). Each list item is one PR/stage. We only need the
+    // merged status of the LAST entry (the PR the current `pr` gate was requested
+    // for). On a new list item we reset to its default (`false`); a `merged: true`
+    // line within the entry flips it. The final value therefore reflects the last
+    // entry — so an earlier merged checkpoint PR followed by a later still-open PR
+    // correctly reads as not-merged.
+    if (section === 'pr_history') {
+      const itemStartMatch = line.match(/^\s{2}-\s+(.*)$/);
+      if (itemStartMatch) {
+        result.merged = false;
+        // The dash line carries the entry's first key/value; handle the (unusual)
+        // case where that first key is `merged` itself.
+        const firstKv = itemStartMatch[1].match(/^merged:\s*(true|false)\s*$/);
+        if (firstKv) result.merged = firstKv[1] === 'true';
+        continue;
+      }
+
+      const mergedMatch = line.match(/^\s{4}merged:\s*(true|false)\s*$/);
+      if (mergedMatch) {
+        result.merged = mergedMatch[1] === 'true';
         continue;
       }
     }
@@ -362,9 +407,18 @@ export function detectBlockedSince(parsed: ParsedStatus): string | null {
  * rollback hazard from #919) nor the old `bugfix && phase === 'verified'`
  * fallback (a crutch for a gateless BUGFIX variant — gateless PR-producing
  * protocols do not surface PR rows, by design).
+ *
+ * The `!parsed.merged` conjunct (#966) handles the case where porch left the
+ * `pr` gate `pending` after the PR already merged (an out-of-band GitHub merge
+ * plus a resume can scramble the ordering). A merged PR lives in
+ * `recentlyClosed`, never `pendingPRs`, so a stale `prReady: true` would
+ * suppress the builder's row in NeedsAttentionList without ever emitting a PR
+ * row — making the builder vanish. Once merged, it is no longer "a PR awaiting
+ * human review": derivePrReady returns false, and the still-pending `pr` gate
+ * surfaces the builder via the gate-row path instead.
  */
 export function derivePrReady(parsed: ParsedStatus): boolean {
-  return parsed.gates['pr'] === 'pending' && !!parsed.gateRequestedAt['pr'];
+  return parsed.gates['pr'] === 'pending' && !!parsed.gateRequestedAt['pr'] && !parsed.merged;
 }
 
 /**
@@ -724,6 +778,12 @@ export class OverviewCache {
   private closedCache = new Map<string, { data: ForgeIssueListItem[]; fetchedAt: number }>();
   private mergedPRCache = new Map<string, { data: ForgePR[]; fetchedAt: number }>();
   private currentUserCache = new Map<string, { data: string; fetchedAt: number }>();
+  // Cache of issue-derived builder fields (today: `area`) keyed by worktreePath,
+  // so they survive refreshes where the source issue is unreachable rather than
+  // snapping back to their default while the builder is still listed (PIR #907).
+  // Intentionally NOT cleared by invalidate(): surviving cache invalidation is
+  // the whole point. See ResolvedEnrichmentCache.
+  private resolvedEnrichment = new ResolvedEnrichmentCache();
   private readonly TTL = 30_000;
   private readonly USER_TTL = 3_600_000; // 1h — GitHub identity is session-stable
 
@@ -804,6 +864,8 @@ export class OverviewCache {
         linkedIssue: parseLinkedIssue(pr.body || '', pr.title),
         createdAt: pr.createdAt,
         author: pr.author?.login,
+        reviewRequests: pr.reviewRequests ?? [],
+        isDraft: pr.isDraft ?? false,
       }));
     }
 
@@ -815,25 +877,45 @@ export class OverviewCache {
 
     // 4. Process issues and derive backlog
     let backlog: OverviewBacklogItem[] = [];
+    // `issue-list` is open-only, so a closed issue (merged via `Fixes #N`), one
+    // torn down mid-cleanup, or a failed fetch (issues === null) is absent here.
+    const issueAreaMap = issues
+      ? new Map(issues.map(i => [String(i.number), parseArea(i.labels)]))
+      : null;
     if (issues === null) {
       errors.issues = 'GitHub CLI unavailable — could not fetch issues';
     } else {
       backlog = deriveBacklog(issues, workspaceRoot, activeBuilderIssues, prLinkedIssues);
 
-      // Enrich builder titles + area from the cached issue list.
-      // (status.yaml stores a slug, not the human-readable title; and
-      // discoverBuilders has no access to the issue payload, so area
-      // starts as 'Uncategorized' and gets filled here.)
+      // Enrich builder titles from the cached issue list. (status.yaml stores a
+      // slug, not the human-readable title.) Title keeps its own local fallback
+      // — the slug — so it doesn't need the resolved-enrichment cache.
       const issueTitleMap = new Map(issues.map(i => [String(i.number), i.title]));
-      const issueAreaMap = new Map(issues.map(i => [String(i.number), parseArea(i.labels)]));
       for (const b of builders) {
         if (b.issueId === null) continue;
         const title = issueTitleMap.get(b.issueId);
         if (title) b.issueTitle = title;
-        const area = issueAreaMap.get(b.issueId);
-        if (area) b.area = area;
       }
     }
+
+    // Resolve issue-derived fields (today: `area`) through the enrichment cache
+    // so they survive refreshes where the issue is unreachable — instead of
+    // snapping back to the UNCATEGORIZED_AREA default while the builder is still
+    // listed during teardown (PIR #907). Gated on issue reachability, not value
+    // emptiness, so a reachable-but-unlabeled issue still resolves (and caches)
+    // a genuine `Uncategorized`.
+    for (const b of builders) {
+      if (b.issueId === null) continue;
+      const issueReachable = issueAreaMap?.has(b.issueId) ?? false;
+      const area = this.resolvedEnrichment.resolve(
+        b.worktreePath,
+        'area',
+        issueReachable,
+        issueReachable ? issueAreaMap!.get(b.issueId)! : undefined,
+      );
+      if (area) b.area = area;
+    }
+    this.resolvedEnrichment.prune(new Set(builders.map(b => b.worktreePath)));
 
     // 5. Process recently closed issues — enrich with artifact paths and PR URLs
     let recentlyClosed: OverviewRecentlyClosed[] = [];
@@ -894,6 +976,10 @@ export class OverviewCache {
     this.closedCache.clear();
     this.mergedPRCache.clear();
     this.currentUserCache.clear();
+    // Note: resolvedEnrichment is deliberately NOT cleared here. It must survive
+    // invalidation so a cleanup-triggered refresh (which calls invalidate()) can
+    // still fall back to a builder's resolved area instead of UNCATEGORIZED
+    // (PIR #907). It self-prunes in getOverview when a builder disappears.
   }
 
   // ===========================================================================

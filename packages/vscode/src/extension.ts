@@ -7,10 +7,14 @@ import { sendMessage } from './commands/send.js';
 import { approveGate } from './commands/approve.js';
 import { cleanupBuilder } from './commands/cleanup.js';
 import { openWorktreeWindow } from './commands/open-worktree-window.js';
-import { viewDiff, activateDiffView, diffUrisForChange } from './commands/view-diff.js';
+import { viewDiff, activateDiffView, diffUrisForChange, registerFileInjectSession } from './commands/view-diff.js';
+import { activateDiffInjectCodeLens, getDiffInjectEntry } from './diff-inject-codelens.js';
+import { ensureDiffEditorCodeLens } from './ensure-diff-codelens.js';
+import { buildBuilderRangeRef } from './diff-inject-ref.js';
 import { runWorktreeDev } from './commands/run-worktree-dev.js';
 import { stopWorktreeDev } from './commands/stop-worktree-dev.js';
 import { runWorkspaceDev, stopWorkspaceDev } from './commands/run-workspace-dev.js';
+import { stopDevServer, restartDevServer, switchDevTarget, showCodevSidebar, hideCodevSidebar } from './commands/dev-server-actions.js';
 import { openDevUrl } from './commands/open-dev-url.js';
 import { pasteImage } from './commands/paste-image.js';
 import { openWorktreeFolder } from './commands/open-worktree-folder.js';
@@ -25,19 +29,22 @@ import { addReviewComment } from './commands/review.js';
 import { activateGateToasts } from './notifications/gate-toast.js';
 import { activateReviewDecorations } from './review-decorations.js';
 import { activateReviewComments } from './comments/plan-review.js';
+import { MarkdownPreviewProvider } from './markdown-preview/preview-provider.js';
 import { BuilderSpawnHandler } from './builder-spawn-handler.js';
 import { BuilderTerminalLinkProvider, ReconnectTerminalLinkProvider } from './terminal-link-provider.js';
 import { computeBuildersToClose, roleIdsFromBuilders } from './prune-builder-terminals.js';
 import { buildBuilderPickRows } from './builder-pick-rows.js';
 import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
-import { BuildersProvider } from './views/builders.js';
-import { BuilderGroupTreeItem } from './views/builder-tree-item.js';
-import { PullRequestsProvider } from './views/pull-requests.js';
+import { BuildersProvider, AccordionGate } from './views/builders.js';
+import { PullRequestsProvider, PullRequestTreeItem } from './views/pull-requests.js';
 import { BacklogProvider } from './views/backlog.js';
 import { visibleBacklogCount, formatBacklogTitle } from './views/backlog-filter.js';
 import { RecentlyClosedProvider } from './views/recently-closed.js';
 import { TeamProvider } from './views/team.js';
 import { StatusProvider } from './views/status.js';
+import { PanelPlaceholderProvider } from './views/panel-placeholder.js';
+import { DevServerTreeProvider } from './views/dev-server.js';
+import { formatTargetName } from './views/dev-server-format.js';
 import { WorkspaceProvider } from './views/workspace.js';
 import { BuilderTreeItem } from './views/builder-tree-item.js';
 import { BuilderFileTreeItem } from './views/builder-file-tree-item.js';
@@ -46,7 +53,7 @@ import { BuilderFileDecorationProvider } from './views/builder-file-decoration.j
 import { BacklogGroupTreeItem, BacklogTreeItem } from './views/backlog-tree-item.js';
 import { persistAreaGroupExpansion } from './views/area-group-expansion.js';
 import { buildArchitectReferenceInjection } from './architect-reference-injection.js';
-import { runPreflight, recheckCli, isCliReady, showSetupRequiredToast } from './preflight/preflight.js';
+import { runPreflight, recheckCli, isCliReady, showPreflightFeedback, probeTowerVersion } from './preflight/preflight.js';
 import { detectWorkspacePath } from './workspace-detector.js';
 import { loadWorktreeConfig, hasRunnableDevCommand } from './load-worktree-config.js';
 
@@ -54,6 +61,10 @@ let connectionManager: ConnectionManager | null = null;
 let terminalManager: TerminalManager | null = null;
 let outputChannel: vscode.OutputChannel | null = null;
 let statusBarItem: vscode.StatusBarItem | null = null;
+// Always-visible chip shown only while an `afx dev` PTY is running (#921).
+// Created lazily on dev start, disposed on stop — distinct from the connection
+// status item above.
+let devChipItem: vscode.StatusBarItem | null = null;
 
 /**
  * Resolve a builder id from a command argument.
@@ -136,6 +147,14 @@ export async function activate(context: vscode.ExtensionContext) {
 			case 'connected':
 				statusBarItem.text = '$(server) Codev: Connected';
 				statusBarItem.color = undefined;
+				// #983: probe the running Tower's version now that we're connected.
+				// Covers activation and every reconnect (incl. after a Tower restart);
+				// the in-memory version only changes across a restart, which always
+				// severs and re-establishes this connection.
+				{
+					const client = connectionManager?.getClient();
+					if (client) { probeTowerVersion(client); }
+				}
 				break;
 			case 'connecting':
 				statusBarItem.text = '$(sync~spin) Codev: Connecting...';
@@ -170,6 +189,29 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.window.onDidChangeActiveTerminal(syncTerminalFocusContext));
 	syncTerminalFocusContext(); // seed initial state
+
+	// Opt-in: force a terminal repaint when the VSCode window regains focus
+	// (#1052). The initial-render fix (replay buffer-and-flush) already makes
+	// terminals render correctly on open, so this is OFF by default — testing
+	// showed no observable refocus corruption it was needed for. It remains as an
+	// escape hatch for setups that still see stale/misplaced content after
+	// switching back: enabling `codev.terminal.repaintOnRefocus` sends a SIGWINCH
+	// redraw (the manual-resize lever) to the terminals on refocus. Read at event
+	// time so flipping the setting takes effect on the next focus change with no
+	// reload; fired only on the rising edge (unfocused → focused).
+	let windowFocused = vscode.window.state.focused;
+	context.subscriptions.push(
+		vscode.window.onDidChangeWindowState((state) => {
+			if (state.focused && !windowFocused) {
+				const enabled = vscode.workspace
+					.getConfiguration('codev')
+					.get<boolean>('terminal.repaintOnRefocus', false);
+				if (enabled) {
+					terminalManager?.repaintAllOnRefocus();
+				}
+			}
+			windowFocused = state.focused;
+		}));
 
 	// Drive the `codev.hasDevCommand` context key so the builder-row Run/Stop
 	// Dev Server menu entries, the dev keybindings, and the workspace-dev palette
@@ -320,13 +362,18 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.window.registerFileDecorationProvider(new BuilderFileDecorationProvider(builderDiffCache)),
 	);
 
+	// #913: the Builders view no longer persists per-group expansion (groups are
+	// ephemeral nav state — default expanded each session). Delete any value left
+	// by a prior install so the dead state doesn't linger; updating to `undefined`
+	// removes the key and is idempotent across activations. Both axis keys are
+	// cleared (#952 added the stage axis after #913 was filed).
+	context.workspaceState.update('codev.buildersGroupExpansion', undefined);
+	context.workspaceState.update('codev.buildersStageGroupExpansion', undefined);
+
 	// List views use createTreeView so their title can carry a live item
 	// count; the rest stay on registerTreeDataProvider.
-	const buildersProvider = new BuildersProvider(overviewCache, builderDiffCache, context.workspaceState);
+	const buildersProvider = new BuildersProvider(overviewCache, builderDiffCache);
 	buildersView = vscode.window.createTreeView('codev.builders', { treeDataProvider: buildersProvider });
-	context.subscriptions.push(...persistAreaGroupExpansion(
-		buildersView, BuilderGroupTreeItem, buildersProvider.expansion,
-	));
 	pullRequestsView = vscode.window.createTreeView('codev.pullRequests', { treeDataProvider: new PullRequestsProvider(overviewCache) });
 	const backlogProvider = new BacklogProvider(overviewCache, context.workspaceState);
 	backlogView = vscode.window.createTreeView('codev.backlog', { treeDataProvider: backlogProvider });
@@ -345,6 +392,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	const workspaceProvider = new WorkspaceProvider(connectionManager, terminalManager!);
 	// Holds the CLI preflight row (#791); it self-refreshes on `onPreflightChange`.
 	const statusProvider = new StatusProvider(connectionManager);
+	// Codev Dev panel tab (#921) — the first real view in #812's codevPanel.
+	// createTreeView (not registerTreeDataProvider) so we hold the handle and can
+	// set TreeView.badge — the activity dot the plan calls for while a dev runs.
+	const devServerProvider = new DevServerTreeProvider(connectionManager, terminalManager!);
+	const devServerView = vscode.window.createTreeView('codev.devServer', { treeDataProvider: devServerProvider });
 	context.subscriptions.push(
 		buildersView,
 		pullRequestsView,
@@ -353,50 +405,89 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.window.registerTreeDataProvider('codev.workspace', workspaceProvider),
 		vscode.window.registerTreeDataProvider('codev.team', teamProvider),
 		vscode.window.registerTreeDataProvider('codev.status', statusProvider),
+		vscode.window.registerTreeDataProvider('codev.placeholder', new PanelPlaceholderProvider()),
+		devServerView,
+		{ dispose: () => devServerProvider.dispose() },
 	);
 
-	// Builders accordion: expanding one builder auto-collapses the others so a
-	// reviewer can't have diffs from unrelated worktrees open at once. The
-	// deterministic collapseAll+reveal pair (vs fighting VSCode's expansion
-	// reconciliation) is guarded against the expand/collapse events it itself
-	// generates. Toggle via the header button / `codev.buildersAutoCollapse`.
+	// Panel container (#812) ships a placeholder signpost gated by
+	// `codev.panelContainerEmpty`. codev.devServer (#921) is a real, always-present
+	// panel view, so the container is never empty — flip the key false to hide the
+	// signpost. (Sibling tabs #813/#814/#815 set the same key; idempotent.)
+	vscode.commands.executeCommand('setContext', 'codev.panelContainerEmpty', false);
+
+	// Status-bar chip + title-bar gating for the dev surface (#921). Both derive
+	// from the single dev-terminal source of truth, so the chip, the Codev Dev
+	// tab, and the title-bar Stop/Restart actions stay in lockstep on every
+	// start/stop/swap. One subscription, named handler (no duplicate listeners).
+	const updateDevChip = (target: string | null): void => {
+		if (target) {
+			if (!devChipItem) {
+				devChipItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+				devChipItem.command = 'codev.devServer.focus'; // VSCode's auto view-focus command
+			}
+			// server-process (a running dev server), not zap — $(zap) reads as AI/sparkle in VSCode.
+			devChipItem.text = `$(server-process) Dev: ${target}`;
+			// StatusBarItem.backgroundColor only honors error/warning backgrounds
+			// (VSCode API constraint), so the "prominent, not alarming" look
+			// (#921 design call #4) is applied via the foreground instead.
+			devChipItem.color = new vscode.ThemeColor('statusBarItem.prominentForeground');
+			devChipItem.tooltip = `Codev dev server running for ${target}. Click to focus Codev Dev panel`;
+			devChipItem.show();
+		} else if (devChipItem) {
+			devChipItem.dispose();
+			devChipItem = null;
+		}
+	};
+	const refreshDevSurface = (): void => {
+		const builderId = terminalManager?.listDevTerminals()[0]?.builderId ?? null;
+		const target = builderId ? formatTargetName(builderId) : null;
+		updateDevChip(target);
+		vscode.commands.executeCommand('setContext', 'codev.devServerRunning', target !== null);
+		// Activity dot on the Codev Dev tab while a dev runs — visible when the
+		// user is on another codevPanel tab (plan's tab-badge requirement).
+		devServerView.badge = target
+			? { value: 1, tooltip: `Dev server running for ${target}` }
+			: undefined;
+	};
+	context.subscriptions.push(
+		terminalManager.onDidChangeDevTerminals(refreshDevSurface),
+		{ dispose: () => { devChipItem?.dispose(); devChipItem = null; } },
+	);
+	refreshDevSurface(); // seed from any dev already running at activation
+
+	// VSCode gives no control over a panel tab's position, so a freshly
+	// contributed container lands last and spills into the `...` overflow.
+	// Reveal it exactly once (per profile) so the user discovers the tab; the
+	// globalState flag makes this a one-time nudge, not an every-launch
+	// interruption. After the reveal VSCode persists the tab as shown.
+	const PANEL_REVEALED_KEY = 'codev.panelRevealedOnce';
+	if (!context.globalState.get(PANEL_REVEALED_KEY)) {
+		vscode.commands.executeCommand('workbench.view.extension.codevPanel');
+		context.globalState.update(PANEL_REVEALED_KEY, true);
+	}
+
+	// Builders accordion: expanding one builder auto-collapses the OTHER builder
+	// rows so a reviewer can't have diffs from unrelated worktrees open at once.
+	// It deliberately leaves group headers alone (#913) — `collapseBuildersExcept`
+	// only re-ids builder rows, never the group rows. Toggle via the header
+	// button / `codev.buildersAutoCollapse`.
 	const readAccordion = () =>
 		vscode.workspace.getConfiguration('codev').get<boolean>('buildersAutoCollapse', true);
-	let accordionOn = readAccordion();
-	let reconciling = false;
-	// The builder we've made (or are making) the single open one. The id check
-	// is the real guard: `reveal({expand:true})` re-fires onDidExpandElement
-	// for the same builder, and that re-fire can land *after* the await chain
-	// (so `reconciling` is already false). Matching builderId makes the
-	// re-fire a no-op regardless of timing — `reconciling` only debounces
-	// rapid expands of *different* builders.
-	let openBuilderId: string | undefined;
-	vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', accordionOn);
+	const accordion = new AccordionGate(readAccordion());
+	vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', readAccordion());
 	context.subscriptions.push(
-		buildersView.onDidExpandElement(async (e) => {
-			if (!accordionOn) { return; }
+		buildersView.onDidExpandElement((e) => {
 			if (!(e.element instanceof BuilderTreeItem)) { return; }
-			if (e.element.builderId === openBuilderId || reconciling) { return; }
-			openBuilderId = e.element.builderId;
-			reconciling = true;
-			try {
-				await vscode.commands.executeCommand('workbench.actions.treeView.codev.builders.collapseAll');
-				// `expand: 3` (the VSCode max) recursively expands the builder
-				// and its file-tree descendants — so re-expanding after the
-				// accordion's collapseAll restores the default expanded-folder
-				// look instead of leaving every folder collapsed. Without this,
-				// collapseAll persists "collapsed" against each folder's stable
-				// id, and the next reveal honours that persisted state for
-				// every level below the builder row itself.
-				await buildersView!.reveal(e.element, { expand: 3, select: false, focus: false });
-			} finally {
-				reconciling = false;
+			if (accordion.shouldCollapseOthers(e.element.builderId)) {
+				buildersProvider.collapseBuildersExcept(e.element);
 			}
 		}),
 		vscode.workspace.onDidChangeConfiguration((e) => {
 			if (!e.affectsConfiguration('codev.buildersAutoCollapse')) { return; }
-			accordionOn = readAccordion();
-			vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', accordionOn);
+			const on = readAccordion();
+			accordion.setEnabled(on);
+			vscode.commands.executeCommand('setContext', 'codev.buildersAutoCollapse', on);
 		}),
 	);
 
@@ -513,9 +604,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	// the guard decision, so there's no separate list or per-call flag to keep
 	// in sync:
 	//   - `regCli`  — the command needs the codev CLI / Tower. When the CLI is
-	//                 missing or outdated it no-ops with a single "run setup"
-	//                 toast (via `guard`) instead of failing with a misleading
-	//                 "not connected to Tower" error.
+	//                 missing or outdated it no-ops with point-of-action feedback
+	//                 (via `guard` → `showPreflightFeedback`: a modal "run setup"
+	//                 toast on the first click, an ephemeral status-bar message on
+	//                 later clicks) instead of failing with a misleading "not
+	//                 connected to Tower" error.
 	//   - `reg`     — CLI-independent command (recovery paths like reconnect /
 	//                 recheck, config toggles, read-only viewers); registered
 	//                 with no guard.
@@ -525,7 +618,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const guard = <A extends unknown[], R>(handler: (...args: A) => R) =>
 		(...args: A): R | undefined => {
 			if (isCliReady()) { return handler(...args); }
-			showSetupRequiredToast();
+			showPreflightFeedback();
 			return undefined;
 		};
 	const reg = <A extends unknown[]>(id: string, handler: (...args: A) => unknown) =>
@@ -699,6 +792,18 @@ export async function activate(context: vscode.ExtensionContext) {
 		reg('codev.openBacklogSearch', () =>
 			BacklogSearchPanel.createOrShow(connectionManager!, overviewCache, context.extensionUri)),
 		reg('codev.searchBacklog', () => searchBacklog(overviewCache)),
+		reg('codev.openMarkdownPreview', async () => {
+			const uri = vscode.window.activeTextEditor?.document.uri;
+			if (!uri) {
+				vscode.window.showInformationMessage(
+					'Codev: open a spec/plan/review markdown file first, then run Open Markdown Preview.',
+				);
+				return;
+			}
+			await vscode.commands.executeCommand(
+				'vscode.openWith', uri, MarkdownPreviewProvider.viewType, vscode.ViewColumn.Beside,
+			);
+		}),
 		regCli('codev.referenceIssueInArchitect', async (arg: IssueCommandArg) => {
 			// Inline-button action on a backlog row: open + focus the architect
 			// terminal, then type `#<id> "<title>" ` into its prompt without
@@ -714,6 +819,16 @@ export async function activate(context: vscode.ExtensionContext) {
 				vscode.window.showWarningMessage('Codev: Architect terminal not available');
 			}
 		}),
+		regCli('codev.referencePRInArchitect', async (arg: vscode.TreeItem | undefined) => {
+			// Inline-button action on a PR row in the Pull Requests sidebar:
+			// mirror of codev.referenceIssueInArchitect for PR rows (#1043).
+			if (!(arg instanceof PullRequestTreeItem)) { return; }
+			await vscode.commands.executeCommand('codev.openArchitectTerminal');
+			const ok = terminalManager?.injectArchitectText(buildArchitectReferenceInjection(arg.prId, arg.prTitle));
+			if (!ok) {
+				vscode.window.showWarningMessage('Codev: Architect terminal not available');
+			}
+		}),
 		regCli('codev.sendMessage', () => sendMessage(connectionManager!)),
 		regCli('codev.approveGate', (arg: vscode.TreeItem | string | undefined, options?: { skipConfirmation?: boolean }) =>
 			approveGate(connectionManager!, overviewCache, extractBuilderId(arg), options)),
@@ -722,11 +837,62 @@ export async function activate(context: vscode.ExtensionContext) {
 			openWorktreeWindow(connectionManager!, extractBuilderId(arg))),
 		reg('codev.viewDiff', (arg: vscode.TreeItem | string | undefined) =>
 			viewDiff(connectionManager!, extractBuilderId(arg))),
+		// CodeLens-only inject (#789): open + focus the builder terminal, then
+		// type the file/hunk reference into its prompt without submitting, so
+		// the reviewer keeps typing feedback before hitting Enter. Mirrors
+		// `codev.referenceIssueInArchitect`. Not declared in
+		// `contributes.commands` → never appears in the Command Palette.
+		reg('codev.forwardToBuilder', async (builderId: string, text: string) => {
+			// openBuilderByRoleOrId resolves to the canonical id and runs the
+			// no-terminal recovery flow on a miss; inject against that id so the
+			// terminal lookup hits the same key that was just opened.
+			const resolvedId = await terminalManager?.openBuilderByRoleOrId(builderId, true);
+			if (resolvedId && !terminalManager?.injectBuilderText(resolvedId, text)) {
+				vscode.window.showWarningMessage('Codev: Builder terminal not available');
+			}
+		}),
+		// Right-click "Forward Selection to Builder" (#789): forward an arbitrary
+		// selected range when symbol/file lenses aren't granular enough. Unlike
+		// the CodeLens, a context-menu action works inside the multi-file View
+		// Diff editor too. Scoped via the `codev.activeEditorIsBuilderFile`
+		// context key + the built-in `editorHasSelection` in its `when` clause.
+		reg('codev.forwardSelectionToBuilder', async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (!editor) { return; }
+			const entry = getDiffInjectEntry(editor.document.uri.fsPath);
+			if (!entry) { return; }
+			const sel = editor.selection;
+			if (sel.isEmpty) { return; }
+			const start = sel.start.line + 1;
+			// A selection ending at column 0 of a line doesn't include that line.
+			const end = sel.end.character === 0 && sel.end.line > sel.start.line
+				? sel.end.line
+				: sel.end.line + 1;
+			const text = buildBuilderRangeRef(entry.relPath, start, end);
+			const resolvedId = await terminalManager?.openBuilderByRoleOrId(entry.builderId, true);
+			if (resolvedId && !terminalManager?.injectBuilderText(resolvedId, text)) {
+				vscode.window.showWarningMessage('Codev: Builder terminal not available');
+			}
+		}),
 		reg('codev.openBuilderFileDiff', async (arg: unknown) => {
 			if (!(arg instanceof BuilderFileTreeItem)) { return; }
+			// Open the diff FIRST so it appears instantly. Lens registration and
+			// the git hunk computation happen after — the entry registers
+			// synchronously (symbol/file lenses render right away) and the hunk
+			// lenses refresh in once git resolves (#789). Doing this before the
+			// open used to block the diff on a git subprocess.
 			const { left, right } = diffUrisForChange(arg.plan, { wt: arg.worktreePath, ref: arg.baseRef });
 			const title = `${arg.plan.resourcePath} (#${arg.builderId})`;
 			await vscode.commands.executeCommand('vscode.diff', left, right, title);
+			await registerFileInjectSession({
+				worktreePath: arg.worktreePath,
+				baseRef: arg.baseRef,
+				builderId: arg.builderId,
+				plan: arg.plan,
+			});
+			// Offer to enable diffEditor.codeLens (off by default — VS Code hides
+			// CodeLens in diff editors). After the open, so it never delays it.
+			await ensureDiffEditorCodeLens(context);
 		}),
 		regCli('codev.runWorktreeDev', (arg: vscode.TreeItem | string | undefined) =>
 			runWorktreeDev(connectionManager!, terminalManager!, extractBuilderId(arg))),
@@ -736,6 +902,16 @@ export async function activate(context: vscode.ExtensionContext) {
 			runWorkspaceDev(connectionManager!, terminalManager!)),
 		regCli('codev.stopWorkspaceDev', () =>
 			stopWorkspaceDev(connectionManager!, terminalManager!)),
+		regCli('codev.devServer.stop', () =>
+			stopDevServer(connectionManager!, terminalManager!)),
+		regCli('codev.devServer.restart', () =>
+			restartDevServer(connectionManager!, terminalManager!)),
+		regCli('codev.devServer.switchTarget', () =>
+			switchDevTarget(connectionManager!, terminalManager!)),
+		reg('codev.devServer.showSidebar', () =>
+			showCodevSidebar()),
+		reg('codev.devServer.hideSidebar', () =>
+			hideCodevSidebar()),
 		reg('codev.openDevUrl', (urlArg?: unknown) =>
 			openDevUrl(connectionManager!, typeof urlArg === 'string' ? urlArg : undefined)),
 		reg('codev.pasteImage', () =>
@@ -790,6 +966,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	// without relying on the Git extension's worktree discovery.
 	activateDiffView(context);
 
+	// CodeLens "Forward to Builder" actions inside the View Diff editor (#789).
+	// The backing command `codev.forwardToBuilder` is registered below and
+	// deliberately NOT declared in `contributes.commands`, so it stays out of
+	// the Command Palette (codelens-only entry point).
+	activateDiffInjectCodeLens(context);
+
 	// Review comment decorations
 	activateReviewDecorations(context);
 
@@ -799,6 +981,22 @@ export async function activate(context: vscode.ExtensionContext) {
 	// OverviewData.currentUser, falling back to "architect"), matching the
 	// format produced by `codev.addReviewComment` and review.json snippet.
 	activateReviewComments(context, overviewCache);
+
+	// Codev Markdown Preview (#859): a read-only custom editor that renders a
+	// spec/plan/review in the shared artifact-canvas and adds review comments
+	// from the rendered surface. Opt-in via "Reopen With…" or
+	// `codev.openMarkdownPreview`; `priority: "option"` keeps the default `.md`
+	// editor and built-in preview untouched.
+	context.subscriptions.push(
+		vscode.window.registerCustomEditorProvider(
+			MarkdownPreviewProvider.viewType,
+			new MarkdownPreviewProvider(context.extensionUri, overviewCache),
+			{
+				webviewOptions: { retainContextWhenHidden: true },
+				supportsMultipleEditorsPerDocument: false,
+			},
+		),
+	);
 
 	// Toast on new gate-pending — surfaces blocked builders without forcing the
 	// user to watch the Builders tree. Respects `codev.gateToasts.enabled`.
@@ -826,7 +1024,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// CLI preflight (#791): verify the codev CLI is installed and >= this
 	// extension's version. Fire-and-forget so activation isn't blocked — the
-	// probe self-bounds at 400ms and caches its result for the session. Uses
+	// probe self-bounds at the `codev.cliVersionTimeoutMs` budget (#1024) and
+	// caches its result for the session. Uses
 	// detectWorkspacePath() directly (connectionManager.getWorkspacePath() isn't
 	// populated until initialize() resolves, which may wait on Tower auto-start).
 	runPreflight(context, detectWorkspacePath(), outputChannel);

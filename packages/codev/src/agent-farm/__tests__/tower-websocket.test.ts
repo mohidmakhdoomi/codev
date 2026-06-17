@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
 import { handleTerminalWebSocket, setupUpgradeHandler } from '../servers/tower-websocket.js';
+import { WS_CLOSE_SESSION_UNKNOWN } from '@cluesmith/codev-core/reconnect-policy';
 
 // ============================================================================
 // Mocks
@@ -24,6 +25,10 @@ vi.mock('../servers/tower-terminals.js', () => ({
   getTerminalManager: () => ({
     getSession: mockGetSession,
   }),
+  // #997: barrier reports settled so the upgrade handler stays on its synchronous
+  // fast-path (matches the normal post-startup case these tests exercise).
+  isStartupReconcileSettled: () => true,
+  whenStartupReconcileSettled: () => Promise.resolve(),
 }));
 
 vi.mock('../servers/tower-utils.js', () => ({
@@ -123,7 +128,7 @@ describe('tower-websocket', () => {
       expect(session.attach).not.toHaveBeenCalled();
     });
 
-    it('sends replay data and seq frame on connect', () => {
+    it('brackets replay with pause/resume and sends a seq frame on connect (#1047)', () => {
       const ws = makeWs();
       const session = makeSession(5);
       session.attach.mockReturnValue(['line1', 'line2']);
@@ -131,8 +136,16 @@ describe('tower-websocket', () => {
 
       handleTerminalWebSocket(ws, session, req);
 
-      // Should send replay data + seq control frame
-      expect(ws.send).toHaveBeenCalledTimes(2);
+      // pause control + replay data + resume control + seq control = 4 frames.
+      // The pause/resume bracket lets the client exclude the (potentially large)
+      // replay snapshot from its live-backpressure budget (#1047).
+      expect(ws.send).toHaveBeenCalledTimes(4);
+
+      const controlTypes = ws.send.mock.calls
+        .map((call: unknown[]) => call[0] as Buffer)
+        .filter((buf: Buffer) => buf[0] === 0x00)
+        .map((buf: Buffer) => JSON.parse(buf.subarray(1).toString('utf-8')).type);
+      expect(controlTypes).toEqual(['pause', 'resume', 'seq']);
     });
 
     it('sends only seq frame when no replay lines', () => {
@@ -395,7 +408,7 @@ describe('tower-websocket', () => {
       expect(wss.handleUpgrade).toHaveBeenCalled();
     });
 
-    it('returns 404 for /ws/terminal/:id with unknown session', () => {
+    it('returns 404 for /ws/terminal/:id with unknown session (Node client, no Origin)', () => {
       const server = makeServer();
       const wss = makeWss();
       mockGetSession.mockReturnValue(null);
@@ -403,10 +416,42 @@ describe('tower-websocket', () => {
       setupUpgradeHandler(server, wss, 4100);
 
       const socket = makeSocket();
+      // No Origin header → Node `ws` client (VSCode terminal). It relies on the
+      // "Unexpected server response: 404" upgrade error (#936), so the
+      // HTTP-stage 404 must be preserved.
       server.emit('upgrade', { url: '/ws/terminal/unknown-id', headers: {} }, socket, Buffer.alloc(0));
 
       expect(socket.write).toHaveBeenCalledWith('HTTP/1.1 404 Not Found\r\n\r\n');
       expect(socket.destroy).toHaveBeenCalled();
+    });
+
+    it('closes with 4404 for /ws/terminal/:id with unknown session (browser, Origin present)', () => {
+      const server = makeServer();
+      let closedWith: [number, string] | null = null;
+      const wss: any = {
+        handleUpgrade: vi.fn((_req: unknown, _socket: unknown, _head: unknown, cb: (ws: any) => void) => {
+          const ws: any = new EventEmitter();
+          ws.close = vi.fn((code: number, reason: string) => { closedWith = [code, reason]; });
+          cb(ws);
+        }),
+      };
+      mockGetSession.mockReturnValue(null);
+
+      setupUpgradeHandler(server, wss, 4100);
+
+      const socket = makeSocket();
+      // Origin header → browser. It can't read a failed-upgrade HTTP status, so
+      // Tower accepts the upgrade and closes with the app-range session-unknown
+      // code (#971) that the dashboard reads via CloseEvent.code.
+      server.emit('upgrade', {
+        url: '/ws/terminal/unknown-id',
+        headers: { origin: 'http://localhost:5173' },
+      }, socket, Buffer.alloc(0));
+
+      expect(wss.handleUpgrade).toHaveBeenCalled();
+      expect(closedWith).toEqual([WS_CLOSE_SESSION_UNKNOWN, 'session-unknown']);
+      expect(socket.write).not.toHaveBeenCalled();
+      expect(socket.destroy).not.toHaveBeenCalled();
     });
 
     it('routes workspace-scoped /workspace/:path/ws/terminal/:id', () => {
@@ -490,7 +535,7 @@ describe('tower-websocket', () => {
       expect(socket.destroy).toHaveBeenCalled();
     });
 
-    it('returns 404 for workspace-scoped route with unknown session', () => {
+    it('returns 404 for workspace-scoped route with unknown session (Node client, no Origin)', () => {
       const server = makeServer();
       const wss = makeWss();
       mockGetSession.mockReturnValue(null);
@@ -506,6 +551,33 @@ describe('tower-websocket', () => {
 
       expect(socket.write).toHaveBeenCalledWith('HTTP/1.1 404 Not Found\r\n\r\n');
       expect(socket.destroy).toHaveBeenCalled();
+    });
+
+    it('closes with 4404 for workspace-scoped route with unknown session (browser, Origin present)', () => {
+      const server = makeServer();
+      let closedWith: [number, string] | null = null;
+      const wss: any = {
+        handleUpgrade: vi.fn((_req: unknown, _socket: unknown, _head: unknown, cb: (ws: any) => void) => {
+          const ws: any = new EventEmitter();
+          ws.close = vi.fn((code: number, reason: string) => { closedWith = [code, reason]; });
+          cb(ws);
+        }),
+      };
+      mockGetSession.mockReturnValue(null);
+
+      setupUpgradeHandler(server, wss, 4100);
+
+      const encodedPath = Buffer.from('/test/workspace').toString('base64url');
+      const socket = makeSocket();
+      server.emit('upgrade', {
+        url: `/workspace/${encodedPath}/ws/terminal/unknown`,
+        headers: { origin: 'http://localhost:5173' },
+      }, socket, Buffer.alloc(0));
+
+      expect(wss.handleUpgrade).toHaveBeenCalled();
+      expect(closedWith).toEqual([WS_CLOSE_SESSION_UNKNOWN, 'session-unknown']);
+      expect(socket.write).not.toHaveBeenCalled();
+      expect(socket.destroy).not.toHaveBeenCalled();
     });
   });
 });

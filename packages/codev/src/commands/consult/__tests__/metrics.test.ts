@@ -141,72 +141,19 @@ describe('MetricsDB summary', () => {
 });
 
 // Test 3: extractUsage() for Gemini parses JSON output
-describe('extractUsage for Gemini', () => {
-  it('extracts token counts and computes cost from single-model JSON output', () => {
-    const geminiOutput = JSON.stringify({
-      response: 'Review text',
-      stats: {
-        models: {
-          'gemini-3-flash-preview': {
-            tokens: { prompt: 8000, candidates: 500, cached: 2000, thoughts: 100 },
-          },
-        },
-      },
-    });
-    const usage = extractUsage('gemini', geminiOutput);
-    expect(usage).not.toBeNull();
-    expect(usage!.inputTokens).toBe(8000);
-    expect(usage!.cachedInputTokens).toBe(2000);
-    expect(usage!.outputTokens).toBe(500);
-    expect(usage!.costUsd).toBeGreaterThan(0);
+describe('extractUsage for Gemini (agy backend)', () => {
+  // The gemini lane now uses the Antigravity CLI (agy), which emits plain text
+  // with no token-usage JSON. Usage degrades gracefully to null (no cost row).
+  it('returns null for plain-text agy output', () => {
+    expect(extractUsage('gemini', 'A plain-text review from agy.')).toBeNull();
   });
 
-  it('sums tokens across multiple models', () => {
-    const geminiOutput = JSON.stringify({
-      response: 'Review text',
-      stats: {
-        models: {
-          'gemini-2.5-flash-lite': {
-            tokens: { prompt: 3000, candidates: 50, cached: 0 },
-          },
-          'gemini-3-flash-preview': {
-            tokens: { prompt: 5000, candidates: 200, cached: 1000 },
-          },
-        },
-      },
-    });
-    const usage = extractUsage('gemini', geminiOutput);
-    expect(usage).not.toBeNull();
-    expect(usage!.inputTokens).toBe(8000);
-    expect(usage!.cachedInputTokens).toBe(1000);
-    expect(usage!.outputTokens).toBe(250);
-    expect(usage!.costUsd).toBeGreaterThan(0);
+  it('returns null even if the output happens to be JSON (no token data from agy)', () => {
+    expect(extractUsage('gemini', JSON.stringify({ response: 'text' }))).toBeNull();
   });
 
-  it('returns null for non-JSON output', () => {
-    const usage = extractUsage('gemini', 'plain text output');
-    expect(usage).toBeNull();
-  });
-
-  it('returns null when stats.models is missing', () => {
-    const usage = extractUsage('gemini', JSON.stringify({ response: 'text' }));
-    expect(usage).toBeNull();
-  });
-
-  it('clamps cost to non-negative when cached exceeds input', () => {
-    const geminiOutput = JSON.stringify({
-      response: 'Review',
-      stats: {
-        models: {
-          'gemini-3-flash-preview': {
-            tokens: { prompt: 1000, candidates: 100, cached: 3000 },
-          },
-        },
-      },
-    });
-    const usage = extractUsage('gemini', geminiOutput);
-    expect(usage).not.toBeNull();
-    expect(usage!.costUsd).toBeGreaterThanOrEqual(0);
+  it('returns null for empty output', () => {
+    expect(extractUsage('gemini', '')).toBeNull();
   });
 });
 
@@ -511,22 +458,16 @@ describe('SQLite write failure', () => {
 });
 
 // Test 10: Gemini extractReviewText parses JSON response field
-describe('Gemini extractReviewText', () => {
-  it('extracts response field from JSON output', () => {
-    const rawJson = JSON.stringify({ response: 'This is the review text', stats: {} });
-    const text = extractReviewText('gemini', rawJson);
-    expect(text).toBe('This is the review text');
+describe('Gemini extractReviewText (agy backend)', () => {
+  // agy emits plain text that is used as-is — extractReviewText returns null so
+  // the caller falls back to the raw output (no JSON parsing).
+  it('returns null (plain text used as-is, no extraction)', () => {
+    expect(extractReviewText('gemini', 'A plain-text review from agy.')).toBeNull();
   });
 
-  it('returns null for non-JSON output', () => {
-    const text = extractReviewText('gemini', 'This is plain text');
-    expect(text).toBeNull();
-  });
-
-  it('returns null when response field is missing', () => {
-    const rawJson = JSON.stringify({ stats: {} });
-    const text = extractReviewText('gemini', rawJson);
-    expect(text).toBeNull();
+  it('returns null even for JSON-looking output (no response-field parsing)', () => {
+    const rawJson = JSON.stringify({ response: 'unused', stats: {} });
+    expect(extractReviewText('gemini', rawJson)).toBeNull();
   });
 });
 
@@ -610,46 +551,13 @@ describe('Gemini graceful fallback for malformed output', () => {
     expect(usage).toBeNull();
   });
 
-  it('extractUsage computes per-model cost correctly for 3.1 Pro pricing', () => {
-    const geminiOutput = JSON.stringify({
-      response: 'Review',
-      stats: {
-        models: {
-          'gemini-3.1-pro-preview': {
-            tokens: { prompt: 1_000_000, candidates: 1_000_000, cached: 0 },
-          },
-        },
-      },
-    });
-    const usage = extractUsage('gemini', geminiOutput);
-    expect(usage).not.toBeNull();
-    // 3.1 Pro pricing: 1M input * $2.00/1M + 1M output * $12.00/1M = $14.00
-    expect(usage!.costUsd).toBeCloseTo(14.00, 1);
-  });
-
-  it('gemini lane points at a current Gemini 3.x model identifier (regression: #878)', () => {
-    // #878: gemini-3-pro-preview was retired by Google on 2026-03-09; every
-    // CMAP gemini-side fast-failed with an opaque error. Guard against the
-    // identifier silently regressing back to a retired model.
-    const modelArg = _MODEL_CONFIGS.gemini.args[_MODEL_CONFIGS.gemini.args.indexOf('--model') + 1];
-    expect(modelArg).toBe('gemini-3.1-pro-preview');
-  });
-
-  it('extractUsage computes per-model cost correctly for Flash pricing', () => {
-    const geminiOutput = JSON.stringify({
-      response: 'Review',
-      stats: {
-        models: {
-          'gemini-3-flash-preview': {
-            tokens: { prompt: 1_000_000, candidates: 1_000_000, cached: 0 },
-          },
-        },
-      },
-    });
-    const usage = extractUsage('gemini', geminiOutput);
-    expect(usage).not.toBeNull();
-    // Flash pricing: 1M input * $0.15/1M + 1M output * $0.60/1M = $0.75
-    expect(usage!.costUsd).toBeCloseTo(0.75, 1);
+  it('gemini lane uses the agy backend, no pinned model id (#778, supersedes #878)', () => {
+    // #878 guarded the pinned Gemini-CLI model id. #778 migrates the lane to the
+    // Antigravity CLI (agy), which has no --model flag (uses its default). Guard
+    // that the lane routes to agy and no longer pins a (retirable) model id.
+    expect(_MODEL_CONFIGS.gemini.cli).toBe('agy');
+    expect(_MODEL_CONFIGS.gemini.args).not.toContain('--model');
+    expect(_MODEL_CONFIGS.gemini.envVar).toBeNull();
   });
 });
 

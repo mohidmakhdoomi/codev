@@ -113,6 +113,31 @@ describe('RingBuffer', () => {
     expect(buf.getAll()).toEqual(['hello', '', 'world']);
   });
 
+  it('keeps a no-newline stream whole for faithful replay (Issue #1047)', () => {
+    const buf = new RingBuffer(10);
+    // 100 KB with no newline, in 1 KB frames — mimics a full-screen TUI that
+    // redraws in place and never emits \n. The whole stream must be preserved
+    // (not truncated) so a reconnection replay can reconstruct the screen.
+    const frame = 'x'.repeat(1024);
+    for (let i = 0; i < 100; i++) {
+      buf.pushData(frame);
+    }
+    expect(buf.size).toBe(0); // no complete lines
+    const all = buf.getAll();
+    expect(all).toHaveLength(1);
+    expect(all[0].length).toBe(100 * 1024); // full content retained, not capped
+    expect(buf.partialBytes).toBe(100 * 1024);
+  });
+
+  it('partialBytes reports the held incomplete-line size', () => {
+    const buf = new RingBuffer(10);
+    expect(buf.partialBytes).toBe(0);
+    buf.pushData('abc');
+    expect(buf.partialBytes).toBe(3);
+    buf.pushData('def\n'); // completes the line, clears partial
+    expect(buf.partialBytes).toBe(0);
+  });
+
   it('clear resets content but keeps seq', () => {
     const buf = new RingBuffer(5);
     buf.push('a');

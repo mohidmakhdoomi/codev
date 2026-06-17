@@ -119,7 +119,7 @@ export function App() {
     if (!wsPath) return <div className="no-terminal">No terminal session</div>;
     // Spec 0092: Pass file open handler for clickable file paths in terminal
     // Spec 0104: Pass persistent flag for shellper-backed session indicator
-    return <Terminal wsPath={wsPath} onFileOpen={handleFileOpen} persistent={tab.persistent} />;
+    return <Terminal wsPath={wsPath} onFileOpen={handleFileOpen} persistent={tab.persistent} onPermanentClose={refresh} />;
   };
 
   const renderAnnotation = (tab: { annotationId?: string; initialLine?: number }) => {
@@ -164,13 +164,14 @@ export function App() {
                 onFileOpen={handleFileOpen}
                 persistent={tab.persistent}
                 toolbarExtra={isActive ? toolbarExtra : undefined}
+                onPermanentClose={refresh}
               />
             : <div className="no-terminal">No terminal session</div>
           }
         </div>
       );
     });
-  }, [handleFileOpen]);
+  }, [handleFileOpen, refresh]);
 
   const renderPersistentContent = (terminalTypes: string[]) => {
     const persistentTabs = tabs.filter(t =>
@@ -305,6 +306,7 @@ export function App() {
           onFileOpen={handleFileOpen}
           persistent={architectTab!.persistent}
           toolbarExtra={architectToolbarExtra}
+          onPermanentClose={refresh}
         />
       : <div className="no-architect">No architect terminal</div>;
   } else {

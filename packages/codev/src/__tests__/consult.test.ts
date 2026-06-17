@@ -6,6 +6,21 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
+import { EventEmitter } from 'node:events';
+
+// Fake child process for agy tests: stdout/stderr emitters + kill, emits on next tick.
+function makeFakeAgyProc(opts: { stdout?: string; stderr?: string; code?: number; closeAfter?: boolean }): any {
+  const proc: any = new EventEmitter();
+  proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
+  proc.kill = vi.fn();
+  setImmediate(() => {
+    if (opts.stdout) proc.stdout.emit('data', Buffer.from(opts.stdout));
+    if (opts.stderr) proc.stderr.emit('data', Buffer.from(opts.stderr));
+    if (opts.closeAfter !== false) proc.emit('close', opts.code ?? 0);
+  });
+  return proc;
+}
 
 // Mock forge module (imported by consult/index.ts)
 vi.mock('../lib/forge.js', () => ({
@@ -68,37 +83,28 @@ describe('consult command', () => {
   });
 
   describe('model configuration', () => {
-    it('should support model aliases', () => {
-      // The MODEL_ALIASES mapping
-      const aliases: Record<string, string> = {
-        'pro': 'gemini',
-        'gpt': 'codex',
-        'opus': 'claude',
-      };
-
-      expect(aliases['pro']).toBe('gemini');
-      expect(aliases['gpt']).toBe('codex');
-      expect(aliases['opus']).toBe('claude');
+    it('should support model aliases', async () => {
+      // Assert the REAL exported alias map (not a hardcoded duplicate). The
+      // `pro` alias is additionally exercised through the real execution path
+      // in the agy describe block below.
+      const { _MODEL_ALIASES } = await import('../commands/consult/index.js');
+      expect(_MODEL_ALIASES['pro']).toBe('gemini');
+      expect(_MODEL_ALIASES['gpt']).toBe('codex');
+      expect(_MODEL_ALIASES['opus']).toBe('claude');
     });
 
-    it('should have correct CLI configuration for each model', () => {
-      // Note: Codex now uses model_instructions_file config flag
-      // The args are built dynamically in runConsultation, not stored in MODEL_CONFIGS
-      // Claude uses Agent SDK (not CLI) — see 'Claude Agent SDK integration' tests
-      // Hermes is invoked via `hermes chat -q` in MODEL_CONFIGS
-      // Bugfix #370: --yolo removed from MODEL_CONFIGS; added conditionally in
-      // runConsultation only for protocol mode (not general mode)
-      const configs: Record<string, { cli: string; args: string[] }> = {
-        gemini: { cli: 'gemini', args: [] },
-        codex: { cli: 'codex', args: ['exec', '--full-auto'] },
-        hermes: { cli: 'hermes', args: ['chat', '-q'] },
-      };
-
-      expect(configs.gemini.cli).toBe('gemini');
-      expect(configs.gemini.args).toEqual([]);
-      expect(configs.codex.args).toContain('--full-auto');
-      expect(configs.hermes.cli).toBe('hermes');
-      expect(configs.hermes.args).toEqual(['chat', '-q']);
+    it('should have correct CLI configuration for each model', async () => {
+      // Assert the REAL exported config (not a hardcoded fake), so a backend
+      // change is caught. Claude/Codex use SDKs (not MODEL_CONFIGS).
+      const { _MODEL_CONFIGS } = await import('../commands/consult/index.js');
+      // gemini lane dispatches to the Antigravity CLI (agy) via runAgyConsultation
+      // (#778): cli marker 'agy', no pinned --model, no system-prompt env var.
+      expect(_MODEL_CONFIGS.gemini.cli).toBe('agy');
+      expect(_MODEL_CONFIGS.gemini.args).not.toContain('--model');
+      expect(_MODEL_CONFIGS.gemini.envVar).toBeNull();
+      // hermes unchanged.
+      expect(_MODEL_CONFIGS.hermes.cli).toBe('hermes');
+      expect(_MODEL_CONFIGS.hermes.args).toEqual(['chat', '-q']);
     });
 
     it('should use model_instructions_file for codex (not env var)', () => {
@@ -284,30 +290,40 @@ describe('consult command', () => {
   });
 
   describe('CLI availability check', () => {
-    it('should check if CLI exists before running', async () => {
-      // Mock execSync to return not found for gemini
-      const { execSync } = await import('node:child_process');
-      vi.mocked(execSync).mockImplementation((cmd: string) => {
-        if (cmd.includes('which gemini')) {
-          throw new Error('not found');
-        }
-        return Buffer.from('');
-      });
-
+    it('gemini lane skips non-blockingly when the agy CLI is unavailable', async () => {
+      // The gemini lane uses the Antigravity CLI (agy). When agy is unavailable
+      // it must NOT throw/block — it emits a non-blocking COMMENT skip so porch
+      // runs still advance (was: the old gemini-CLI threw on a missing binary).
       fs.mkdirSync(path.join(testBaseDir, 'codev', 'roles'), { recursive: true });
       fs.writeFileSync(
         path.join(testBaseDir, 'codev', 'roles', 'consultant.md'),
         '# Consultant Role'
       );
-
       process.chdir(testBaseDir);
 
-      vi.resetModules();
-      const { consult } = await import('../commands/consult/index.js');
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const priorBin = process.env.CODEV_AGY_BIN;
+      process.env.CODEV_AGY_BIN = path.join(testBaseDir, 'no-such-agy'); // does not exist → unavailable
+      try {
+        vi.resetModules();
+        const { consult } = await import('../commands/consult/index.js');
 
-      await expect(
-        consult({ model: 'gemini', prompt: 'test' })
-      ).rejects.toThrow(/not found/);
+        let threw = false;
+        try {
+          await consult({ model: 'gemini', prompt: 'test' });
+        } catch {
+          threw = true;
+        }
+        expect(threw).toBe(false); // non-blocking: resolves, never throws
+
+        const written = stdoutSpy.mock.calls.map(c => String(c[0])).join('');
+        expect(written).toContain('VERDICT: COMMENT');
+        expect(written).toMatch(/skipped/i);
+      } finally {
+        stdoutSpy.mockRestore();
+        if (priorBin === undefined) delete process.env.CODEV_AGY_BIN;
+        else process.env.CODEV_AGY_BIN = priorBin;
+      }
     });
   });
 
@@ -707,227 +723,219 @@ describe('consult command', () => {
     });
   });
 
-  describe('Gemini --yolo mode restriction (Bugfix #370)', () => {
-    it('general mode should NOT pass --yolo to Gemini CLI', async () => {
-      // Bugfix #370: consult -m gemini general "..." was passing --yolo, allowing
-      // Gemini to auto-approve file writes in the main worktree. General mode
-      // consultations must be read-only.
-      vi.resetModules();
+  describe('Gemini lane via Antigravity CLI (agy)', () => {
+    let agyBin: string;
 
+    beforeEach(() => {
+      // A real (non-IDE) file so resolveAgyBin() accepts the override.
+      agyBin = path.join(testBaseDir, 'agy-fake');
+      fs.writeFileSync(agyBin, '#!/bin/sh\n');
+      process.env.CODEV_AGY_BIN = agyBin;
       fs.mkdirSync(path.join(testBaseDir, 'codev', 'roles'), { recursive: true });
       fs.writeFileSync(
         path.join(testBaseDir, 'codev', 'roles', 'consultant.md'),
         '# Consultant Role'
       );
       process.chdir(testBaseDir);
-
-      // Mock execSync so commandExists('gemini') returns true
-      const { execSync } = await import('node:child_process');
-      vi.mocked(execSync).mockImplementation((cmd: string) => {
-        if (cmd.includes('which')) return Buffer.from('/usr/bin/gemini');
-        return Buffer.from('');
-      });
-
-      const { spawn } = await import('node:child_process');
-      const { consult } = await import('../commands/consult/index.js');
-
-      await consult({ model: 'gemini', prompt: 'audit all files' });
-
-      // Verify spawn was called without --yolo
-      const spawnCalls = vi.mocked(spawn).mock.calls;
-      const geminiCall = spawnCalls.find(call => call[0] === 'gemini');
-      expect(geminiCall).toBeDefined();
-      const args = geminiCall![1] as string[];
-      expect(args).not.toContain('--yolo');
     });
 
-    it('protocol mode should NOT pass --yolo to Gemini CLI', async () => {
-      // After Bugfix #370 fix (commit 2ea868d0), --yolo is never passed to
-      // Gemini in any mode — consultations must be read-only.
+    afterEach(() => {
+      delete process.env.CODEV_AGY_BIN;
+    });
+
+    async function loadAgy() {
       vi.resetModules();
-
-      // Clear spawn mock calls from previous tests
-      const { spawn: spawnBefore } = await import('node:child_process');
-      vi.mocked(spawnBefore).mockClear();
-
-      fs.mkdirSync(path.join(testBaseDir, 'codev', 'roles'), { recursive: true });
-      fs.mkdirSync(path.join(testBaseDir, 'codev', 'specs'), { recursive: true });
-      fs.mkdirSync(path.join(testBaseDir, 'codev', 'consult-types'), { recursive: true });
-      fs.writeFileSync(
-        path.join(testBaseDir, 'codev', 'roles', 'consultant.md'),
-        '# Consultant Role'
-      );
-      // resolveProtocolPrompt builds "${type}-review.md", so type 'spec' → 'spec-review.md'
-      fs.writeFileSync(
-        path.join(testBaseDir, 'codev', 'consult-types', 'spec-review.md'),
-        '# Review the spec'
-      );
-      // resolveArchitectQuery needs a spec file matching issue number (padded to 4 digits)
-      fs.writeFileSync(
-        path.join(testBaseDir, 'codev', 'specs', '0001-test-feature.md'),
-        '# Test Feature Spec'
-      );
-      process.chdir(testBaseDir);
-
-      // Mock execSync to return git info for protocol mode queries
-      const { execSync } = await import('node:child_process');
-      vi.mocked(execSync).mockImplementation((cmd: string) => {
-        if (cmd.includes('which')) return Buffer.from('/usr/bin/gemini');
-        if (cmd.includes('git')) return Buffer.from('');
-        return Buffer.from('');
-      });
-
-      const { spawn } = await import('node:child_process');
+      const cp = await import('node:child_process');
       const { consult } = await import('../commands/consult/index.js');
+      return { consult, spawn: vi.mocked(cp.spawn) };
+    }
 
-      // type 'spec' resolves to template 'spec-review.md'
-      // --issue required from architect context
-      await consult({ model: 'gemini', type: 'spec', issue: '1' });
+    it('invokes agy with --print --sandbox --add-dir (agentic, never the IDE/yolo)', async () => {
+      const { consult, spawn } = await loadAgy();
+      spawn.mockClear();
 
-      // Verify spawn was called WITHOUT --yolo (never used in any mode)
-      const spawnCalls = vi.mocked(spawn).mock.calls;
-      const geminiCall = spawnCalls.find(call => call[0] === 'gemini');
-      expect(geminiCall).toBeDefined();
-      const args = geminiCall![1] as string[];
-      expect(args).not.toContain('--yolo');
+      await consult({ model: 'gemini', prompt: 'review this' });
+
+      const call = spawn.mock.calls.find(c => c[0] === agyBin);
+      expect(call).toBeDefined();
+      const args = call![1] as string[];
+      expect(args).toContain('--print');
+      expect(args).toContain('--sandbox');
+      expect(args).toContain('--add-dir');
+      // Safety (replaces the #370 --yolo concern): never auto-approve all tools.
+      expect(args).not.toContain('--dangerously-skip-permissions');
+    });
+
+    it('scopes --add-dir to workspace + a dedicated subdir, never the whole OS temp dir', async () => {
+      // Security (#778 CMAP): granting the entire tmpdir() would expose unrelated
+      // /tmp files to the sandboxed reviewer. Grant only the consult sandbox subdir.
+      const { consult, spawn } = await loadAgy();
+      spawn.mockClear();
+
+      await consult({ model: 'gemini', prompt: 'review this' });
+
+      const call = spawn.mock.calls.find(c => c[0] === agyBin);
+      expect(call).toBeDefined();
+      const args = call![1] as string[];
+      const grantedDirs = args.filter((_a, i) => args[i - 1] === '--add-dir');
+      // Never grant the entire OS temp dir.
+      expect(grantedDirs).not.toContain(tmpdir());
+      // Exactly one granted dir is a dedicated, owned consult sandbox subdir under tmp.
+      expect(grantedDirs.some(d => d.startsWith(tmpdir()) && /[/\\]codev-consult-/.test(d))).toBe(true);
+    });
+
+    it('routes the `pro` alias through the real execution path to the agy lane', async () => {
+      // `pro` → gemini → agy: exercise the actual resolution, not a hardcoded map.
+      const { consult, spawn } = await loadAgy();
+      spawn.mockClear();
+
+      await consult({ model: 'pro', prompt: 'review this' });
+
+      const call = spawn.mock.calls.find(c => c[0] === agyBin);
+      expect(call).toBeDefined(); // resolved to the agy backend
+      expect(call![1] as string[]).toContain('--print');
+    });
+
+    it('folds the reviewer role into the prompt (no GEMINI_SYSTEM_MD env)', async () => {
+      const { consult, spawn } = await loadAgy();
+      spawn.mockClear();
+
+      await consult({ model: 'gemini', prompt: 'UNIQUE_QUERY_MARKER' });
+
+      const call = spawn.mock.calls.find(c => c[0] === agyBin);
+      expect(call).toBeDefined();
+      const args = call![1] as string[];
+      const promptArg = args[args.length - 1];
+      expect(promptArg).toContain('UNIQUE_QUERY_MARKER'); // query inlined
+      expect(promptArg).toContain('Consultant Role');     // role folded in
+      const opts = call![2] as { env?: Record<string, string> };
+      expect(opts.env?.GEMINI_SYSTEM_MD).toBeUndefined();
+    });
+
+    it('writes a very large prompt to a temp file instead of argv (E2BIG safety)', async () => {
+      const { consult, spawn } = await loadAgy();
+      spawn.mockClear();
+
+      const huge = 'X'.repeat(200_000);
+      await consult({ model: 'gemini', prompt: huge });
+
+      const call = spawn.mock.calls.find(c => c[0] === agyBin);
+      expect(call).toBeDefined();
+      const args = call![1] as string[];
+      const promptArg = args[args.length - 1];
+      expect(promptArg).not.toContain(huge); // not inlined on argv
+      expect(promptArg).toMatch(/Read the full consultation prompt from this file/);
+    });
+
+    it('passes plain-text agy output through as the review', async () => {
+      const { consult, spawn } = await loadAgy();
+      spawn.mockClear();
+      spawn.mockReturnValueOnce(makeFakeAgyProc({ stdout: 'PLAINTEXT_REVIEW_BODY', code: 0 }));
+
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      try {
+        await consult({ model: 'gemini', prompt: 'review' });
+        const written = stdoutSpy.mock.calls.map(c => String(c[0])).join('');
+        expect(written).toContain('PLAINTEXT_REVIEW_BODY');
+      } finally {
+        stdoutSpy.mockRestore();
+      }
+    });
+
+    it('skips non-blockingly (VERDICT: COMMENT) when agy is unauthenticated', async () => {
+      const { consult, spawn } = await loadAgy();
+      spawn.mockClear();
+      spawn.mockReturnValueOnce(makeFakeAgyProc({
+        stderr: 'Authentication required. Please visit the URL to log in:\nhttps://accounts.google.com/o/oauth2/auth?client_id=x',
+        closeAfter: false,
+      }));
+
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      try {
+        let threw = false;
+        try { await consult({ model: 'gemini', prompt: 'review' }); } catch { threw = true; }
+        expect(threw).toBe(false); // non-blocking
+        const written = stdoutSpy.mock.calls.map(c => String(c[0])).join('');
+        expect(written).toContain('VERDICT: COMMENT');
+        expect(written).toMatch(/not authenticated/i);
+      } finally {
+        stdoutSpy.mockRestore();
+      }
+    });
+
+    it('skips non-blockingly when agy times out producing the review (non-response message)', async () => {
+      // On a heavy agentic task that outruns --print-timeout, agy returns a
+      // "timed out waiting for response" message (not a review) — treat as a skip.
+      const { consult, spawn } = await loadAgy();
+      spawn.mockClear();
+      spawn.mockReturnValueOnce(makeFakeAgyProc({
+        stdout: 'An background process has been started to run `agy --sandbox`.\nError: timed out waiting for response',
+        code: 0,
+      }));
+
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      try {
+        let threw = false;
+        try { await consult({ model: 'gemini', prompt: 'review' }); } catch { threw = true; }
+        expect(threw).toBe(false); // non-blocking
+        const written = stdoutSpy.mock.calls.map(c => String(c[0])).join('');
+        expect(written).toContain('VERDICT: COMMENT');
+        expect(written).toMatch(/timed out/i);
+      } finally {
+        stdoutSpy.mockRestore();
+      }
     });
   });
 
-  describe('Gemini large-prompt crash mitigation (Bugfix #680)', () => {
-    // V8 old-space exhaustion crashed gemini-cli v0.37.x on PR diffs >500KB.
-    // Fix: bump heap via NODE_OPTIONS and pipe the prompt via stdin (no argv).
+  describe('agy binary resolution (resolveAgyBin / isRealAgyCli)', () => {
+    afterEach(() => { delete process.env.CODEV_AGY_BIN; });
 
-    it('should bump NODE_OPTIONS heap when spawning gemini', async () => {
-      vi.resetModules();
-      const { spawn: spawnBefore } = await import('node:child_process');
-      vi.mocked(spawnBefore).mockClear();
-
-      fs.mkdirSync(path.join(testBaseDir, 'codev', 'roles'), { recursive: true });
-      fs.writeFileSync(
-        path.join(testBaseDir, 'codev', 'roles', 'consultant.md'),
-        '# Consultant Role'
-      );
-      process.chdir(testBaseDir);
-
-      const { execSync } = await import('node:child_process');
-      vi.mocked(execSync).mockImplementation((cmd: string) => {
-        if (cmd.includes('which')) return Buffer.from('/usr/bin/gemini');
-        return Buffer.from('');
-      });
-
-      const { spawn } = await import('node:child_process');
-      const { consult } = await import('../commands/consult/index.js');
-
-      await consult({ model: 'gemini', prompt: 'review this PR' });
-
-      const geminiCall = vi.mocked(spawn).mock.calls.find(call => call[0] === 'gemini');
-      expect(geminiCall).toBeDefined();
-      const spawnOpts = geminiCall![2] as { env?: Record<string, string> };
-      expect(spawnOpts.env).toBeDefined();
-      expect(spawnOpts.env!.NODE_OPTIONS).toContain('--max-old-space-size=8192');
+    it('isRealAgyCli accepts a real standalone binary', async () => {
+      const { isRealAgyCli } = await import('../commands/consult/index.js');
+      const real = path.join(testBaseDir, 'agy-real');
+      fs.writeFileSync(real, '#!/bin/sh\n');
+      expect(isRealAgyCli(real)).toBe(true);
     });
 
-    it('should NOT pass the query as a positional argv to gemini', async () => {
-      // Large queries on argv risk E2BIG and force V8 to hold the prompt twice.
-      // The query must flow through stdin, not argv.
-      vi.resetModules();
-      const { spawn: spawnBefore } = await import('node:child_process');
-      vi.mocked(spawnBefore).mockClear();
-
-      fs.mkdirSync(path.join(testBaseDir, 'codev', 'roles'), { recursive: true });
-      fs.writeFileSync(
-        path.join(testBaseDir, 'codev', 'roles', 'consultant.md'),
-        '# Consultant Role'
-      );
-      process.chdir(testBaseDir);
-
-      const { execSync } = await import('node:child_process');
-      vi.mocked(execSync).mockImplementation((cmd: string) => {
-        if (cmd.includes('which')) return Buffer.from('/usr/bin/gemini');
-        return Buffer.from('');
-      });
-
-      const { spawn } = await import('node:child_process');
-      const { consult } = await import('../commands/consult/index.js');
-
-      const uniqueQuery = 'UNIQUE_BUGFIX_680_SENTINEL_' + Date.now();
-      await consult({ model: 'gemini', prompt: uniqueQuery });
-
-      const geminiCall = vi.mocked(spawn).mock.calls.find(call => call[0] === 'gemini');
-      expect(geminiCall).toBeDefined();
-      const args = geminiCall![1] as string[];
-      expect(args.some(a => a.includes(uniqueQuery))).toBe(false);
+    it('isRealAgyCli rejects a nonexistent path', async () => {
+      const { isRealAgyCli } = await import('../commands/consult/index.js');
+      expect(isRealAgyCli(path.join(testBaseDir, 'nope-agy'))).toBe(false);
     });
 
-    it('should pipe the query to stdin instead of argv', async () => {
-      // stdio[0] must be 'pipe' for gemini (so we can write the prompt), not 'ignore'.
-      vi.resetModules();
-      const { spawn: spawnBefore } = await import('node:child_process');
-      vi.mocked(spawnBefore).mockClear();
-
-      fs.mkdirSync(path.join(testBaseDir, 'codev', 'roles'), { recursive: true });
-      fs.writeFileSync(
-        path.join(testBaseDir, 'codev', 'roles', 'consultant.md'),
-        '# Consultant Role'
-      );
-      process.chdir(testBaseDir);
-
-      const { execSync } = await import('node:child_process');
-      vi.mocked(execSync).mockImplementation((cmd: string) => {
-        if (cmd.includes('which')) return Buffer.from('/usr/bin/gemini');
-        return Buffer.from('');
-      });
-
-      const { spawn } = await import('node:child_process');
-      const { consult } = await import('../commands/consult/index.js');
-
-      await consult({ model: 'gemini', prompt: 'small prompt' });
-
-      const geminiCall = vi.mocked(spawn).mock.calls.find(call => call[0] === 'gemini');
-      expect(geminiCall).toBeDefined();
-      const spawnOpts = geminiCall![2] as { stdio?: Array<string> };
-      expect(spawnOpts.stdio).toBeDefined();
-      expect(spawnOpts.stdio![0]).toBe('pipe');
+    it('isRealAgyCli rejects the Antigravity IDE launcher symlink', async () => {
+      const { isRealAgyCli } = await import('../commands/consult/index.js');
+      // Simulate the IDE: a symlink whose target is under Antigravity.app.
+      const ideDir = path.join(testBaseDir, 'Antigravity.app', 'Contents', 'Resources', 'app', 'bin');
+      fs.mkdirSync(ideDir, { recursive: true });
+      const ideTarget = path.join(ideDir, 'antigravity');
+      fs.writeFileSync(ideTarget, '#!/bin/sh\n');
+      const link = path.join(testBaseDir, 'agy-ide-link');
+      fs.symlinkSync(ideTarget, link);
+      expect(isRealAgyCli(link)).toBe(false);
     });
 
-    it('should preserve the caller NODE_OPTIONS when appending max-old-space-size', async () => {
-      vi.resetModules();
-      const { spawn: spawnBefore } = await import('node:child_process');
-      vi.mocked(spawnBefore).mockClear();
+    it('resolveAgyBin honors a valid CODEV_AGY_BIN override, rejects an invalid one', async () => {
+      const { resolveAgyBin } = await import('../commands/consult/index.js');
+      const real = path.join(testBaseDir, 'agy-override');
+      fs.writeFileSync(real, '#!/bin/sh\n');
+      process.env.CODEV_AGY_BIN = real;
+      expect(resolveAgyBin()).toBe(real);
+      process.env.CODEV_AGY_BIN = path.join(testBaseDir, 'missing-agy');
+      expect(resolveAgyBin()).toBeNull();
+    });
 
-      fs.mkdirSync(path.join(testBaseDir, 'codev', 'roles'), { recursive: true });
-      fs.writeFileSync(
-        path.join(testBaseDir, 'codev', 'roles', 'consultant.md'),
-        '# Consultant Role'
-      );
-      process.chdir(testBaseDir);
-
+    it('agyRespondsToVersion behaviorally verifies a PATH candidate (--version)', async () => {
+      // A bare PATH `agy` is only accepted if it behaves like the headless CLI.
       const { execSync } = await import('node:child_process');
+      const { agyRespondsToVersion } = await import('../commands/consult/index.js');
       vi.mocked(execSync).mockImplementation((cmd: string) => {
-        if (cmd.includes('which')) return Buffer.from('/usr/bin/gemini');
-        return Buffer.from('');
+        if (cmd.includes('good-agy')) return '1.0.4\n' as unknown as Buffer; // prints a version
+        if (cmd.includes('bad-agy')) return '' as unknown as Buffer;          // no version output
+        throw new Error('not a known command');
       });
-
-      const priorNodeOptions = process.env.NODE_OPTIONS;
-      process.env.NODE_OPTIONS = '--enable-source-maps';
-      try {
-        const { spawn } = await import('node:child_process');
-        const { consult } = await import('../commands/consult/index.js');
-
-        await consult({ model: 'gemini', prompt: 'test' });
-
-        const geminiCall = vi.mocked(spawn).mock.calls.find(call => call[0] === 'gemini');
-        expect(geminiCall).toBeDefined();
-        const spawnOpts = geminiCall![2] as { env?: Record<string, string> };
-        expect(spawnOpts.env!.NODE_OPTIONS).toContain('--enable-source-maps');
-        expect(spawnOpts.env!.NODE_OPTIONS).toContain('--max-old-space-size=8192');
-      } finally {
-        if (priorNodeOptions === undefined) {
-          delete process.env.NODE_OPTIONS;
-        } else {
-          process.env.NODE_OPTIONS = priorNodeOptions;
-        }
-      }
+      expect(agyRespondsToVersion('good-agy')).toBe(true);
+      expect(agyRespondsToVersion('bad-agy')).toBe(false);
+      expect(agyRespondsToVersion('throws-agy')).toBe(false);
     });
   });
 

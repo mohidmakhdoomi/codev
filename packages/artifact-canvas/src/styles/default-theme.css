@@ -1,0 +1,140 @@
+/*
+ * Default theme for @cluesmith/codev-artifact-canvas (spec D4, Model A).
+ *
+ * CSS custom properties are the SOLE v1 theming mechanism. Each token below has a sensible
+ * fallback; hosts override any subset by setting the variable on the canvas container, e.g.
+ * in a VSCode webview:
+ *
+ *   .codev-artifact-canvas {
+ *     --codev-canvas-foreground: var(--vscode-foreground);
+ *     --codev-canvas-background: var(--vscode-editor-background);
+ *   }
+ *
+ * Import via the package's dedicated export:
+ *   import '@cluesmith/codev-artifact-canvas/default-theme.css';
+ */
+
+.codev-artifact-canvas {
+  /* v1 token vocabulary (spec D4) */
+  --codev-canvas-foreground: #1f2328;
+  --codev-canvas-background: #ffffff;
+  --codev-canvas-accent: #0969da;
+  --codev-canvas-border: #d0d7de;
+  --codev-canvas-muted: #656d76;
+  --codev-canvas-code-background: #f6f8fa;
+  --codev-canvas-link: #0969da;
+  --codev-canvas-comment-marker: #bf8700;
+
+  color: var(--codev-canvas-foreground);
+  background: var(--codev-canvas-background);
+  /* Positioning context for the comment overlay, which anchors to the active block. */
+  position: relative;
+}
+
+/* Left gutter so the anchored "+" affordance sits beside a block, not over its text. */
+.codev-artifact-canvas-body {
+  padding-left: 1.9rem;
+}
+
+/* Phase 3 — comment overlay + minimal marker rendering */
+.codev-canvas-add-comment {
+  border: 1px solid var(--codev-canvas-border);
+  background: var(--codev-canvas-background);
+  color: var(--codev-canvas-comment-marker);
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1;
+  padding: 0 6px;
+}
+.codev-canvas-add-comment:hover,
+.codev-canvas-add-comment:focus-visible {
+  background: var(--codev-canvas-code-background);
+  outline: 2px solid var(--codev-canvas-accent);
+}
+
+/* v1 minimal indicator for a line carrying a review marker (#863 adds polished inline markers).
+   The bar is an inset box-shadow on the left edge; padding-left keeps the text off the bar so
+   the gold rule doesn't crowd the prose it annotates. */
+.codev-canvas-has-marker {
+  box-shadow: inset 3px 0 0 0 var(--codev-canvas-comment-marker);
+  padding-left: 10px;
+}
+
+.codev-artifact-canvas-body [data-line]:focus-visible {
+  outline: 2px solid var(--codev-canvas-accent);
+  outline-offset: 2px;
+}
+.codev-artifact-canvas-body a { color: var(--codev-canvas-link); }
+.codev-artifact-canvas-body pre,
+.codev-artifact-canvas-body code { background: var(--codev-canvas-code-background); }
+
+/* Overlay: the "+" add-comment affordance only. Anchored to the active block: positioned
+   absolutely in the canvas, with `top` set inline to the first line's vertical center; the
+   `translateY(-50%)` lands the `+` centered on that line (in the left gutter) rather than floating
+   above the block's top edge (#863). */
+.codev-canvas-overlay {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  position: absolute;
+  left: 0;
+  z-index: 5;
+  transform: translateY(-50%);
+}
+
+/* Inline-below comment cards (#863): rendered in flow beneath the annotated block, so they push
+   following content down instead of overlapping it. The left rule ties the stack visually to the
+   gutter where the "+" lives. No stack is injected for a block with zero markers, so a comment-free
+   block consumes no extra vertical space. */
+.codev-canvas-marker-cards {
+  list-style: none;
+  margin: 4px 0 10px;
+  padding-left: 8px;
+  border-left: 2px solid var(--codev-canvas-comment-marker);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.codev-canvas-marker-card {
+  border: 1px solid var(--codev-canvas-border);
+  border-left: 3px solid var(--codev-canvas-comment-marker);
+  border-radius: 4px;
+  padding: 4px 8px;
+  background: var(--codev-canvas-code-background);
+  color: var(--codev-canvas-foreground);
+  font-size: 0.9em;
+}
+.codev-canvas-marker-card-icon { margin-right: 4px; }
+.codev-canvas-marker-card-author { font-weight: 600; color: var(--codev-canvas-muted); margin-right: 4px; }
+
+/* Right-edge marker minimap (#863): a fixed, narrow column of dots — one per REVIEW marker,
+   positioned proportional to the marker's place in the document. The column itself is
+   click-transparent (pointer-events: none) so only the dots are interactive, and it is narrow
+   enough to sit alongside a future floating TOC (#861) without fighting for space. */
+.codev-canvas-minimap {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 14px;
+  z-index: 4;
+  pointer-events: none;
+}
+.codev-canvas-minimap-dot {
+  position: absolute;
+  right: 3px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--codev-canvas-comment-marker);
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateY(-50%);
+}
+.codev-canvas-minimap-dot:hover,
+.codev-canvas-minimap-dot:focus-visible {
+  outline: 2px solid var(--codev-canvas-accent);
+  outline-offset: 1px;
+}

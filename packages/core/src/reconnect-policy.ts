@@ -182,25 +182,40 @@ export class BackoffController {
 export type UpgradeErrorReason = string | { code?: number; message?: string };
 
 /**
+ * Application-range WebSocket close code Tower uses to tell a browser client
+ * that the terminal session is unknown/gone. Browsers can't read a failed
+ * *upgrade*'s HTTP status (they only see close `1006`), so Tower accepts the
+ * upgrade for browser clients and immediately closes with this code, which the
+ * dashboard reads via `CloseEvent.code` (#971). In the WS-spec private range
+ * (`4000–4999`); the mnemonic `4404` echoes HTTP 404.
+ */
+export const WS_CLOSE_SESSION_UNKNOWN = 4404;
+
+/**
  * Classify a connection/upgrade error as worth retrying or not.
  *
- * The Tower convention: a rejected WebSocket *upgrade* with a 4xx status means
- * the session/resource is gone (Tower 404s an unknown session ID at the HTTP
- * upgrade stage) — retrying is hopeless, so `'permanent'`. Everything else is a
- * transport blip → `'transient'`.
+ * The Tower convention: a "this session/resource is gone" signal means retrying
+ * is hopeless, so `'permanent'`. Everything else is a transport blip →
+ * `'transient'`.
  *
  * Accepts both forms a host can produce:
  * - Node `ws` surfaces a rejected upgrade as `Error.message`
- *   `"Unexpected server response: 404"` — the string form.
- * - A browser only learns a numeric code (e.g. a future Tower close code, or a
- *   `CloseEvent.code`) — the `{ code }` form. Note that today's browsers cannot
- *   see Tower's upgrade-stage 404 at all (they get `1006`, which is transient),
- *   so the web terminal stays on blind retry until Tower emits a
- *   browser-visible close code.
+ *   `"Unexpected server response: 404"` — the string form (Tower 404s an unknown
+ *   session ID at the HTTP upgrade stage).
+ * - A browser only learns a numeric `code`. This is overloaded: it may be an
+ *   HTTP status (`400–499`, kept for any Node code-form caller) *or* a
+ *   WebSocket `CloseEvent.code`. The two ranges are disjoint — valid WS close
+ *   codes live in `1000–1015` / `3000–3999` / `4000–4999`, never `400–499` —
+ *   so one predicate handles both. Tower's browser-visible session-unknown
+ *   close code {@link WS_CLOSE_SESSION_UNKNOWN} is `'permanent'`; a transport
+ *   blip (`1006`) is `'transient'`.
  */
 export function classifyUpgradeError(reason: UpgradeErrorReason): 'permanent' | 'transient' {
   if (typeof reason === 'string') {
     return isPermanentMessage(reason) ? 'permanent' : 'transient';
+  }
+  if (reason.code === WS_CLOSE_SESSION_UNKNOWN) {
+    return 'permanent';
   }
   if (typeof reason.code === 'number' && reason.code >= 400 && reason.code < 500) {
     return 'permanent';
