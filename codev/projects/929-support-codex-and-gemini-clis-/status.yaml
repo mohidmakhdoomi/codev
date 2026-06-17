@@ -1,27 +1,21 @@
 id: '929'
 title: support-codex-and-gemini-clis-
 protocol: pir
-phase: verified
+phase: plan
 plan_phases: []
 current_plan_phase: null
 gates:
   plan-approval:
-    status: approved
-    requested_at: '2026-05-31T19:10:01.535Z'
-    approved_at: '2026-05-31T19:34:05.482Z'
+    status: pending
   dev-approval:
-    status: approved
-    requested_at: '2026-06-16T18:58:35.321Z'
-    approved_at: '2026-06-16T19:03:40.955Z'
+    status: pending
   pr:
-    status: approved
-    requested_at: '2026-06-16T19:14:05.958Z'
-    approved_at: '2026-06-17T00:16:21.120Z'
+    status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-05-31T19:04:30.567Z'
-updated_at: '2026-06-17T00:17:38.200Z'
+updated_at: '2026-06-17T02:34:59.005Z'
 pr_history:
   - phase: review
     pr_number: 1
