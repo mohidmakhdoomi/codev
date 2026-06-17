@@ -203,6 +203,14 @@
         "title": "Codev: Open Builder File Diff"
       },
       {
+        "command": "codev.diffNextFile",
+        "title": "Codev: Go to Next File in Diff"
+      },
+      {
+        "command": "codev.diffPreviousFile",
+        "title": "Codev: Go to Previous File in Diff"
+      },
+      {
         "command": "codev.openWorktreeWindow",
         "title": "Codev: Open Worktree in New Window"
       },
