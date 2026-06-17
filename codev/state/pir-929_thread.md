@@ -2,6 +2,31 @@
 
 ## Builder thread
 
+### 2026-06-17 — RESCOPE: agy replaces gemini for architects (porch rewound to PLAN)
+
+Architect rewound porch to the plan phase. Issue #929 rescoped (#778): the Gemini CLI retires
+2026-06-18; `agy` (Antigravity CLI) replaces it as the non-Claude **architect**. PR #1059 stays
+open/unmerged; we extend it. Keep from #1059: the harness-agnostic `buildResume` seam, codex parity,
+the `getArchitectFiles` seam. Delta: add `AGY_HARNESS`, swap gemini out of architect support.
+
+**Key investigation finding (flagged to architect):** agy's role/context mechanism is NOT gemini's —
+it's codex-like.
+- agy reads `AGENTS.md` **natively** (binary strings: "append to AGENTS.md in the Workspace
+  Customizations Root"; global root = `~/.gemini`). So agy needs **no** `getArchitectFiles` pointer
+  file (the retired gemini CLI needed `.gemini/settings.json` → context.fileName; agy doesn't).
+- agy has **no** `--append-system-prompt` flag / no `GEMINI_SYSTEM_MD` env. Role injection rides
+  `-i`/`--prompt-interactive "<role>"` (agy --help; consult's "hermes precedent"), folding the role
+  into the interactive launch prompt. So `AGY_HARNESS.buildRoleInjection` → `['--prompt-interactive',
+  roleContent]`.
+- Binary resolution reuses consult's `resolveAgyBin`/`isRealAgyCli`/`agyRespondsToVersion` (bare `agy`
+  on PATH may be the IDE launcher symlink). Plan: extract those to `lib/agy-bin.ts`, add optional
+  `HarnessProvider.resolveBinary?`, apply at the ~6 architect executable-determination sites.
+
+Swap details: doctor affirms codex/`agy` (bars gemini as architect like opencode); remove
+`GEMINI_HARNESS.getArchitectFiles` (architect-only dead code) + the `.gemini/settings.json` gitignore
+entry; tests/docs cover agy instead of gemini; GEMINI_HARNESS stays for builders. `AGY_HARNESS.buildResume`
+undefined → fresh launch (resume deferred). Plan rewritten; committing and sitting at plan-approval.
+
 ### 2026-05-31 — Plan phase
 
 Investigated the resume crash-loop bug. Root cause confirmed across two sites, one mechanism:
