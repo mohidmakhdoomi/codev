@@ -8,7 +8,7 @@ import { approveGate } from './commands/approve.js';
 import { cleanupBuilder } from './commands/cleanup.js';
 import { openWorktreeWindow } from './commands/open-worktree-window.js';
 import { viewDiff, activateDiffView, openBuilderFileDiff } from './commands/view-diff.js';
-import { navigateDiff } from './commands/diff-nav.js';
+import { navigateDiff, recordDiffNavPosition } from './commands/diff-nav.js';
 import { activateDiffInjectCodeLens, getDiffInjectEntry } from './diff-inject-codelens.js';
 import { buildBuilderRangeRef } from './diff-inject-ref.js';
 import { runWorktreeDev } from './commands/run-worktree-dev.js';
@@ -882,6 +882,10 @@ export async function activate(context: vscode.ExtensionContext) {
 				builderId: arg.builderId,
 				plan: arg.plan,
 			});
+			// Seed the nav anchor so next/previous-file works even when this open
+			// was a deleted/binary file (no `file:` doc → absent from the
+			// diff-inject registry that navigation otherwise resolves against).
+			recordDiffNavPosition(arg.builderId, arg.plan.resourcePath);
 		}),
 		// Cross-file navigation in a builder diff review (#1060): walk the
 		// builder's changed-file list top-to-bottom (next) / bottom-to-top (prev),

@@ -66,8 +66,19 @@ interface NavDeps {
   diffCache: BuilderDiffCache;
 }
 
-/** Last file opened via navigation — fallback when the active editor isn't a
- *  tracked diff file. Module-level by design: navigation is a singleton gesture. */
+/**
+ * The last builder-diff file opened — by navigation OR by a direct open (sidebar
+ * click / View Diff, via `recordDiffNavPosition`). Used to resolve "where am I"
+ * when the active editor can't be matched through the diff-inject registry.
+ *
+ * That fallback is load-bearing for DELETED / BINARY files: their right side is
+ * a `codev-diff:` placeholder, not a `file:` document, so `registerFileInjectSession`
+ * never records them and `getDiffInjectEntry` can't resolve them. Seeding this on
+ * every open means navigation can still *start* from a deleted/binary file
+ * (otherwise next/prev would bail with "open a builder file diff first").
+ *
+ * Module-level by design: navigation is a singleton gesture.
+ */
 let lastPosition: { builderId: string; relPath: string } | undefined;
 
 function flash(message: string): void {
@@ -124,7 +135,22 @@ export async function navigateDiff(direction: 1 | -1, deps: NavDeps): Promise<vo
     { worktreePath, baseRef: result.baseRef, builderId: current.builderId, plan: target.plan },
     { preview: true },
   );
-  lastPosition = { builderId: current.builderId, relPath: target.plan.resourcePath };
+  recordDiffNavPosition(current.builderId, target.plan.resourcePath);
+}
+
+/**
+ * Record the currently-shown builder-diff file as the navigation anchor. Called
+ * by `navigateDiff` after each step AND by the `codev.openBuilderFileDiff`
+ * command after a direct open, so a subsequent next/prev resolves even when the
+ * active editor isn't in the diff-inject registry (deleted / binary files).
+ */
+export function recordDiffNavPosition(builderId: string, relPath: string): void {
+  lastPosition = { builderId, relPath };
+}
+
+/** Read the retained navigation anchor — for tests. */
+export function peekDiffNavPosition(): { builderId: string; relPath: string } | undefined {
+  return lastPosition;
 }
 
 /** Reset retained navigation state — for tests. */

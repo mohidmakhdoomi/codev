@@ -8,7 +8,7 @@
  * dev-approval gate.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { BuilderFileChange } from '../views/builder-diff-cache.js';
 
 // `diff-nav.ts` imports `vscode` and pulls in `diff-inject-codelens`, which
@@ -22,7 +22,14 @@ vi.mock('vscode', () => ({
   },
 }));
 
-const { orderedRelPaths, computeNavTarget, indexOfRelPath } = await import('../commands/diff-nav.js');
+const {
+  orderedRelPaths,
+  computeNavTarget,
+  indexOfRelPath,
+  recordDiffNavPosition,
+  peekDiffNavPosition,
+  resetDiffNavState,
+} = await import('../commands/diff-nav.js');
 
 /** Minimal `BuilderFileChange` — the helpers only read `plan.resourcePath`. */
 function mk(relPath: string): BuilderFileChange {
@@ -86,6 +93,21 @@ describe('indexOfRelPath', () => {
     expect(indexOfRelPath(files, undefined)).toBe(-1);
   });
 
+  it('resolves a deleted file — deletions are in the list and navigable once anchored', () => {
+    // Regression for the Codex review finding: a deleted file (status 'D') has no
+    // `file:` doc, so it can't be resolved through the diff-inject registry — but
+    // it IS in the changed-file list, so once the nav anchor points at it (seeded
+    // on open), indexOfRelPath finds it and stepping works.
+    const withDeleted: BuilderFileChange[] = [
+      mk('keep.ts'),
+      { change: { status: 'D', oldPath: null, path: 'gone.ts' },
+        plan: { resourcePath: 'gone.ts', left: { kind: 'base', path: 'gone.ts' }, right: { kind: 'empty' } } },
+      mk('next.ts'),
+    ];
+    expect(indexOfRelPath(withDeleted, 'gone.ts')).toBe(1);
+    expect(computeNavTarget(1, withDeleted.length, 1)).toEqual({ index: 2, atEdge: false });
+  });
+
   it('resolves two builders independently (multi-builder isolation)', () => {
     const builderA = [mk('a/one.ts'), mk('a/two.ts')];
     const builderB = [mk('b/alpha.ts'), mk('b/beta.ts'), mk('b/gamma.ts')];
@@ -99,5 +121,27 @@ describe('indexOfRelPath', () => {
     // Stepping in one list is unaffected by the other's length.
     expect(computeNavTarget(indexOfRelPath(builderA, 'a/two.ts'), builderA.length, 1)).toEqual({ index: 1, atEdge: true });
     expect(computeNavTarget(indexOfRelPath(builderB, 'b/beta.ts'), builderB.length, 1)).toEqual({ index: 2, atEdge: false });
+  });
+});
+
+describe('nav position anchor (recordDiffNavPosition / peek / reset)', () => {
+  beforeEach(() => resetDiffNavState());
+
+  it('starts empty', () => {
+    expect(peekDiffNavPosition()).toBeUndefined();
+  });
+
+  it('records and overwrites the anchor (seeded on every open, incl. deleted/binary)', () => {
+    recordDiffNavPosition('b1', 'src/gone.ts'); // e.g. a deleted file opened from the sidebar
+    expect(peekDiffNavPosition()).toEqual({ builderId: 'b1', relPath: 'src/gone.ts' });
+
+    recordDiffNavPosition('b2', 'pkg/other.ts'); // a later open replaces it (latest wins)
+    expect(peekDiffNavPosition()).toEqual({ builderId: 'b2', relPath: 'pkg/other.ts' });
+  });
+
+  it('reset clears the anchor', () => {
+    recordDiffNavPosition('b1', 'a.ts');
+    resetDiffNavState();
+    expect(peekDiffNavPosition()).toBeUndefined();
   });
 });
