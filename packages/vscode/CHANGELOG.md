@@ -1,5 +1,11 @@
 # Change Log
 
+## [Unreleased]
+
+### What's new
+
+- **Cross-file navigation in the Codev View Diff session.** Two new commands, `codev.diffNextFile` and `codev.diffPreviousFile`, walk a builder's changed-file list and open the next or previous file's per-file diff. Bound to `Ctrl+Alt+]` / `Ctrl+Alt+[` by default and palette-discoverable, scoped via the new `codev.activeEditorIsBuilderFile` context key so the keybindings only fire while you're sitting on a Codev builder-file diff (not in unrelated VS Code diff editors). The keyboard equivalent of clicking the next file row in the Builders sidebar, taken from GitHub PR review's `j` / `k` muscle memory. The nav anchor is seeded on every diff open, including sidebar clicks for deleted or binary files, so a file opened directly from the sidebar can be the starting point of a walk. Reuses the same `BuilderDiffCache` that already backs the sidebar's changed-file list, so the navigation order matches what the sidebar shows.
+
 ## [3.2.0] - 2026-06-17
 
 ### What's new

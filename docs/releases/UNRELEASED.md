@@ -33,6 +33,16 @@
     6. Re-cp the template back to UNRELEASED.md to start the next cycle
 -->
 
+## Cross-file navigation in the Codev View Diff session (#1060, PR #1067)
+
+Two new commands, `codev.diffNextFile` and `codev.diffPreviousFile`, walk a builder's changed-file list and open the next or previous file's per-file diff. Bound to `Ctrl+Alt+]` / `Ctrl+Alt+[` by default and palette-discoverable; the keybindings are scoped via a new `codev.activeEditorIsBuilderFile` context key so they only fire while the active editor is a Codev builder-file diff, not in unrelated VS Code diff editors. The keyboard equivalent of clicking the next file row in the Builders sidebar, taken from GitHub PR review's `j` / `k` muscle memory.
+
+The implementation deliberately reuses already-shipped machinery: the `BuilderDiffCache` that backs the Builders sidebar's changed-file list provides the ordered list (so navigation order matches what the sidebar shows), the diff-inject registry provides the "currently shown" position, and each step opens through the existing per-file `vscode.diff` path. No change to how `codev.viewDiff` itself opens.
+
+The nav anchor is seeded on **every** open (sidebar click, `viewDiff`, programmatic open), not just after a navigation step, so a deleted or binary file opened directly from the sidebar is a valid starting point for a walk. The first cycle's CMAP-3 caught this edge case (deleted / binary files lack a `file:` right-side document and so are absent from the diff-inject registry); the fix is a small `recordDiffNavPosition` call from the `codev.openBuilderFileDiff` handler with a matching regression test.
+
+A residual narrower edge is documented as a follow-up (#1066): focusing a deleted file *inside* the multi-file View Diff editor without a prior open or nav still can't seed the anchor, because `viewDiff` only registers `file:`-kind right sides. Sidebar-open path is fixed; the in-editor focus path is the sidebar-selection-sync follow-up.
+
 ## Polish
 
 <!-- Small vscode items as bullets:
