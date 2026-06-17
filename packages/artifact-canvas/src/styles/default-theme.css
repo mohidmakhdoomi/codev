@@ -1,5 +1,8 @@
 /*
- * Default theme for @cluesmith/codev-artifact-canvas (spec D4, Model A).
+ * Default theme for @cluesmith/codev-artifact-canvas (spec 945 D4, Model A).
+ *
+ * Two token tiers: the spec-945 color vocabulary and the #1053 typography tier (sizes, families,
+ * line-height, rhythm, heading scale — github-markdown-css v5.8.1 metrics as the baseline).
  *
  * CSS custom properties are the SOLE v1 theming mechanism. Each token below has a sensible
  * fallback; hosts override any subset by setting the variable on the canvas container, e.g.
@@ -15,7 +18,7 @@
  */
 
 .codev-artifact-canvas {
-  /* v1 token vocabulary (spec D4) */
+  /* v1 color token vocabulary (spec 945 D4) */
   --codev-canvas-foreground: #1f2328;
   --codev-canvas-background: #ffffff;
   --codev-canvas-accent: #0969da;
@@ -25,8 +28,41 @@
   --codev-canvas-link: #0969da;
   --codev-canvas-comment-marker: #bf8700;
 
+  /*
+   * Typography token tier (#1053 — amends the spec-945 D4 "locked public contract").
+   * Defaults mirror github-markdown-css v5.8.1 metrics: it's the familiar mental model for
+   * reviewers who read PRs in that style, and keeps prose (specs, plans, reviews) readable
+   * instead of inheriting the host's code-tuned font/line-height. Typography tokens are
+   * theme-invariant — dark mode is covered entirely by the color tokens above.
+   */
+  --codev-canvas-font-size: 16px;
+  --codev-canvas-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+    Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --codev-canvas-line-height: 1.5;
+  /* Vertical rhythm: the bottom margin of paragraphs; lists / blockquotes / tables / pre derive. */
+  --codev-canvas-paragraph-spacing: 16px;
+  /* Optional readable-measure cap. Off by default (`none`) so it can't break a host layout; a
+     host or user opts into e.g. 72ch. */
+  --codev-canvas-prose-max-width: none;
+  /* Per-level heading sizes. github-markdown-css's scale is non-geometric, so a single ratio
+     can't reproduce it — explicit per-level tokens mirror the baseline exactly (#1053). */
+  --codev-canvas-h1-size: 2em;
+  --codev-canvas-h2-size: 1.5em;
+  --codev-canvas-h3-size: 1.25em;
+  --codev-canvas-h4-size: 1em;
+  --codev-canvas-h5-size: 0.875em;
+  --codev-canvas-h6-size: 0.85em;
+  /* Code (pre + inline). Family is its own token so a host can track its editor font for code
+     while prose keeps the sans stack; size is ~85% of prose, matching github-markdown-css. */
+  --codev-canvas-code-font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  --codev-canvas-code-font-size: 0.85em;
+
   color: var(--codev-canvas-foreground);
   background: var(--codev-canvas-background);
+  font-family: var(--codev-canvas-font-family);
+  font-size: var(--codev-canvas-font-size);
+  line-height: var(--codev-canvas-line-height);
   /* Positioning context for the comment overlay, which anchors to the active block. */
   position: relative;
 }
@@ -34,6 +70,60 @@
 /* Left gutter so the anchored "+" affordance sits beside a block, not over its text. */
 .codev-artifact-canvas-body {
   padding-left: 1.9rem;
+  /* Optional readable-measure cap (off by default — token is `none`). When a host/user sets a
+     width (e.g. 72ch) the prose column stops growing with the pane. */
+  max-width: var(--codev-canvas-prose-max-width);
+}
+
+/*
+ * Prose typography (#1053). Scoped to the rendered body so it styles the markdown content
+ * without touching the comment cards, overlay `+`, or minimap chrome (each self-sized below).
+ * Sizes are `em`-relative to the body font-size (a single px anchor), matching how
+ * github-markdown-css avoids compounding nested `em` chains.
+ */
+.codev-artifact-canvas-body p {
+  margin: 0 0 var(--codev-canvas-paragraph-spacing);
+}
+/* Derive list / blockquote / table / pre rhythm from the paragraph-spacing token so block
+   spacing stays consistent when a host retunes it. */
+.codev-artifact-canvas-body ul,
+.codev-artifact-canvas-body ol,
+.codev-artifact-canvas-body blockquote,
+.codev-artifact-canvas-body table,
+.codev-artifact-canvas-body pre {
+  margin: 0 0 var(--codev-canvas-paragraph-spacing);
+}
+/* Don't add trailing space below the final block — it reads as an unbalanced gap. */
+.codev-artifact-canvas-body > *:last-child {
+  margin-bottom: 0;
+}
+/* Headings: a deliberate per-level scale plus github's heading rhythm (tighter line-height,
+   24px top / 16px bottom, semibold) so headings don't fall through to user-agent defaults. */
+.codev-artifact-canvas-body h1,
+.codev-artifact-canvas-body h2,
+.codev-artifact-canvas-body h3,
+.codev-artifact-canvas-body h4,
+.codev-artifact-canvas-body h5,
+.codev-artifact-canvas-body h6 {
+  margin: 24px 0 16px;
+  line-height: 1.25;
+  font-weight: 600;
+}
+.codev-artifact-canvas-body h1 { font-size: var(--codev-canvas-h1-size); }
+.codev-artifact-canvas-body h2 { font-size: var(--codev-canvas-h2-size); }
+.codev-artifact-canvas-body h3 { font-size: var(--codev-canvas-h3-size); }
+.codev-artifact-canvas-body h4 { font-size: var(--codev-canvas-h4-size); }
+.codev-artifact-canvas-body h5 { font-size: var(--codev-canvas-h5-size); }
+.codev-artifact-canvas-body h6 {
+  font-size: var(--codev-canvas-h6-size);
+  color: var(--codev-canvas-muted);
+}
+/* Code: monospace family + ~85% size for both fenced blocks and inline `code`. The background
+   color rule for these lives below with the other color tokens. */
+.codev-artifact-canvas-body pre,
+.codev-artifact-canvas-body code {
+  font-family: var(--codev-canvas-code-font-family);
+  font-size: var(--codev-canvas-code-font-size);
 }
 
 /* Phase 3 — comment overlay + minimal marker rendering */
