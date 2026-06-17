@@ -73,3 +73,12 @@ but the established workflow keeps those on the divergent `docs/vscode-changelog
 branch (`worktrees/changelog/`), updated by the architect post-cleanup — "neither
 branch touches the other's files" by design. So I did NOT touch them on the
 builder branch; flagged for the architect instead.
+
+### At dev-approval gate: added default keybindings (reverses decision #1)
+Architect asked for shortcut keys, avoiding function keys. Added defaults:
+`Ctrl+Alt+]` (next) / `Ctrl+Alt+[` (prev), `when: codev.activeEditorIsBuilderFile`.
+Used the Codev-specific context key (not generic `isInDiffEditor`) — matches the
+Cmd/Ctrl+K B convention and prevents the keys firing in an unrelated diff (which
+would fall back to a stale last-position and jump a different builder's file).
+Within-file hunk nav stays VSCode-native F7 / Shift+F7. Extended
+contributes-commands.test.ts to lock the bindings. Tests ✓ (438).
