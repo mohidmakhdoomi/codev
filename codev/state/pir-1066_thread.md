@@ -39,3 +39,30 @@ dev-approval gate is load-bearing: walk all modes (flat/tree × stage/area) on t
 running tree.
 
 Plan written → awaiting plan-approval gate.
+
+## Phase: implement (plan-approval approved)
+
+Implemented all four pieces:
+1. `builder-file-tree-item.ts` — `this.id = <builderId>::<rel>`.
+2. `builders.ts` — `getParent` extended to file/folder rows via async
+   `parentForFileNode`; exported pure `findParentNode` tree-walk; public async
+   `findFileItem`.
+3. `extension.ts` — `onDidChangeActiveTextEditor` reveal listener gated on
+   `codev.buildersAutoReveal` (default true); `getDiffInjectEntry` is the
+   no-hijack gate; `focus:false`.
+4. `package.json` — `codev.buildersAutoReveal` setting.
+
+Tests: `__tests__/builders-autoreveal.test.ts` — findParentNode (top-level,
+not-found, compacted nested, folder-to-parent), file-row id format + uniqueness,
+findFileItem (correct builder incl. duplicate relPath across two builders),
+getParent (flat → builder row, tree → folder, top-level → builder row).
+
+Learning while testing: `packages/vscode` compacts away — only the compacted
+fullPath (`packages/vscode/src`) exists as a folder node, so getParent only ever
+sees real compacted fullPaths. Fixed the test to assert against compacted paths.
+
+Env note: had to build codev-core, codev-types, artifact-canvas in the worktree
+before vscode check-types/tests resolved (pre-existing, not my change).
+
+porch checks: build ✓ (8.9s), tests ✓ (20.6s, 454 passed incl. 11 new).
+→ awaiting dev-approval gate. Manual matrix in the plan's Test Plan.
