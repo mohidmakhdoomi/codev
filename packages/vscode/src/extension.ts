@@ -491,6 +491,34 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 	);
 
+	// Builders active-file sync (#1066): when the active editor becomes a tracked
+	// builder-diff file, reveal + select its row in the Builders tree — the
+	// Explorer's `explorer.autoReveal` for builder diffs. One listener covers
+	// every entry point that moves the diff editor without touching the sidebar:
+	// keyboard navigation (#1060), clicking a file in the multi-file View Diff,
+	// and the per-file diff. The `getDiffInjectEntry` gate is the no-hijack
+	// guarantee: a normal source file or the diff's base/left side (not in the
+	// registry) resolves to undefined, leaving the selection alone. `focus:false`
+	// keeps focus in the editor — the sidebar follows, it doesn't grab.
+	const readAutoReveal = () =>
+		vscode.workspace.getConfiguration('codev').get<boolean>('buildersAutoReveal', true);
+	context.subscriptions.push(
+		vscode.window.onDidChangeActiveTextEditor(async (editor) => {
+			if (!readAutoReveal()) { return; }
+			const fsPath = editor?.document.uri.fsPath;
+			if (!fsPath) { return; }
+			const entry = getDiffInjectEntry(fsPath);
+			if (!entry) { return; }
+			const item = await buildersProvider.findFileItem(entry.builderId, entry.relPath);
+			if (!item) { return; }
+			try {
+				await buildersView!.reveal(item, { select: true, expand: true, focus: false });
+			} catch {
+				// Benign if the row is no longer present (e.g. mid-cleanup).
+			}
+		}),
+	);
+
 	// Builders file-view-as-tree: each builder's changed-files list renders
 	// as a folder tree (with single-child folder chains compacted, like
 	// VSCode SCM) when on, or as a flat list when off. Toggle via the
