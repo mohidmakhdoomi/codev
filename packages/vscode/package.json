@@ -875,6 +875,18 @@
           ],
           "default": "stage",
           "description": "Which axis the Builders view groups by. 'stage' (default) is the action axis; 'area' is the domain axis. Toggleable via the Builders title-bar button."
+        },
+        "codev.markdownPreview.fontSize": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Prose font size (in pixels) for the Codev Markdown Preview. 0 uses the built-in default (16px, the github-markdown-css baseline). Code blocks are sized relative to this."
+        },
+        "codev.markdownPreview.lineHeight": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Prose line-height (unitless multiplier) for the Codev Markdown Preview. 0 uses the built-in default (1.5, the github-markdown-css baseline)."
         }
       }
     },

@@ -114,6 +114,8 @@ paint pixels.
 Import the default stylesheet and override any subset of the `--codev-canvas-*` tokens on the
 `.codev-artifact-canvas` container. There is no JS theming on the v1 render path.
 
+**Color tokens** (spec 945 D4):
+
 | Token | Default |
 |-------|---------|
 | `--codev-canvas-foreground` | `#1f2328` |
@@ -122,8 +124,24 @@ Import the default stylesheet and override any subset of the `--codev-canvas-*` 
 | `--codev-canvas-border` | `#d0d7de` |
 | `--codev-canvas-muted` | `#656d76` |
 | `--codev-canvas-code-background` | `#f6f8fa` |
+| `--codev-canvas-code-foreground` | `#1f2328` |
 | `--codev-canvas-link` | `#0969da` |
 | `--codev-canvas-comment-marker` | `#bf8700` |
+
+**Typography tokens** (#1053). Defaults mirror [github-markdown-css](https://github.com/sindresorhus/github-markdown-css)
+v5.8.1 so prose reads cleanly instead of inheriting the host's code-tuned font. Theme-invariant
+(dark mode is covered by the color tokens above):
+
+| Token | Default | Controls |
+|-------|---------|----------|
+| `--codev-canvas-font-size` | `16px` | prose body size |
+| `--codev-canvas-font-family` | system sans stack | prose body font |
+| `--codev-canvas-line-height` | `1.5` | prose line-height |
+| `--codev-canvas-paragraph-spacing` | `16px` | gap below paragraphs / lists / blockquotes / tables / `pre` |
+| `--codev-canvas-prose-max-width` | `none` | optional readable-measure cap (e.g. `72ch`); off by default |
+| `--codev-canvas-h1-size` … `--codev-canvas-h6-size` | `2em` / `1.5em` / `1.25em` / `1em` / `0.875em` / `0.85em` | per-level heading sizes |
+| `--codev-canvas-code-font-family` | system monospace stack | `pre` / inline `code` font |
+| `--codev-canvas-code-font-size` | `0.85em` | `pre` / inline `code` size |
 
 ```css
 /* Bind the canvas to the host's theme — e.g. a VSCode webview */
@@ -131,6 +149,11 @@ Import the default stylesheet and override any subset of the `--codev-canvas-*` 
   --codev-canvas-foreground: var(--vscode-foreground);
   --codev-canvas-background: var(--vscode-editor-background);
   --codev-canvas-accent: var(--vscode-focusBorder);
+  /* Code blocks track the editor font; prose keeps the readable sans stack. */
+  --codev-canvas-code-font-family: var(--vscode-editor-font-family);
+  /* Pair inline-code fg+bg from the same theme group so they always contrast. */
+  --codev-canvas-code-background: var(--vscode-textPreformat-background);
+  --codev-canvas-code-foreground: var(--vscode-textPreformat-foreground);
 }
 ```
 
