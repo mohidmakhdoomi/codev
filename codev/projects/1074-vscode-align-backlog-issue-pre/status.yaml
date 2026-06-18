@@ -1,0 +1,14 @@
+id: '1074'
+title: vscode-align-backlog-issue-pre
+protocol: air
+phase: implement
+plan_phases: []
+current_plan_phase: null
+gates:
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-06-18T22:37:33.400Z'
+updated_at: '2026-06-18T22:37:33.400Z'
