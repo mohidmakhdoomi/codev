@@ -33,6 +33,21 @@
     6. Re-cp the template back to UNRELEASED.md to start the next cycle
 -->
 
+## Builders sidebar auto-reveals the active builder-file diff (#1066, PR #1075)
+
+A natural follow-up to PR #1067's cross-file navigation (#1060): with the keyboard `Ctrl+Alt+]` / `Ctrl+Alt+[` walk in place, the Builders sidebar tree was a step out of sync. Opening file 3 of a diff session would leave the sidebar selection pointing at file 1, so the visual reference for "where you are in the changed-file list" did not match the editor.
+
+The Builders sidebar now reveals and selects the file row for whichever builder-file diff is active in the editor, mirroring the Explorer's auto-reveal behavior. A single `onDidChangeActiveTextEditor` listener handles every entry point: sidebar clicks, multi-file `View Diff` clicks, per-file `vscode.diff` opens, and the keyboard-driven nav. A registry-change re-reveal covers the case where the active editor changes before the changed-file list has loaded; once the list appears, the reveal fires.
+
+Two file-tree navigation tweaks landed alongside, surfaced during the dev-approval review:
+
+- Cross-file navigation now follows the **visible tree order** (depth-first in tree-view mode; git order in flat mode), so pressing the next-file keybinding always lands you on the next row you can see. Previously the navigation order matched the underlying flat change-list, not the tree representation, so a `pkg/a/foo.ts → pkg/b/bar.ts` step in flat order would visually jump across siblings in tree mode.
+- File navigation now **wraps around** at the ends to match VSCode's built-in within-file hunk navigation (F7 / Shift+F7). Previously the ends no-op'd; the wrap-around removes the dead-end so a reviewer can keep tabbing through the diff session.
+
+A new opt-out setting `codev.buildersAutoReveal` (defaulting on) disables the reveal for users who prefer a static sidebar. The reveal is gated to **diff tabs only** so a plain editor open of a tracked worktree file (e.g. opening `pkg/foo.ts` directly via `Cmd+P` while a builder also has it in its changed-file list) does not hijack the sidebar selection. The gate uses a negative test (`TabInputText` only → skip) rather than a positive `TabInputTextDiff` test, because the multi-file `TabInputTextMultiDiff` type is not exported by stable `@types/vscode@1.105` (the engine pin tracks Cursor's bundled VSCode base, per `project_vscode_engine_pinned_to_cursor`).
+
+Supporting groundwork: file rows in the Builders tree gained a stable `<builderId>::<relPath>` id so the reveal can locate them; `BuildersProvider.getParent` reconstructs the full file → folder → builder → group ancestor chain VSCode's `TreeView.reveal` needs to walk up. The diff-inject codelens provider gained an `onDidChangeDiffInjectRegistry` event so the auto-reveal can re-fire when the changed-file list lands later than the editor open.
+
 ## Typography tokens for the Codev Markdown Preview (#1053, PR #1071)
 
 The Codev Markdown Preview (`@cluesmith/codev-artifact-canvas` mounted by `MarkdownPreviewProvider`) previously inherited the host's typography. In the VS Code webview that meant prose rendered at the workbench UI font with a tight code-tuned line-height, no paragraph rhythm, no heading scale, and no styling for inline `code`, blockquotes, tables, `hr`, images, or lists. Spec 945 D4 had capped the v1 token vocabulary at colors, so there was no host-level lever for any of it.
