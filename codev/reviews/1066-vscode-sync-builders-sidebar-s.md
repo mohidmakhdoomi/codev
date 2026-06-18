@@ -77,6 +77,12 @@ For reviewers pulling the branch:
   - Opt-out: `codev.buildersAutoReveal: false` disables the sync.
   - Navigation follows the visible tree order and wraps at the ends.
 
+## Consultation Dispositions (single advisory pass)
+
+- **Codex — `REQUEST_CHANGES` (HIGH): reveal gate could hijack a standalone open.** Valid. The reveal gated only on "active file path is in the diff-inject registry", but the registry is keyed by the right-side worktree file path, so opening that same file as a normal (non-diff) editor tab would also match and hijack the selection. **Fixed** (commit `6954515b`): the reveal now skips when the active tab is a plain `TabInputText`, so it fires only for diff tabs (per-file `vscode.diff` and the multi-file `vscode.changes`). New pure helper `isStandaloneTextTab` + a regression test. Gated on "is a plain text tab" rather than "is a diff tab" because `TabInputTextMultiDiff` is absent from the stable `@types/vscode@1.105`; a diff tab is never `TabInputText`, so both diff surfaces still reveal.
+- **Claude — `COMMENT` (HIGH): stale test-file docstring.** Valid. `diff-nav.test.ts` header still said "the edges no-op (no wrap)" after the wrap-around change. **Fixed** (same commit): header now describes the visible-tree order + wrap-around.
+- **Gemini — no usable verdict.** The `agy` run emitted sandbox meta-output instead of a review (no `VERDICT` line); treated as a non-blocking skip per the consult tooling's documented behavior.
+
 ## Follow-ups
 
 - **#1072** (filed): vscode dedup — a shared `builderById` lookup helper (the `builders.find(b => b.id === id)` pattern repeats across ~6 command files) and a shared `buildersFileViewAsTree` config reader. Deliberately deferred to keep this PR scoped.
