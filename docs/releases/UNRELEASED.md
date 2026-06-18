@@ -33,6 +33,22 @@
     6. Re-cp the template back to UNRELEASED.md to start the next cycle
 -->
 
+## Typography tokens for the Codev Markdown Preview (#1053, PR #1071)
+
+The Codev Markdown Preview (`@cluesmith/codev-artifact-canvas` mounted by `MarkdownPreviewProvider`) previously inherited the host's typography. In the VS Code webview that meant prose rendered at the workbench UI font with a tight code-tuned line-height, no paragraph rhythm, no heading scale, and no styling for inline `code`, blockquotes, tables, `hr`, images, or lists. Spec 945 D4 had capped the v1 token vocabulary at colors, so there was no host-level lever for any of it.
+
+This release extends the canvas theming contract with a typography token tier in three layers:
+
+1. **Package tokens and element styling** in `default-theme.css`. Thirteen new typography tokens (font-size, font-family, line-height, paragraph spacing, optional prose-width cap, per-level heading sizes, code font family and size) plus the rules that consume them. The pass also styles block elements that were falling through to user-agent defaults: inline `code` chips, fenced `pre`, blockquotes, tables, `hr`, images, and list indentation. `github-markdown-css` v5.8.1 is the pinned baseline so the defaults are reproducible.
+2. **Host bindings** in `preview-template.ts`. Code tokens bind to VSCode's editor font, prose tokens keep the readable sans stack, and inline code pairs with VSCode's `textPreformat-*` theme tokens so dark themes get proper contrast.
+3. **User settings**: `codev.markdownPreview.fontSize` and `codev.markdownPreview.lineHeight` let reviewers tune the preview without affecting the rest of the IDE chrome; both reflow live via `onDidChangeConfiguration`.
+
+The typography also covers the package's exported standalone `MarkdownView` surface (the surface a host can mount without the comment overlay) via `:is(.codev-artifact-canvas-body, .codev-artifact-canvas-rendered)` selector groups. Overlay chrome (gutter `+` affordance, comment cards, right-edge minimap) stays scoped to the composed surface where it belongs, so adopting `MarkdownView` doesn't accidentally pull in overlay markup.
+
+Two correctness fixes landed during the dev-approval review. A dark-mode inline-code contrast bug is fixed by adding a `--codev-canvas-code-foreground` token: previously, inline code had a background token but no foreground token, so dark themes paired a dark code-block background with the general light foreground and rendered low contrast. The page-level horizontal-scroll bug from unbreakable long tokens in prose is fixed by `overflow-wrap: break-word` on the prose container, while `pre` and tables keep their own `overflow: auto` so they scroll within the block rather than at the page level.
+
+The token vocabulary is the locked public contract from spec 945 D4, so this expansion carries a spec-amendment doc trail across `types.ts`, the package README, the PIR review, and the issue.
+
 ## Cross-file navigation in the Codev View Diff session (#1060, PR #1067)
 
 Two new commands, `codev.diffNextFile` and `codev.diffPreviousFile`, walk a builder's changed-file list and open the next or previous file's per-file diff. Bound to `Ctrl+Alt+]` / `Ctrl+Alt+[` by default and palette-discoverable; the keybindings are scoped via a new `codev.activeEditorIsBuilderFile` context key so they only fire while the active editor is a Codev builder-file diff, not in unrelated VS Code diff editors. The keyboard equivalent of clicking the next file row in the Builders sidebar, taken from GitHub PR review's `j` / `k` muscle memory.
