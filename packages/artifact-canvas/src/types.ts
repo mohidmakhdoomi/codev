@@ -7,9 +7,11 @@
  *
  * Contract amendment (#1053): the public `--codev-canvas-*` token vocabulary (spec 945 D4)
  * gained a typography tier — font size/family, line-height, paragraph spacing, an optional
- * prose-width cap, per-level heading sizes, and code font family/size. The tokens are CSS
- * custom properties, not a TypeScript shape, so no interface here changed; the vocabulary and
- * its github-markdown-css baseline are documented in `styles/default-theme.css` and the README.
+ * prose-width cap, per-level heading sizes, and code font family/size — plus one color token,
+ * `--codev-canvas-code-foreground` (inline-code text, paired with the code background for
+ * dark-mode contrast). The tokens are CSS custom properties, not a TypeScript shape, so no
+ * interface here changed; the vocabulary and its github-markdown-css baseline are documented in
+ * `styles/default-theme.css` and the README.
  */
 
 import type { FileAdapter } from './adapters/FileAdapter.js';

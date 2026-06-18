@@ -25,6 +25,10 @@
   --codev-canvas-border: #d0d7de;
   --codev-canvas-muted: #656d76;
   --codev-canvas-code-background: #f6f8fa;
+  /* Inline-code text. Its own token (not the body foreground) so a host can pair it with the
+     code background for guaranteed contrast — body-fg-on-code-bg pairs poorly in some dark
+     themes (#1053). */
+  --codev-canvas-code-foreground: #1f2328;
   --codev-canvas-link: #0969da;
   --codev-canvas-comment-marker: #bf8700;
 
@@ -118,12 +122,76 @@
   font-size: var(--codev-canvas-h6-size);
   color: var(--codev-canvas-muted);
 }
-/* Code: monospace family + ~85% size for both fenced blocks and inline `code`. The background
-   color rule for these lives below with the other color tokens. */
-.codev-artifact-canvas-body pre,
+/* Lists keep a deliberate indent (github uses 2em) rather than the UA default. */
+.codev-artifact-canvas-body ul,
+.codev-artifact-canvas-body ol {
+  padding-left: 2em;
+}
+/* Inline code: a monospace chip with its OWN foreground (paired with the code background) so it
+   stays legible — body-fg-on-code-bg pairs poorly in some dark themes. ~85% of prose size. */
 .codev-artifact-canvas-body code {
   font-family: var(--codev-canvas-code-font-family);
   font-size: var(--codev-canvas-code-font-size);
+  color: var(--codev-canvas-code-foreground);
+  background: var(--codev-canvas-code-background);
+  padding: 0.2em 0.4em;
+  border-radius: 6px;
+}
+/* Fenced code block: padded, rounded, horizontally scrollable, with a hairline for definition. */
+.codev-artifact-canvas-body pre {
+  font-family: var(--codev-canvas-code-font-family);
+  font-size: var(--codev-canvas-code-font-size);
+  background: var(--codev-canvas-code-background);
+  border: 1px solid var(--codev-canvas-border);
+  border-radius: 6px;
+  padding: 16px;
+  overflow: auto;
+}
+/* Code INSIDE a fence is plain text, not a chip: reset the inline chrome — including the 85%
+   size, which would otherwise compound to ~72% on top of pre's own 85%. */
+.codev-artifact-canvas-body pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+/* Blockquote: muted text behind a left rule (github convention). */
+.codev-artifact-canvas-body blockquote {
+  padding: 0 1em;
+  color: var(--codev-canvas-muted);
+  border-left: 0.25em solid var(--codev-canvas-border);
+}
+/* Tables: collapsed bordered cells with a subtle zebra stripe; the block becomes horizontally
+   scrollable so a wide table can't blow out the prose column. */
+.codev-artifact-canvas-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+}
+.codev-artifact-canvas-body th,
+.codev-artifact-canvas-body td {
+  border: 1px solid var(--codev-canvas-border);
+  padding: 6px 13px;
+}
+.codev-artifact-canvas-body th {
+  font-weight: 600;
+}
+.codev-artifact-canvas-body tr:nth-child(2n) {
+  background: var(--codev-canvas-code-background);
+}
+/* Thematic break: a hairline rule, not the UA inset bevel. */
+.codev-artifact-canvas-body hr {
+  height: 0;
+  border: 0;
+  border-top: 1px solid var(--codev-canvas-border);
+  margin: 24px 0;
+}
+/* Images never overflow the prose column. */
+.codev-artifact-canvas-body img {
+  max-width: 100%;
 }
 
 /* Phase 3 — comment overlay + minimal marker rendering */
@@ -155,8 +223,6 @@
   outline-offset: 2px;
 }
 .codev-artifact-canvas-body a { color: var(--codev-canvas-link); }
-.codev-artifact-canvas-body pre,
-.codev-artifact-canvas-body code { background: var(--codev-canvas-code-background); }
 
 /* Overlay: the "+" add-comment affordance only. Anchored to the active block: positioned
    absolutely in the canvas, with `top` set inline to the first line's vertical center; the

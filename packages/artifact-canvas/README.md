@@ -124,6 +124,7 @@ Import the default stylesheet and override any subset of the `--codev-canvas-*` 
 | `--codev-canvas-border` | `#d0d7de` |
 | `--codev-canvas-muted` | `#656d76` |
 | `--codev-canvas-code-background` | `#f6f8fa` |
+| `--codev-canvas-code-foreground` | `#1f2328` |
 | `--codev-canvas-link` | `#0969da` |
 | `--codev-canvas-comment-marker` | `#bf8700` |
 
@@ -150,6 +151,9 @@ v5.8.1 so prose reads cleanly instead of inheriting the host's code-tuned font. 
   --codev-canvas-accent: var(--vscode-focusBorder);
   /* Code blocks track the editor font; prose keeps the readable sans stack. */
   --codev-canvas-code-font-family: var(--vscode-editor-font-family);
+  /* Pair inline-code fg+bg from the same theme group so they always contrast. */
+  --codev-canvas-code-background: var(--vscode-textPreformat-background);
+  --codev-canvas-code-foreground: var(--vscode-textPreformat-foreground);
 }
 ```
 

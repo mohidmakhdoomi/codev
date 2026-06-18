@@ -36,6 +36,7 @@ describe('default-theme.css token vocabulary', () => {
         "--codev-canvas-code-background",
         "--codev-canvas-code-font-family",
         "--codev-canvas-code-font-size",
+        "--codev-canvas-code-foreground",
         "--codev-canvas-comment-marker",
         "--codev-canvas-font-family",
         "--codev-canvas-font-size",
@@ -69,5 +70,10 @@ describe('default-theme.css token vocabulary', () => {
     expect(tokens.get('--codev-canvas-h1-size')).toBe('2em');
     expect(tokens.get('--codev-canvas-h6-size')).toBe('0.85em');
     expect(tokens.get('--codev-canvas-code-font-size')).toBe('0.85em');
+  });
+
+  it('gives inline code its own foreground token (dark-mode contrast, #1053)', () => {
+    expect(tokens.has('--codev-canvas-code-foreground')).toBe(true);
+    expect(tokens.get('--codev-canvas-code-foreground')).not.toBe('');
   });
 });
