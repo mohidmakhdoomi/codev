@@ -1,11 +1,12 @@
 /**
- * #1060 — cross-file diff navigation pure helpers.
+ * #1060 — cross-file diff navigation pure helpers (extended by #1066).
  *
  * These cover the logic that the acceptance criteria pin down without needing a
- * live VS Code: navigation order matches the file list, the edges no-op (no
- * wrap), and two builders' lists resolve independently (multi-builder
- * isolation). The command glue (`navigateDiff`) is exercised manually at the
- * dev-approval gate.
+ * live VS Code: navigation order matches the visible list (raw git order in flat
+ * mode, depth-first tree order in tree mode — #1066), stepping wraps around at
+ * the ends (#1066, to match VSCode's built-in hunk navigation), and two
+ * builders' lists resolve independently (multi-builder isolation). The command
+ * glue (`navigateDiff`) is exercised manually at the dev-approval gate.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';

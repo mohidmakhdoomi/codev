@@ -10,6 +10,7 @@ import { openWorktreeWindow } from './commands/open-worktree-window.js';
 import { viewDiff, activateDiffView, openBuilderFileDiff } from './commands/view-diff.js';
 import { navigateDiff, recordDiffNavPosition } from './commands/diff-nav.js';
 import { activateDiffInjectCodeLens, getDiffInjectEntry, onDidChangeDiffInjectRegistry } from './diff-inject-codelens.js';
+import { isStandaloneTextTab } from './diff-tab-input.js';
 import { buildBuilderRangeRef } from './diff-inject-ref.js';
 import { runWorktreeDev } from './commands/run-worktree-dev.js';
 import { stopWorktreeDev } from './commands/stop-worktree-dev.js';
@@ -515,6 +516,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		if (!fsPath) { return; }
 		const entry = getDiffInjectEntry(fsPath);
 		if (!entry) { return; }
+		// Skip the reveal when the builder file is open as a normal editor tab
+		// rather than in a diff. The registry is keyed by the worktree file path,
+		// which a standalone open shares — gating this out keeps a plain open from
+		// hijacking the sidebar selection. (Checking "plain text tab" rather than
+		// "diff tab" avoids TabInputTextMultiDiff, absent from stable @types/vscode.)
+		if (isStandaloneTextTab(vscode.window.tabGroups.activeTabGroup?.activeTab?.input)) { return; }
 		const item = await buildersProvider.findFileItem(entry.builderId, entry.relPath);
 		if (!item) { return; }
 		// The active editor may have changed during the await (rapid navigation);
