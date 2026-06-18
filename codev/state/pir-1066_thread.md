@@ -66,3 +66,16 @@ before vscode check-types/tests resolved (pre-existing, not my change).
 
 porch checks: build ✓ (8.9s), tests ✓ (20.6s, 454 passed incl. 11 new).
 → awaiting dev-approval gate. Manual matrix in the plan's Test Plan.
+
+### dev-approval iteration 1: stale-selection bug (fixed)
+Reviewer screenshot: editor on `middleware/require-user-or-service-auth.ts` but
+sidebar highlighted `src/index.ts` (one level up). Root cause = registry TIMING,
+not getParent: `openBuilderFileDiff` opens the diff (→ active-editor event fires)
+BEFORE it upserts the diff-inject entry, so on a file's FIRST open
+`getDiffInjectEntry` returns undefined and the reveal bails → selection lags on
+the previous file. Revisits worked (entry already present) → "works sometimes".
+Fix: exposed `onDidChangeDiffInjectRegistry` from diff-inject-codelens; reveal now
+runs on BOTH active-editor change AND registry change (same dual-trigger the
+context-key sync already uses). Refactored to a named `revealActiveBuilderFile`
+(one fn, two subscriptions) + a staleness guard (re-check active fsPath after the
+await) for rapid nav. check-types/lint/tests green (454).
