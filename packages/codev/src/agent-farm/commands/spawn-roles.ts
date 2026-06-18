@@ -13,7 +13,7 @@ import type { SpawnOptions, Config, ProtocolDefinition } from '../types.js';
 import { logger, fatal } from '../utils/logger.js';
 import { loadRolePrompt } from '../utils/roles.js';
 import { stripLeadingZeros } from '../utils/agent-names.js';
-import { resolveCodevFile, getSkeletonDir } from '../../lib/skeleton.js';
+import { resolveCodevFile, getSkeletonDir, resolveCodevIncludes } from '../../lib/skeleton.js';
 
 // =============================================================================
 // Template Rendering
@@ -45,6 +45,7 @@ export interface TemplateContext {
   task_text?: string;
   spec_missing?: boolean;
   existing_branch?: string;  // Spec 609: when --branch is used, the name of the existing branch
+  protocol_reference?: string;  // #1011: protocol.md text, resolved fresh at spawn and inlined via the {{protocol_reference}} placeholder
 }
 
 /**
@@ -101,59 +102,37 @@ function loadBuilderPromptTemplate(config: Config, protocolName: string): string
     `protocols/${protocolName}/builder-prompt.md`,
     config.workspaceRoot,
   );
-  if (templatePath) {
-    return readFileSync(templatePath, 'utf-8');
+  if (!templatePath) {
+    return null;
   }
-  return null;
+  return readFileSync(templatePath, 'utf-8');
 }
 
 /**
- * Build a fallback prompt when no template exists
+ * Compute the protocol meta-doc text to inline into the spawn prompt via the
+ * `{{protocol_reference}}` placeholder. Reads `protocol.md` fresh through the
+ * resolver (tier 4 reaches the embedded skeleton in fresh installs) and resolves
+ * any `{{> ...}}` template includes inside it (via the shared resolver helper).
+ * Returns '' when the protocol ships no `protocol.md`.
  */
-function buildFallbackPrompt(protocolName: string, context: TemplateContext): string {
-  const modeInstructions = context.mode === 'strict'
-    ? `## Mode: STRICT
-Porch orchestrates your work. Run: \`porch next\` to get your next tasks.`
-    : `## Mode: SOFT
-You follow the protocol yourself. The architect monitors your work and verifies compliance.`;
-
-  let prompt = `# ${protocolName.toUpperCase()} Builder (${context.mode} mode)
-
-You are implementing ${context.input_description}.
-
-${modeInstructions}
-
-## Protocol
-Follow the ${protocolName.toUpperCase()} protocol in \`codev/protocols/${protocolName}/\`.
-Read and internalize the protocol before starting any work.
-`;
-
-  if (context.spec) {
-    prompt += `\n## Spec\nRead the specification at: \`${context.spec.path}\`\n`;
+function resolveProtocolReference(config: Config, protocolName: string): string {
+  const protocolDocPath = resolveCodevFile(
+    `protocols/${protocolName}/protocol.md`,
+    config.workspaceRoot,
+  );
+  if (!protocolDocPath) {
+    logger.debug(`No protocol.md for ${protocolName}; spawning without inlined reference`);
+    return '';
   }
-
-  if (context.plan) {
-    prompt += `\n## Plan\nFollow the implementation plan at: \`${context.plan.path}\`\n`;
-  }
-
-  if (context.issue) {
-    prompt += `\n## Issue #${context.issue.number}
-**Title**: ${context.issue.title}
-
-**Description**:
-${context.issue.body || '(No description provided)'}
-`;
-  }
-
-  if (context.task_text) {
-    prompt += `\n## Task\n${context.task_text}\n`;
-  }
-
-  return prompt;
+  return resolveCodevIncludes(readFileSync(protocolDocPath, 'utf-8'), config.workspaceRoot);
 }
 
 /**
- * Build the prompt using protocol template or fallback to inline prompt
+ * Build the spawn prompt from the protocol's builder-prompt.md template.
+ * Fails fast if the protocol ships no builder-prompt.md (no silent fallback):
+ * a synthesized fallback would have to point the builder at codev/protocols/...
+ * by literal path, which bypasses the four-tier resolver and breaks fresh
+ * installs — the bug class this work exists to fix (#1011).
  */
 export function buildPromptFromTemplate(
   config: Config,
@@ -161,13 +140,19 @@ export function buildPromptFromTemplate(
   context: TemplateContext
 ): string {
   const template = loadBuilderPromptTemplate(config, protocolName);
-  if (template) {
-    logger.info(`Using template: protocols/${protocolName}/builder-prompt.md`);
-    return renderTemplate(template, context);
+  if (!template) {
+    // validateProtocol already fails fast on a missing builder-prompt.md at spawn;
+    // this is the defensive backstop for any path that reaches here without it.
+    fatal(
+      `Protocol "${protocolName}" has no builder-prompt.md; cannot build a spawn prompt. ` +
+      `Add protocols/${protocolName}/builder-prompt.md.`,
+    );
   }
-  // Fallback: no template found, return a basic prompt
-  logger.debug(`No template found for ${protocolName}, using inline prompt`);
-  return buildFallbackPrompt(protocolName, context);
+  logger.info(`Using template: protocols/${protocolName}/builder-prompt.md`);
+  // Deliver the protocol meta-doc (and any templates it includes) fresh at
+  // spawn via the {{protocol_reference}} placeholder, never a committed copy.
+  const protocol_reference = resolveProtocolReference(config, protocolName);
+  return renderTemplate(template, { ...context, protocol_reference });
 }
 
 // =============================================================================
@@ -291,6 +276,34 @@ export function validateProtocol(config: Config, protocolName: string): void {
     const dirs = listAvailableProtocols(config);
     const available = dirs.length > 0 ? `\n\nAvailable protocols: ${dirs.join(', ')}` : '';
     fatal(`Protocol not found: ${protocolName}${available}`);
+  }
+
+  // #1011: a builder-prompt.md is required to spawn. Fail fast rather than
+  // synthesize a degraded fallback prompt that points the builder at
+  // codev/protocols/... by literal path (which bypasses the four-tier resolver
+  // and breaks fresh installs). Every shipped protocol ships one, so this only
+  // fires for a custom/override protocol that omitted it.
+  const builderPrompt = resolveCodevFile(
+    `protocols/${protocolName}/builder-prompt.md`,
+    config.workspaceRoot,
+  );
+  if (!builderPrompt) {
+    fatal(
+      `Protocol "${protocolName}" has no builder-prompt.md; cannot build a spawn prompt. ` +
+      `Add protocols/${protocolName}/builder-prompt.md.`,
+    );
+  }
+
+  // #1011: a protocol.json without a protocol.md is permitted, but the builder
+  // prompt inlines protocol.md unconditionally — so it would spawn with an empty
+  // "## Protocol Reference (full text)" section. Shipped protocols can't hit this
+  // (a completeness test enforces every shipped protocol has a protocol.md); this
+  // warns (non-fatally) when a project's own custom/override protocol omits it.
+  if (protocolJson && !protocolMd) {
+    logger.warn(
+      `Protocol "${protocolName}" has a protocol.json but no protocol.md; builders will ` +
+      `spawn with an empty Protocol Reference section. Add protocols/${protocolName}/protocol.md.`,
+    );
   }
 }
 

@@ -128,7 +128,7 @@ describe('tower-websocket', () => {
       expect(session.attach).not.toHaveBeenCalled();
     });
 
-    it('sends replay data and seq frame on connect', () => {
+    it('brackets replay with pause/resume and sends a seq frame on connect (#1047)', () => {
       const ws = makeWs();
       const session = makeSession(5);
       session.attach.mockReturnValue(['line1', 'line2']);
@@ -136,8 +136,16 @@ describe('tower-websocket', () => {
 
       handleTerminalWebSocket(ws, session, req);
 
-      // Should send replay data + seq control frame
-      expect(ws.send).toHaveBeenCalledTimes(2);
+      // pause control + replay data + resume control + seq control = 4 frames.
+      // The pause/resume bracket lets the client exclude the (potentially large)
+      // replay snapshot from its live-backpressure budget (#1047).
+      expect(ws.send).toHaveBeenCalledTimes(4);
+
+      const controlTypes = ws.send.mock.calls
+        .map((call: unknown[]) => call[0] as Buffer)
+        .filter((buf: Buffer) => buf[0] === 0x00)
+        .map((buf: Buffer) => JSON.parse(buf.subarray(1).toString('utf-8')).type);
+      expect(controlTypes).toEqual(['pause', 'resume', 'seq']);
     });
 
     it('sends only seq frame when no replay lines', () => {

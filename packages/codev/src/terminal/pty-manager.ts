@@ -120,8 +120,12 @@ export class TerminalManager {
    * a fresh one. Reconnect-after-restart passes the persisted id so a terminal
    * keeps its identity across a Tower restart (#991): the client's WebSocket url
    * (`/ws/terminal/<id>`) stays valid, so the existing reconnect machinery
-   * re-attaches transparently rather than hitting a dead id. The in-memory
-   * sessions map is empty at reconcile time, so reusing the id can't collide.
+   * re-attaches transparently rather than hitting a dead id. At startup reconcile
+   * the in-memory sessions map is empty so reuse can't collide; on the *live*
+   * on-the-fly reconnect path (callers guard on a missing session) it normally
+   * can't either, but if an entry already exists under this id we tear it down
+   * first (Issue #1047 Fix E) so a replaced session can't keep firing listeners
+   * on the surviving shellper client.
    */
   createSessionRaw(opts: { label: string; cwd: string; id?: string }): PtySessionInfo {
     if (this.sessions.size >= this.config.maxSessions) {
@@ -129,6 +133,13 @@ export class TerminalManager {
     }
 
     const id = opts.id ?? randomUUID();
+    const existing = this.sessions.get(id);
+    if (existing) {
+      // Defensive teardown before overwrite: detach the old session from its
+      // shellper client so its data/exit/close listeners stop processing on
+      // the client we're about to re-attach to a fresh session.
+      existing.detachShellper();
+    }
     const { cols, rows } = defaultSessionOptions();
     const sessionConfig: PtySessionConfig = {
       id,
@@ -165,6 +176,21 @@ export class TerminalManager {
   /** List all sessions. */
   listSessions(): PtySessionInfo[] {
     return Array.from(this.sessions.values()).map(s => s.info);
+  }
+
+  /**
+   * Snapshot of each session's ring-buffer partial size and client count
+   * (Issue #1047 observability). The partial is unbounded (kept whole for
+   * faithful replay); a large, growing partial flags a no-newline full-screen
+   * TUI stream, so this surfaces memory growth if it ever becomes a concern.
+   */
+  inspectPartials(): Array<{ id: string; label: string; partialBytes: number; clients: number }> {
+    return Array.from(this.sessions.values()).map(s => ({
+      id: s.id,
+      label: s.label,
+      partialBytes: s.partialBytes,
+      clients: s.clientCount,
+    }));
   }
 
   /** Get a session by ID. */

@@ -58,11 +58,17 @@ export function handleTerminalWebSocket(ws: WebSocket, session: PtySession, req:
     replayLines = session.attach(client);
   }
 
-  // Send replay data as binary data frame
+  // Send replay data as binary data frame, bracketed by pause/resume control
+  // frames (#1047). The bracket tells the client "this is the one-shot buffer
+  // snapshot" so it paces the write and excludes it from its live-backpressure
+  // budget. Without it, a client counts a large replay as live overload and
+  // (historically) looped forever reconnecting for the same oversized replay.
   if (replayLines.length > 0) {
     const replayData = replayLines.join('\n');
     if (ws.readyState === WebSocket.OPEN) {
+      ws.send(encodeControl({ type: 'pause', payload: {} }));
       ws.send(encodeData(replayData));
+      ws.send(encodeControl({ type: 'resume', payload: {} }));
     }
   }
 

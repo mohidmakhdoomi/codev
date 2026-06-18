@@ -117,6 +117,15 @@ export class PtySession extends EventEmitter {
    * User input flows: WebSocket → write() → shellper.
    */
   attachShellper(client: IShellperClient, replayData: Buffer, shellperPid: number, shellperSessionId?: string): void {
+    // Idempotent re-attach (Issue #1047 Fix E): if a previous client is still
+    // attached, drop our listeners on it before subscribing to the new one so
+    // a re-attach can't double the per-byte data fan-out (each leaked 'data'
+    // listener would re-run onPtyData for every PTY byte).
+    if (this.shellperClient && this.shellperClient !== client) {
+      this.shellperClient.removeAllListeners('data');
+      this.shellperClient.removeAllListeners('exit');
+      this.shellperClient.removeAllListeners('close');
+    }
     this._shellperBacked = true;
     this.shellperClient = client;
     this.shellperPid = shellperPid;
@@ -408,6 +417,11 @@ export class PtySession extends EventEmitter {
 
   get clientCount(): number {
     return this.clients.size;
+  }
+
+  /** Bytes held in the ring buffer's incomplete-line partial (observability, #1047). */
+  get partialBytes(): number {
+    return this.ringBuffer.partialBytes;
   }
 
   /** Record that a user sent input to this session. */

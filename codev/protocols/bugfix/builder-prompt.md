@@ -25,7 +25,7 @@ You are running in STRICT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the BUGFIX protocol: `codev/protocols/bugfix/protocol.md`
+Follow the BUGFIX protocol. Read and internalize the protocol before starting any work. The full protocol text is included below under **## Protocol Reference (full text)**.
 
 {{#if issue}}
 ## Issue #{{issue.number}}
@@ -67,3 +67,9 @@ If you encounter **pre-existing flaky tests** (intermittent failures unrelated t
 1. Read the BUGFIX protocol
 2. Review the issue details
 3. Reproduce the bug before fixing
+
+---
+
+## Protocol Reference (full text)
+
+{{protocol_reference}}

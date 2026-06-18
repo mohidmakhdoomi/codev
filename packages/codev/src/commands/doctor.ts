@@ -13,6 +13,7 @@ import { query as claudeQuery } from '@anthropic-ai/claude-agent-sdk';
 import { executeForgeCommandSync, loadForgeConfig, validateForgeConfig, resolveAllConcepts, type ConceptResolution } from '../lib/forge.js';
 import { detectHarnessFromCommand } from '../agent-farm/utils/harness.js';
 import { auditPrGates, formatPrGateWarning } from '../lib/pr-gate-audit.js';
+import { auditFrameworkRefs, formatFrameworkRefFinding, hasFrameworkOverrides } from '../lib/framework-ref-audit.js';
 import { resolveAgyBin, AGY_OAUTH_MARKERS } from './consult/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -722,6 +723,31 @@ export async function doctor(): Promise<number> {
       }
     }
     console.log('');
+
+    // Framework-file reference audit (#1011): the user's OWN codev/ overrides
+    // (codev/protocols, codev/roles) must not instruct shell reads of framework
+    // docs by literal path, which bypass the resolver and fail in fresh installs.
+    // Scans the project's local overrides only (the shipped skeleton is the
+    // framework's responsibility, guarded by its own CI). Warn-not-error, and a
+    // true no-op (no output) when the project ships no protocol/role overrides.
+    const codevRoot = resolve(workspaceRoot, 'codev');
+    if (hasFrameworkOverrides(codevRoot)) {
+      const frameworkRefs = auditFrameworkRefs(codevRoot);
+      if (frameworkRefs.length === 0) {
+        console.log(`  ${chalk.green('✓')} No literal-path shell reads of framework files in codev/ overrides`);
+      } else {
+        for (const finding of frameworkRefs) {
+          console.log(`  ${chalk.yellow('⚠')} ${formatFrameworkRefFinding(finding)}`);
+          warnings++;
+          warningDetails.push({
+            name: 'Framework refs',
+            issue: `codev/${formatFrameworkRefFinding(finding)}`,
+            recommendation: 'Deliver framework content via spawn/porch inline; see the "Framework files" convention in CLAUDE.md / AGENTS.md',
+          });
+        }
+      }
+      console.log('');
+    }
 
     // Protocol PR-gate audit (#943): a PR-producing protocol whose resolved
     // definition (local override included) lost its `pr` gate will silently

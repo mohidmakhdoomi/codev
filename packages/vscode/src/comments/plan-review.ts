@@ -19,6 +19,11 @@
  */
 
 import * as vscode from 'vscode';
+import {
+  serializeReviewMarker,
+  markerInsertionLine,
+  isEligibleReviewPath,
+} from '@cluesmith/codev-core/review-markers';
 import type { OverviewCache } from '../views/overview-data.js';
 
 /**
@@ -27,11 +32,14 @@ import type { OverviewCache } from '../views/overview-data.js';
  *   [2] — comment body text
  *
  * Tolerant of whitespace; mirrors the regex shape used elsewhere
- * (review-decorations.ts, snippets/review.json).
+ * (review-decorations.ts, snippets/review.json). The on-disk marker FORMAT and
+ * the eligible-path rule now live in `@cluesmith/codev-core/review-markers` so
+ * this editor path and the canvas host (#859) share one definition; this
+ * thread-display pattern stays local because it anchors threads at the marker's
+ * own position (the canvas instead anchors to the line above — same bytes,
+ * different surface).
  */
 const REVIEW_COMMENT_PATTERN = /<!--\s*REVIEW\s*\(@([^)]+)\)\s*:\s*([\s\S]*?)\s*-->/g;
-
-const ELIGIBLE_PATH_REGEX = /\/codev\/(plans|specs|reviews)\//;
 
 const CONTROLLER_ID = 'codev-review';
 
@@ -148,18 +156,21 @@ async function submitReviewComment(
   const document = await vscode.workspace.openTextDocument(thread.uri);
   const line = thread.range.start.line;
   const indent = document.lineAt(line).text.match(/^\s*/)?.[0] ?? '';
-  // Normalize whitespace — review markers are single-line by convention,
-  // and review-decorations.ts assumes the marker fits one line.
-  const body = reply.text.replace(/\s+/g, ' ').trim();
   // Author = current GitHub login (from Tower's overview cache), falling back
   // to "architect" before Tower has done a first fetch or when `gh` is
   // unconfigured. Same handle used for "assigned to you" sorting in the
   // Backlog view, so REVIEW markers @mention a real GitHub user.
   const author = overviewCache.getData()?.currentUser ?? 'architect';
-  const commentLine = `${indent}<!-- REVIEW(@${author}): ${body} -->`;
+  // Format + line convention come from the shared core codec (whitespace
+  // normalization and the "marker on the line after the anchor" rule live there).
+  const commentLine = serializeReviewMarker(author, reply.text, indent);
 
   const edit = new vscode.WorkspaceEdit();
-  edit.insert(thread.uri, new vscode.Position(line + 1, 0), commentLine + '\n');
+  edit.insert(
+    thread.uri,
+    new vscode.Position(markerInsertionLine(line), 0),
+    commentLine + '\n',
+  );
   await vscode.workspace.applyEdit(edit);
   await document.save();
 
@@ -192,6 +203,5 @@ async function deleteReviewCommentByThread(thread: vscode.CommentThread): Promis
 
 function isEligibleDocument(doc: vscode.TextDocument): boolean {
   if (doc.languageId !== 'markdown') { return false; }
-  const fsPath = doc.uri.fsPath.replace(/\\/g, '/');
-  return ELIGIBLE_PATH_REGEX.test(fsPath);
+  return isEligibleReviewPath(doc.uri.fsPath);
 }

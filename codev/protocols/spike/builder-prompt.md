@@ -11,7 +11,7 @@ You are running in SOFT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the SPIKE protocol: `codev/protocols/spike/protocol.md`
+Follow the SPIKE protocol. Read and internalize the protocol before starting any work. The full protocol text is included below under **## Protocol Reference (full text)**.
 
 {{#if task}}
 ## Spike Question
@@ -60,3 +60,9 @@ If you encounter **pre-existing flaky tests** (intermittent failures unrelated t
 1. Read the SPIKE protocol document
 2. Understand the question you're investigating
 3. Start with research — don't jump straight to code
+
+---
+
+## Protocol Reference (full text)
+
+{{protocol_reference}}

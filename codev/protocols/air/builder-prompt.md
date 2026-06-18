@@ -24,7 +24,7 @@ You are running in STRICT mode. This means:
 {{/if}}
 
 ## Protocol
-Follow the AIR protocol: `codev/protocols/air/protocol.md`
+Follow the AIR protocol. Read and internalize the protocol before starting any work. The full protocol text is included below under **## Protocol Reference (full text)**.
 
 ## Baked Decisions
 
@@ -73,3 +73,9 @@ If you encounter **pre-existing flaky tests** (intermittent failures unrelated t
 1. Read the AIR protocol
 2. Review the issue details
 3. Implement the feature
+
+---
+
+## Protocol Reference (full text)
+
+{{protocol_reference}}

@@ -144,6 +144,107 @@ export function copyResourceTemplates(
   return { copied, skipped };
 }
 
+/** The capped hot-tier files materialized into a project's codev/resources/ (Spec 987). */
+export const HOT_TIER_FILES = ['arch-critical.md', 'lessons-critical.md'] as const;
+
+/**
+ * Copy the hot-tier files (arch-critical.md, lessons-critical.md) from the skeleton
+ * into the project's codev/resources/.
+ *
+ * Spec 987: these are framework-provided starters each project then curates. Porch
+ * injection and the CLAUDE/AGENTS managed block resolve them via the four-tier chain
+ * (so injection works even before this runs), but materializing local copies makes the
+ * hot tier visible and per-project editable. `skipExisting` so a curated copy is never
+ * overwritten. This is a focused, wired-in step — distinct from the dead
+ * `copyResourceTemplates` (which init/adopt/update do not call).
+ */
+export function copyHotTierDefaults(
+  targetDir: string,
+  skeletonDir: string,
+  options: CopyResourceTemplatesOptions = {}
+): CopyResourceTemplatesResult {
+  const { skipExisting = false } = options;
+  const resourcesDir = path.join(targetDir, 'codev', 'resources');
+  const copied: string[] = [];
+  const skipped: string[] = [];
+
+  if (!fs.existsSync(resourcesDir)) {
+    fs.mkdirSync(resourcesDir, { recursive: true });
+  }
+
+  for (const file of HOT_TIER_FILES) {
+    const destPath = path.join(resourcesDir, file);
+    const srcPath = path.join(skeletonDir, 'templates', file);
+
+    if (skipExisting && fs.existsSync(destPath)) {
+      skipped.push(file);
+      continue;
+    }
+    if (fs.existsSync(srcPath)) {
+      fs.copyFileSync(srcPath, destPath);
+      copied.push(file);
+    }
+  }
+
+  return { copied, skipped };
+}
+
+/**
+ * Cold-tier governance files: the skeleton starter to copy from → the project-local
+ * filename it materializes as (issue #1012).
+ *
+ * The starter sources are minimal placeholders (`*.starter.md`) kept separate from the rich
+ * `templates/{arch,lessons-learned}.md` reference templates — those carry a "this file is not
+ * copied into projects" note and are the manual-`cp` opt-in, so they must not be the copied
+ * starter. Each project instead gets a trivial placeholder it grows over time, enough for the
+ * review-phase read to succeed against a real, locally-owned file.
+ */
+export const COLD_TIER_FILES = [
+  { src: 'arch.starter.md', dest: 'arch.md' },
+  { src: 'lessons-learned.starter.md', dest: 'lessons-learned.md' },
+] as const;
+
+/**
+ * Copy the cold-tier governance files (arch.md, lessons-learned.md) from the skeleton's
+ * `*.starter.md` placeholders into the project's codev/resources/.
+ *
+ * Companion to `copyHotTierDefaults`: Spec 987 materializes the hot tier on
+ * init/adopt/update but left the cold tier — which the review prompts read and the hot-tier
+ * maps point into — uncreated. `skipExisting` so a curated file is never overwritten (the
+ * cold files are already registered as protected user data in templates.ts). Results are
+ * keyed by the destination filename.
+ */
+export function copyColdTierDefaults(
+  targetDir: string,
+  skeletonDir: string,
+  options: CopyResourceTemplatesOptions = {}
+): CopyResourceTemplatesResult {
+  const { skipExisting = false } = options;
+  const resourcesDir = path.join(targetDir, 'codev', 'resources');
+  const copied: string[] = [];
+  const skipped: string[] = [];
+
+  if (!fs.existsSync(resourcesDir)) {
+    fs.mkdirSync(resourcesDir, { recursive: true });
+  }
+
+  for (const { src, dest } of COLD_TIER_FILES) {
+    const destPath = path.join(resourcesDir, dest);
+    const srcPath = path.join(skeletonDir, 'templates', src);
+
+    if (skipExisting && fs.existsSync(destPath)) {
+      skipped.push(dest);
+      continue;
+    }
+    if (fs.existsSync(srcPath)) {
+      fs.copyFileSync(srcPath, destPath);
+      copied.push(dest);
+    }
+  }
+
+  return { copied, skipped };
+}
+
 interface CopyRootFilesOptions {
   handleConflicts?: boolean;
 }

@@ -1,0 +1,29 @@
+id: '1047'
+title: tower-terminals-architects-bui
+protocol: pir
+phase: review
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: approved
+    requested_at: '2026-06-14T22:20:45.222Z'
+    approved_at: '2026-06-14T23:10:56.668Z'
+  dev-approval:
+    status: approved
+    requested_at: '2026-06-14T23:33:49.007Z'
+    approved_at: '2026-06-15T06:08:32.090Z'
+  pr:
+    status: pending
+    requested_at: '2026-06-15T06:25:13.811Z'
+iteration: 1
+build_complete: true
+history: []
+started_at: '2026-06-14T22:12:29.323Z'
+updated_at: '2026-06-15T06:25:13.812Z'
+pr_history:
+  - phase: review
+    pr_number: 1050
+    branch: builder/pir-1047
+    created_at: '2026-06-15T06:15:14.783Z'
+pr_ready_for_human: true

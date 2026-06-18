@@ -1,7 +1,8 @@
 /**
  * Codev: View {Spec,Plan,Review} File — open the on-disk markdown
- * artifact a builder has produced (or is about to produce) directly in
- * a VSCode editor tab.
+ * artifact a builder has produced (or is about to produce) in the rendered
+ * Codev Markdown Preview (#859), where it can be read and commented on. Raw
+ * markdown is still one step away via "Reopen With… → Text Editor".
  *
  * Right-click a builder row → "View Spec/Plan/Review File".
  *
@@ -23,6 +24,7 @@ import * as vscode from 'vscode';
 import { resolve } from 'node:path';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import type { ConnectionManager } from '../connection-manager.js';
+import { MarkdownPreviewProvider } from '../markdown-preview/preview-provider.js';
 
 type ArtifactKind = 'plan' | 'spec' | 'review';
 
@@ -120,8 +122,9 @@ async function viewArtifact(
     target = picked.path;
   }
 
-  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(target));
-  await vscode.window.showTextDocument(doc, { preview: false });
+  // Render in the Codev Markdown Preview (read + comment), not the raw editor.
+  const uri = vscode.Uri.file(target);
+  await vscode.commands.executeCommand('vscode.openWith', uri, MarkdownPreviewProvider.viewType);
 }
 
 function safeMtime(path: string): number {

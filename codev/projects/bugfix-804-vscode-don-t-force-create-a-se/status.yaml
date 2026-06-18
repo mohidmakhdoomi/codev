@@ -1,0 +1,17 @@
+id: bugfix-804
+title: vscode-don-t-force-create-a-se
+protocol: bugfix
+phase: pr
+plan_phases: []
+current_plan_phase: null
+gates:
+  pr:
+    status: approved
+    requested_at: '2026-06-13T10:56:14.113Z'
+    approved_at: '2026-06-13T10:59:28.779Z'
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-06-13T10:52:01.508Z'
+updated_at: '2026-06-13T10:59:28.780Z'
+pr_ready_for_human: false

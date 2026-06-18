@@ -3,7 +3,7 @@
   "publisher": "cluesmith",
   "displayName": "Codev for VS Code",
   "description": "Codev helps humans and agents co-develop both the context and the code of the project.",
-  "version": "3.1.9",
+  "version": "3.2.0",
   "license": "Apache-2.0",
   "icon": "icons/codev.png",
   "pricing": "Free",
@@ -45,10 +45,34 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "customEditors": [
+      {
+        "viewType": "codev.markdownPreview",
+        "displayName": "Codev Markdown Preview",
+        "selector": [
+          { "filenamePattern": "**/codev/specs/**/*.md" },
+          { "filenamePattern": "**/codev/plans/**/*.md" },
+          { "filenamePattern": "**/codev/reviews/**/*.md" }
+        ],
+        "priority": "option"
+      }
+    ],
     "commands": [
       {
         "command": "codev.helloWorld",
         "title": "Codev: Show Connection State"
+      },
+      {
+        "command": "codev.openMarkdownPreview",
+        "title": "Codev: Open Markdown Preview",
+        "icon": {
+          "light": "icons/codev-light.svg",
+          "dark": "icons/codev-dark.svg"
+        }
+      },
+      {
+        "command": "codev.forwardSelectionToBuilder",
+        "title": "Codev: Forward Selection to Builder"
       },
       {
         "command": "codev.openArchitectTerminal",
@@ -179,6 +203,14 @@
         "title": "Codev: Open Builder File Diff"
       },
       {
+        "command": "codev.diffNextFile",
+        "title": "Codev: Go to Next File in Diff"
+      },
+      {
+        "command": "codev.diffPreviousFile",
+        "title": "Codev: Go to Previous File in Diff"
+      },
+      {
         "command": "codev.openWorktreeWindow",
         "title": "Codev: Open Worktree in New Window"
       },
@@ -275,6 +307,11 @@
         "icon": "$(mention)"
       },
       {
+        "command": "codev.referencePRInArchitect",
+        "title": "Codev: Reference PR in Architect",
+        "icon": "$(mention)"
+      },
+      {
         "command": "codev.openBacklogIssue",
         "title": "Codev: Open Issue in Browser"
       },
@@ -294,7 +331,22 @@
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "codev.openMarkdownPreview",
+          "when": "resourceLangId == markdown && resourcePath =~ /\\/codev\\/(plans|specs|reviews)\\//",
+          "group": "navigation"
+        }
+      ],
       "commandPalette": [
+        {
+          "command": "codev.openMarkdownPreview",
+          "when": "resourceLangId == markdown && resourcePath =~ /\\/codev\\/(plans|specs|reviews)\\//"
+        },
+        {
+          "command": "codev.forwardSelectionToBuilder",
+          "when": "false"
+        },
         {
           "command": "codev.openBuilderById",
           "when": "false"
@@ -309,6 +361,10 @@
         },
         {
           "command": "codev.referenceIssueInArchitect",
+          "when": "false"
+        },
+        {
+          "command": "codev.referencePRInArchitect",
           "when": "false"
         },
         {
@@ -386,6 +442,13 @@
         {
           "command": "codev.devServer.hideSidebar",
           "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "codev.forwardSelectionToBuilder",
+          "when": "codev.activeEditorIsBuilderFile && editorHasSelection",
+          "group": "codev@1"
         }
       ],
       "view/item/context": [
@@ -472,6 +535,11 @@
         {
           "command": "codev.referenceIssueInArchitect",
           "when": "view == codev.backlog && viewItem == backlog-item",
+          "group": "inline@1"
+        },
+        {
+          "command": "codev.referencePRInArchitect",
+          "when": "view == codev.pullRequests && viewItem == pull-request",
           "group": "inline@1"
         },
         {
@@ -635,6 +703,22 @@
         "mac": "cmd+k g"
       },
       {
+        "command": "codev.forwardSelectionToBuilder",
+        "key": "ctrl+k b",
+        "mac": "cmd+k b",
+        "when": "codev.activeEditorIsBuilderFile && editorHasSelection"
+      },
+      {
+        "command": "codev.diffNextFile",
+        "key": "ctrl+alt+]",
+        "when": "codev.activeEditorIsBuilderFile"
+      },
+      {
+        "command": "codev.diffPreviousFile",
+        "key": "ctrl+alt+[",
+        "when": "codev.activeEditorIsBuilderFile"
+      },
+      {
         "command": "workbench.view.extension.codev",
         "key": "ctrl+alt+c",
         "mac": "cmd+alt+c",
@@ -725,10 +809,22 @@
           "default": true,
           "description": "Connect to Tower on activation"
         },
+        "codev.terminal.repaintOnRefocus": {
+          "type": "boolean",
+          "default": false,
+          "description": "Force Codev terminals to redraw when the VSCode window regains focus. Off by default — terminals already render correctly on open. Enable this only if you still see rendering glitches (stale or misplaced content) after switching back to the window."
+        },
         "codev.autoStartTower": {
           "type": "boolean",
           "default": true,
           "description": "Auto-start Tower if not running on activation"
+        },
+        "codev.cliVersionTimeoutMs": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 100,
+          "maximum": 60000,
+          "description": "Maximum time (in milliseconds) to wait for `codev --version` during the startup CLI preflight. Bump higher if you're on a slow remote / VM / network filesystem and the 'Get started with Codev' walkthrough keeps appearing despite codev being installed (check the Codev Output channel for `[Preflight] codev --version timed out` lines to confirm). Default 5000ms covers most local and remote-dev environments."
         },
         "codev.autoOpenBuilderTerminal": {
           "type": "string",
@@ -779,6 +875,18 @@
           ],
           "default": "stage",
           "description": "Which axis the Builders view groups by. 'stage' (default) is the action axis; 'area' is the domain axis. Toggleable via the Builders title-bar button."
+        },
+        "codev.markdownPreview.fontSize": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Prose font size (in pixels) for the Codev Markdown Preview. 0 uses the built-in default (16px, the github-markdown-css baseline). Code blocks are sized relative to this."
+        },
+        "codev.markdownPreview.lineHeight": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Prose line-height (unitless multiplier) for the Codev Markdown Preview. 0 uses the built-in default (1.5, the github-markdown-css baseline)."
         }
       }
     },
@@ -821,7 +929,7 @@
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm compile-tests && pnpm compile && pnpm lint",
-    "check-types": "tsc --noEmit",
+    "check-types": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
     "lint": "eslint src",
     "test": "vscode-test",
     "test:unit": "vitest run",
@@ -830,14 +938,19 @@
     "vscode:publish:pre": "sh scripts/publish.sh --pre-release"
   },
   "dependencies": {
+    "@cluesmith/codev-artifact-canvas": "workspace:*",
     "@cluesmith/codev-core": "workspace:*",
     "@cluesmith/codev-types": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/vscode": "~1.105.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "@types/ws": "^8.18.1",
     "typescript-eslint": "^8.48.1",
     "eslint": "^9.39.1",
