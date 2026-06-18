@@ -89,3 +89,12 @@ coherence): added `flattenTreeOrder` (DFS leaf order) to file-path-tree.ts and
 `navigationOrder(files, viewAsTree)` to diff-nav.ts. Tree mode → depth-first tree
 order; flat mode → unchanged git order (matches what flat list shows). +3 tests
 (457 total). green.
+
+### dev-approval iteration 3: navigation wrap-around
+Verified hunk-stepping is VSCode's BUILT-IN change nav (F7), which wraps at the
+last hunk and has no setting to disable. We own no hunk nav. Rather than build a
+custom no-wrap hunk navigator, reviewer chose to make FILE nav wrap too for
+consistency. Changed `computeNavTarget` to modulo wrap (forward past last → first,
+backward past first → last; single file wraps to itself); dropped `atEdge` + the
+edge flash in navigateDiff. Updated computeNavTarget tests. green (457).
+Also filed #1072 (vscode dedup: builderById + file-view config reader).
