@@ -112,3 +112,18 @@ PR #1075 opened (review file as body), recorded with porch. porch review checks
 green (pr_exists, arch/lessons section presence). 3-way consultation (gemini/codex/
 claude, type=impl) running in background — single advisory pass. Architect notified.
 → will report any REQUEST_CHANGES then wait at pr gate.
+
+### Consultation results + fixes (iteration 1)
+- Codex REQUEST_CHANGES (HIGH): reveal gate matched any tracked fsPath, so a
+  standalone (non-diff) open of a worktree file could hijack selection. REAL.
+  Fixed: `isStandaloneTextTab` gate — reveal skips plain TabInputText, fires only
+  for diff tabs. Negative gate (skip TabInputText) chosen because
+  TabInputTextMultiDiff isn't in stable @types/vscode@1.105. + regression test.
+- Claude COMMENT (HIGH): stale "no wrap" docstring in diff-nav.test.ts header.
+  Fixed.
+- Gemini: unusable (agy sandbox meta-output, no verdict) — non-blocking skip.
+  (porch parsed it as REQUEST_CHANGES → wrote rebuttal file.)
+Rebuttals: codev/projects/1066-*/1066-review-iter1-rebuttals.md. Dispositions also
+in the review file + PR #1075 body. check-types/lint/tests green (461, +4).
+porch review checks green → **pr gate pending**. Architect notified, leading with
+the Codex fix. Waiting for human to review PR + approve pr gate, then I merge.
