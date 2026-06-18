@@ -69,3 +69,12 @@ Fixes (now 22 tokens: +`--codev-canvas-code-foreground`):
 
 Tests: canvas 55/55, vscode 442/442; typechecks + bundle clean; verified new rules land in
 bundled webview CSS.
+
+## dev-approval round 3 — horizontal scroll
+
+Reviewer asked how line wrapping works / why a horizontal scrollbar sometimes appears. Two kinds:
+(1) intentional per-block scroll on `pre` (long code lines) + `table` (wide tables) via their own
+`overflow:auto` — correct, github-style; (2) the bug: prose had no rule to break a long
+UNbreakable token (long inline-code span, URL, file path), so it overflowed the column and forced
+a PAGE-level scrollbar. Fix: `overflow-wrap: break-word` on `.codev-artifact-canvas-body`
+(github-markdown-css's own approach); `pre`/`table` opt out by design. Verified in both bundles.
