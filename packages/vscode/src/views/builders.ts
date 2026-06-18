@@ -182,12 +182,25 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
    * `<builderId>::folder::<fullPath>` id `materialiseNode` produces, so the
    * chain matches what `getChildren` renders.
    */
+  /**
+   * The builder with this id, but only if it has a worktree on record — the
+   * shared precondition for the changed-file methods (`fileChildren`,
+   * `parentForFileNode`, `findFileItem`). The return type narrows
+   * `worktreePath` to a non-null `string`, so callers can pass it to
+   * `diffCache.getDiff` without re-guarding.
+   */
+  private builderWithWorktree(builderId: string): (OverviewBuilder & { worktreePath: string }) | undefined {
+    const builder = this.cache.getData()?.builders.find(b => b.id === builderId);
+    if (!builder?.worktreePath) { return undefined; }
+    return builder as OverviewBuilder & { worktreePath: string };
+  }
+
   private async parentForFileNode(
     element: BuilderFileTreeItem | BuilderFolderTreeItem,
   ): Promise<vscode.TreeItem | undefined> {
     const builderId = element.builderId;
-    const builder = this.cache.getData()?.builders.find(b => b.id === builderId);
-    if (!builder?.worktreePath) { return undefined; }
+    const builder = this.builderWithWorktree(builderId);
+    if (!builder) { return undefined; }
     const builderRow = this.makeBuilderRow(builder, Date.now());
 
     if (!this.viewAsTree()) {
@@ -217,8 +230,8 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
    * a relative path).
    */
   async findFileItem(builderId: string, relPath: string): Promise<BuilderFileTreeItem | undefined> {
-    const builder = this.cache.getData()?.builders.find(b => b.id === builderId);
-    if (!builder?.worktreePath) { return undefined; }
+    const builder = this.builderWithWorktree(builderId);
+    if (!builder) { return undefined; }
     const result = await this.diffCache.getDiff(builderId, builder.worktreePath);
     if (result.error) { return undefined; }
     const file = result.files.find(f => f.plan.resourcePath === relPath);
@@ -363,8 +376,8 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
    * in both modes — only the grouping around the leaves differs.
    */
   private async fileChildren(builderId: string): Promise<vscode.TreeItem[]> {
-    const builder = this.cache.getData()?.builders.find(b => b.id === builderId);
-    if (!builder?.worktreePath) {
+    const builder = this.builderWithWorktree(builderId);
+    if (!builder) {
       return [placeholder('No worktree on record')];
     }
 
