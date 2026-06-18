@@ -50,7 +50,12 @@ export function renderMarkdownPreviewHtml(opts: MarkdownPreviewHtmlOptions): str
       --codev-canvas-accent: var(--vscode-textLink-foreground);
       --codev-canvas-border: var(--vscode-panel-border);
       --codev-canvas-muted: var(--vscode-descriptionForeground);
-      --codev-canvas-code-background: var(--vscode-textCodeBlock-background);
+      /* Inline code pairs VS Code's dedicated preformat tokens (foreground + background are
+       * theme-tuned to contrast each other), fixing low-contrast inline code in dark themes
+       * (#1053). textPreformat.* — not textCodeBlock.background + the general foreground, which
+       * pair poorly because they come from different theme color groups. */
+      --codev-canvas-code-background: var(--vscode-textPreformat-background);
+      --codev-canvas-code-foreground: var(--vscode-textPreformat-foreground);
       --codev-canvas-link: var(--vscode-textLink-foreground);
       --codev-canvas-comment-marker: var(--vscode-editorWarning-foreground);
 
