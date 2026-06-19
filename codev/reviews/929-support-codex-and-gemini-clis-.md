@@ -78,7 +78,17 @@ No **HOT** (`lessons-critical.md`) change: this is a spec-narrow recipe better s
 
 ## Consultation Findings & Dispositions
 
-_A full 3-way advisory CMAP (gemini, codex, claude; whole-file, full-PR review) runs on this codex-only PR; verdicts and dispositions will be recorded here._
+A **full 3-way advisory CMAP** (gemini, codex, claude) ran on this codex-only PR as a single pass, instructed to read every changed file **in full** plus callers/dependencies and assess the whole PR (not the unified diff). Verdicts:
+
+- **codex: APPROVE** — no blocking issues. Confirmed the crash-loop fix is correct and the Claude-only resume gating is properly centralized behind `buildResume`. Three non-blocking coverage nits (below).
+- **claude: APPROVE** — no blocking issues. Traced every changed file + callers; verified a codex/gemini harness can never reach a `--resume <claude-uuid>` at either the architect or builder site, that the gemini-architect seam removal is complete (zero dangling refs), and that the crash-loop regression is pinned from **four independent angles** (`discover-resume-session`, `tower-instances`, `config`, `spawn-worktree` tests). Four non-blocking observations (below).
+- **gemini (agy): no usable verdict** — the Antigravity CLI returned a generic greeting in 8.1s rather than performing the review (the structural agy limitation — no durable task/system-prompt channel — that motivated deferring agy as an architect to #1063). Not a review of the code; recorded as unavailable, not as an APPROVE or REQUEST_CHANGES.
+
+**Net: 2/2 substantive reviewers APPROVE, zero REQUEST_CHANGES, zero blocking defects → no code change required.**
+
+**Non-blocking nits (consensus, accepted as a low-priority follow-up):** both codex and claude noted that the `doctor` architect-shell branch (the codex-affirm / gemini-builder-only-warning logic) and the no-Tower `afx architect` codex path lack *direct* unit tests, and that the "explicit `shell.architectHarness` wins" rule isn't pinned. Disposition: **deferred.** The branch logic is trivial and both reviewers independently verified it reads correctly; there is currently **no** test harness for the `doctor` `shell.architect` block at all (the pre-existing opencode-architect branch is likewise untested), so adding the first test for it is net-new infrastructure beyond this PR's subtractive scope — tracked as a follow-up rather than expanded here. claude also re-flagged the known `doctor`-reads-config-not-overrides cosmetic discrepancy (same class as the #1062 caveat) and the `safeToResume` stale-removed-sibling jsonl gap (documented "acceptable until #832"). No action; both pre-existing and separable.
+
+Full reviewer outputs: `/tmp/cmap-929-{codex,claude,gemini}.md`.
 
 ## How to Test Locally
 

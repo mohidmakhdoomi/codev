@@ -156,3 +156,33 @@ Implemented the subtractive gemini-architect removal. Three commits:
 Grep-clean: 0 refs to `getArchitectFiles` / `writeArchitectContextFiles` / `.gemini/settings.json`
 anywhere. Diff is purely subtractive (38 ins / 166 del). Build green. Full suite: 3332 passed, 48
 skipped, 0 failures. Pushing to fork; signalling dev-approval.
+
+### 2026-06-19 — Review phase: codex-only review file + full 3-way CMAP
+
+Refreshed `codev/reviews/929-*.md` to the net codex-only delivered state (PR body), pushed, updated
+PR #1059 title/body (cluesmith/codev#1059), recorded PR in porch pr_history.
+
+Per architect instruction, running a FULL 3-way CMAP (not the protocol-default 2-way) over the whole
+PR — whole-file review, not diff hunks. Used `--prompt-file /tmp/cmap-929-prompt.md` (since `--type pr`
+is diff-centric and `--prompt`/`--type` are mutually exclusive) instructing each reviewer to read every
+changed file in full + callers/deps and assess the full PR as it stands. All three (gemini/codex/claude)
+launched in parallel + background → /tmp/cmap-929-{gemini,codex,claude}.md. Advisory single pass.
+Awaiting verdicts; will report all three to architect leading with any REQUEST_CHANGES + disposition.
+Will NOT self-merge — stop at pr gate.
+
+### 2026-06-19 — Full 3-way CMAP verdicts (advisory, single pass)
+
+- **codex: APPROVE** — no blockers; crash-loop fix correct, resume gating centralized behind buildResume.
+  3 non-blocking coverage nits.
+- **claude: APPROVE** — no blockers; whole-file trace confirms codex/gemini can never reach
+  `--resume <claude-uuid>` at either site, seam removal clean (0 dangling refs), regression pinned 4 ways.
+  4 non-blocking obs.
+- **gemini (agy): no usable verdict** — returned a greeting in 8.1s, didn't review (agy structural
+  limitation, the #1063 reason). Recorded as unavailable.
+
+Net: 2/2 substantive reviewers APPROVE, zero REQUEST_CHANGES, zero blocking defects → no code change.
+Consensus non-blocking nit (doctor architect-shell branch + codex no-Tower path lack direct tests):
+deferred — trivial branch logic verified-correct by both reviewers, and there's no existing test harness
+for the doctor shell.architect block (even the long-standing opencode branch is untested), so it's
+net-new infra beyond this subtractive PR. Recorded dispositions in review's Consultation section,
+committing + pushing. Then advancing porch to the pr gate; NOT self-merging.
