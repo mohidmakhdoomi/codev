@@ -800,9 +800,11 @@ async function runAgyConsultation(
     ].join('\n\n');
   }
 
-  const args = ['--print', '--sandbox', '--print-timeout', AGY_PRINT_TIMEOUT];
+  const args = ['--sandbox', '--print-timeout', AGY_PRINT_TIMEOUT];
   for (const d of addDirs) args.push('--add-dir', d);
-  args.push(promptArg);
+  // agy 1.0.10 defines --print as a string-valued option, so its prompt must
+  // immediately follow the flag rather than another option such as --sandbox.
+  args.push('--print', promptArg);
 
   const cleanup = () => {
     if (tempFile && fs.existsSync(tempFile)) {
