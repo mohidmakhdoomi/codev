@@ -25,9 +25,8 @@ export async function architect(options: ArchitectOptions = {}): Promise<void> {
   const cmdParts = commands.architect.split(/\s+/);
   const cmd = cmdParts[0];
 
-  // Inject the architect role + write any harness-specific context files
-  // (e.g. Gemini's .gemini/settings.json) via the shared launch helper, so the
-  // no-Tower path matches every Tower launch path (Issue #929).
+  // Inject the architect role via the shared launch helper, so the no-Tower
+  // path matches every Tower launch path (Issue #929).
   const baseArgs = [...cmdParts.slice(1), ...(options.args || [])];
   const { args: allArgs, env } = buildArchitectArgs(baseArgs, config.workspaceRoot);
 

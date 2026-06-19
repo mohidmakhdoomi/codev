@@ -474,10 +474,10 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         // Issue #929: resume is gated on the harness (via buildResume), not the
         // Claude session store directly. Only the Claude harness implements
         // buildResume (its sessions live at ~/.claude/projects/<cwd>/*.jsonl);
-        // codex/gemini return null → fresh, role-injected launch. Previously
-        // this read findLatestSessionId() unconditionally, so a codex/gemini
-        // architect with any stale Claude jsonl built `codex --resume <uuid>`
-        // and shellper restart-looped to death.
+        // codex returns null → fresh, role-injected launch. Previously this
+        // read findLatestSessionId() unconditionally, so a codex architect with
+        // any stale Claude jsonl built `codex --resume <uuid>` and shellper
+        // restart-looped to death.
         //
         // Lookup is unconditional here (unlike builders, where spawn.ts gates
         // discovery behind `options.resume`). The asymmetry is intentional:
@@ -516,8 +516,8 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         const architectHarness = getArchitectHarness(workspacePath);
         const resume = safeToResume ? (architectHarness.buildResume?.(workspacePath) ?? null) : null;
         // Only warn about a *skipped* resume when this harness actually supports
-        // resume (buildResume defined → claude). For codex/gemini, resume was
-        // never on the table, so the sibling-collision warning is just noise.
+        // resume (buildResume defined → claude). For codex, resume was never on
+        // the table, so the sibling-collision warning is just noise.
         if (!safeToResume && architectHarness.buildResume) {
           _deps.log('WARN', `Skipping main architect conversation resume for ${workspacePath}: persisted sibling architects detected (or state.db unreadable); cannot disambiguate jsonl by cwd. See #832.`);
         }
@@ -529,9 +529,8 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
           harnessEnv = {};
           _deps.log('INFO', `Resuming main architect session ${resume.sessionId.slice(0, 8)}… for ${workspacePath}`);
         } else {
-          // Fresh launch — buildArchitectArgs writes any harness-specific
-          // context files (e.g. Gemini's .gemini/settings.json) and injects the
-          // role. The resume path above is claude-only, which needs neither.
+          // Fresh launch — buildArchitectArgs injects the architect role. The
+          // resume path above is claude-only, which needs no role injection.
           const built = buildArchitectArgs(cmdParts.slice(1), workspacePath);
           cmdArgs = built.args;
           harnessEnv = built.env;

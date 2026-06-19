@@ -63,18 +63,6 @@ export interface HarnessProvider {
     args: string[];
     scriptFragment: string;
   } | null;
-
-  /**
-   * Optional: files to write in the workspace (architect cwd) before launching
-   * the architect, written only if absent so a user's existing file is never
-   * clobbered. Used by harnesses that need a project-context manifest the role
-   * injection alone doesn't provide (e.g., Gemini reads .gemini/settings.json's
-   * context.fileName to locate AGENTS.md).
-   */
-  getArchitectFiles?(workspacePath: string): Array<{
-    relativePath: string;
-    content: string;
-  }>;
 }
 
 /** Custom harness definition from .codev/config.json */
@@ -129,13 +117,6 @@ export const GEMINI_HARNESS: HarnessProvider = {
     fragment: '',
     env: { GEMINI_SYSTEM_MD: filePath },
   }),
-  // Gemini reads project context from .gemini/settings.json's context.fileName.
-  // Codex reads AGENTS.md natively; point Gemini at the same manifest so it
-  // launches with project context, not just the injected role.
-  getArchitectFiles: () => ([{
-    relativePath: '.gemini/settings.json',
-    content: JSON.stringify({ context: { fileName: 'AGENTS.md' } }, null, 2) + '\n',
-  }]),
 };
 
 export const OPENCODE_HARNESS: HarnessProvider = {
