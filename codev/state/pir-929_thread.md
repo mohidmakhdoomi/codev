@@ -136,3 +136,23 @@ parity. **REVERT**: #1059's gemini-architect additions. **KEEP**: gemini *builde
 
 Plan rewritten, committing + pushing to `builder/pir-929` (PR #1059 auto-updates). Parked at
 plan-approval — NOT implementing until architect approves.
+
+### 2026-06-19 — Implement phase (codex-only delta)
+
+Implemented the subtractive gemini-architect removal. Three commits:
+1. `a6b42daa` — removed the `getArchitectFiles` HarnessProvider method (gemini = only impl) +
+   `writeArchitectContextFiles` (only consumer) + their `buildArchitectArgs` wiring; dropped the now-
+   unused `HarnessProvider` import in tower-utils.ts; tidied codex/gemini→codex comments at the
+   architect resume site. buildResume seam + codex parity untouched.
+2. `0d920884` — doctor: split codex||gemini affirmation → affirm codex / warn gemini-builder-only-not-
+   architect (#778). Removed `.gemini/settings.json` from root `.gitignore` + `CODEV_GITIGNORE_ENTRIES`.
+3. `be84f75a` — tests + arch.md: removed writeArchitectContextFiles + gemini settings.json architect
+   tests; retargeted the `TOWER_ARCHITECT_CMD` env-override resolution test to codex (kept the
+   override-aware-resolution coverage, dropped the dead getArchitectFiles assertion); dropped gemini
+   resume-skip architect test (codex case already guards the regression); gitignore-backfill
+   expectations now `['.architect-role.md']`. arch.md #929 subsection → claude+codex architects,
+   gemini builder-only, seam removed. CLAUDE.md/AGENTS.md untouched (no gemini-architect claim there).
+
+Grep-clean: 0 refs to `getArchitectFiles` / `writeArchitectContextFiles` / `.gemini/settings.json`
+anywhere. Diff is purely subtractive (38 ins / 166 del). Build green. Full suite: 3332 passed, 48
+skipped, 0 failures. Pushing to fork; signalling dev-approval.
