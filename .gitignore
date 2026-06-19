@@ -8,7 +8,6 @@ worktrees/
 .env
 .update-hashes.json
 .architect-role.md
-.gemini/settings.json
 .codev/config.json
 
 # OS files
