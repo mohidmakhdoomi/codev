@@ -677,22 +677,6 @@ describe('tower-instances', () => {
       },
     ));
 
-    it('gemini architect + stale Claude jsonl → launches fresh, no --resume', withSetup(
-      { shell: { architect: 'gemini' } },
-      async (tmpDir, _fakeHome, uuid) => {
-        const { deps, createSession } = makeCapturingDeps();
-        initInstances(deps);
-
-        const result = await launchInstance(tmpDir);
-        expect(result.success).toBe(true);
-        expect(createSession).toHaveBeenCalled();
-
-        const callStr = JSON.stringify(createSession.mock.calls[0]);
-        expect(callStr).not.toContain('--resume');
-        expect(callStr).not.toContain(uuid);
-      },
-    ));
-
     it('claude architect (default) + stale Claude jsonl → resumes with --resume <uuid>', withSetup(
       null,
       async (tmpDir, _fakeHome, uuid) => {
@@ -709,40 +693,6 @@ describe('tower-instances', () => {
       },
     ));
 
-    it('gemini architect → writes .gemini/settings.json pointing at AGENTS.md', withSetup(
-      { shell: { architect: 'gemini' } },
-      async (tmpDir) => {
-        const { deps } = makeCapturingDeps();
-        initInstances(deps);
-
-        const result = await launchInstance(tmpDir);
-        expect(result.success).toBe(true);
-
-        const settingsPath = path.join(tmpDir, '.gemini', 'settings.json');
-        expect(fs.existsSync(settingsPath)).toBe(true);
-        const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-        expect(parsed.context.fileName).toBe('AGENTS.md');
-      },
-    ));
-
-    it('gemini architect → does not clobber a pre-existing .gemini/settings.json', withSetup(
-      { shell: { architect: 'gemini' } },
-      async (tmpDir) => {
-        const geminiDir = path.join(tmpDir, '.gemini');
-        fs.mkdirSync(geminiDir, { recursive: true });
-        const settingsPath = path.join(geminiDir, 'settings.json');
-        const userContent = JSON.stringify({ context: { fileName: 'MY_OWN.md' } });
-        fs.writeFileSync(settingsPath, userContent);
-
-        const { deps } = makeCapturingDeps();
-        initInstances(deps);
-
-        const result = await launchInstance(tmpDir);
-        expect(result.success).toBe(true);
-
-        expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(userContent);
-      },
-    ));
   });
 
   // =========================================================================

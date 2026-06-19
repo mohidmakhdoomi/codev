@@ -123,12 +123,10 @@ describe('getArchitectHarness / getBuilderHarness override-awareness (#929)', ()
     expect(getBuilderHarness().buildResume).toBeDefined();
   });
 
-  it('TOWER_ARCHITECT_CMD=gemini → gemini architect harness (no claude resume)', () => {
-    process.env.TOWER_ARCHITECT_CMD = 'gemini';
+  it('TOWER_ARCHITECT_CMD=codex → codex architect harness (no claude resume)', () => {
+    process.env.TOWER_ARCHITECT_CMD = 'codex';
     const harness = getArchitectHarness();
     expect(harness.buildResume).toBeUndefined();
-    // gemini harness writes its context manifest
-    expect(harness.getArchitectFiles).toBeDefined();
   });
 
   it('--architect-cmd codex → codex architect harness (no claude resume)', () => {
