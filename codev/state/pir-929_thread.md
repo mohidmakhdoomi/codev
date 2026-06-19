@@ -186,3 +186,15 @@ deferred — trivial branch logic verified-correct by both reviewers, and there'
 for the doctor shell.architect block (even the long-standing opencode branch is untested), so it's
 net-new infra beyond this subtractive PR. Recorded dispositions in review's Consultation section,
 committing + pushing. Then advancing porch to the pr gate; NOT self-merging.
+
+### 2026-06-19 — pr gate PENDING (parked, not self-merging)
+
+`porch done 929` → structural checks green (pr_exists, review_has_arch_updates, review_has_lessons_updates);
+`porch next 929` → gate_pending on **pr**. Porch's recorded verify verdicts: gemini=APPROVE, codex=APPROVE
+(porch's own block / cached). My authoritative LIVE manual 3-way (reported to architect): codex=APPROVE,
+claude=APPROVE, gemini(agy)=unavailable. Zero REQUEST_CHANGES, zero blocking defects either way.
+
+PR body synced to PR #1059. Parked at the pr gate. Per the standing upstream policy (cluesmith/codev#1059
+is a cross-fork contribution: head mohidmakhdoomi:builder/pir-929 → base cluesmith:main) and this session's
+architect instruction ("the pr gate is mine/the maintainer's; do NOT self-merge"), I will NOT run
+`gh pr merge`. Waiting for human pr-gate approval + maintainer merge. Architect notified with all verdicts.
