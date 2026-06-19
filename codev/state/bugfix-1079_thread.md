@@ -29,3 +29,5 @@ Verification:
 ## PR
 
 Opened PR #1081. CMAP results so far: Gemini APPROVE (HIGH) and Codex APPROVE (HIGH), both with no key issues. The initially invoked globally installed Gemini lane reproduced the very bug being fixed, so the review was rerun through the freshly built local CLI and then approved. Claude consultation is blocked by the Claude Code session limit until its stated 8:30pm America/Toronto reset; architect notified. Holding before the PR gate until the required third verdict is available.
+
+The architect subsequently gave explicit human authorization to bypass the unavailable Claude lane and proceed with the two recorded approvals, documenting the quota exception. All six required GitHub CI checks passed before the gate request.
