@@ -13,3 +13,6 @@ Investigated the multi-architect surface:
 Key decision for plan: where to source client-side name validation for the Add Architect InputBox (relocate pure validator to core w/ re-export shim, vs duplicate regex, vs server-side only). Recommending core relocation.
 
 Casing safety check: `removeArchitect` reads `arg.label`; Option A keeps siblings as-typed so label==name stays correct (only `main`→`Main`, and main is unremovable). Verified safe.
+
+## Plan revision 1 — casing decision
+User chose **UPPERCASE all** for architect display labels (`MAIN`, `WEB`, `OB-REFINE`). Internal id stays lowercase. Consequence: sibling label now != raw name, so the `removeArchitect` fix (read raw name from `item.id`, not `arg.label`) is now MANDATORY, not defensive — otherwise Remove would DELETE the uppercased name Tower doesn't know. Plan Gap 3 + Files + Tests + Risks updated. Still awaiting plan-approval gate.

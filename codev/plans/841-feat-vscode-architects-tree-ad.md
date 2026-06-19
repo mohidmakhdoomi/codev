@@ -50,13 +50,16 @@ Restructure `codev.openArchitectTerminal(architectName?)`:
   4. If `architects.length > 1` → `showQuickPick` of the architect names sorted **alphabetically with `main` first** (display label via the casing helper from Gap 3; the picked value resolves back to the raw name). If the user dismisses the picker, no-op. Open the picked architect's `terminalId`.
 - The terminal-open path (`terminalManager.openArchitect(terminalId, name, true)`) is unchanged and always receives the raw lowercase name.
 
-### Gap 3 — Title Case display label (Option A: display-only)
+### Gap 3 — UPPERCASE display label (display-only)
 
-- Add a tiny pure helper `displayArchitectName(name)` (in `views/workspace.ts` or a small shared util): returns `'Main'` for `main`, and the name **unchanged** for every other (sibling) architect — matching the issue's Option A ("`main` → `Main`; siblings render as the user typed them"). The internal identifier stays lowercase everywhere.
-- `views/workspace.ts:271` → `new vscode.TreeItem(displayArchitectName(name))`. Keep `command.arguments: [name]`, `contextValue` keyed on the raw `name === 'main'`, and the tooltip using the raw name (or display name — cosmetic).
-- Reuse the same helper for the Gap 2 QuickPick labels so the picker and the tree agree.
+- Add a tiny pure helper `displayArchitectName(name)` (in `views/workspace.ts` or a small shared util): returns `name.toUpperCase()` for every architect — so `main` → `MAIN`, `web` → `WEB`, `ob-refine` → `OB-REFINE`. The internal identifier stays lowercase everywhere (used by `architect:<name>` messaging, spawn affinity, `validateArchitectName`, and the Tower add/remove API).
+- `views/workspace.ts:271` → `new vscode.TreeItem(displayArchitectName(name))`. Keep `command.arguments: [name]` (raw lowercase) and `contextValue` keyed on the raw `name === 'main'`. Tooltip keeps using the raw name so the canonical identifier is still discoverable on hover.
+- Reuse the same helper for the Gap 2 QuickPick labels so the picker and the tree agree (`MAIN`, `WEB`, … shown; raw name resolved on pick).
 
-**Casing safety (verified):** `codev.removeArchitect` derives the name from `arg.label` for TreeItem invocations, and its menu is gated on `viewItem == workspace-architect-sibling`. Under Option A, sibling labels are unchanged (label == raw name), so the existing `arg.label` path stays correct; `main` is the only relabeled row and it is unremovable. To remove the latent coupling (so a future Option B can't silently break Remove), I will **also** harden `removeArchitect` to prefer the raw name carried on the row rather than the display label — by passing the name through a stable channel on the TreeItem (set `item.id = 'workspace-architect-' + name'` and have `removeArchitect` read `arg.id` when present, falling back to `arg.label`). This is a small, defensive change kept minimal.
+**Casing safety — `removeArchitect` fix is now MANDATORY (not just defensive):** `codev.removeArchitect` currently derives the name from `arg.label` for TreeItem invocations. With UPPERCASE labels, a sibling row's `label` is now `WEB` while Tower knows it as `web` — so the existing `arg.label` path would send a DELETE for a name Tower doesn't recognize (silent failure / wrong target). Therefore the row **must** carry the raw lowercase name through a channel independent of the display label, and `removeArchitect` **must** read that instead of `arg.label`:
+  - In `getArchitectChildren`, set `item.id = 'workspace-architect-' + name` (raw name embedded; these are the only `workspace-architect-`-prefixed ids in the tree, so no collision).
+  - In `removeArchitect`, when `arg` is a `TreeItem`, derive the name by stripping the `workspace-architect-` prefix from `arg.id` (fall back to `arg.label` only if `arg.id` is absent, for safety). The `name === 'main'` guard and `viewItem == workspace-architect-sibling` menu gate are unchanged.
+  - Add a regression test asserting `removeArchitect` resolves the name from `arg.id`, not the (now-uppercased) `arg.label`.
 
 ### Decision A — where the shared name validator lives (plan-approval decision)
 
@@ -73,9 +76,9 @@ The InputBox should validate with the **same rule Tower uses**. Three options:
 - `packages/vscode/src/extension.ts`
   - Register `codev.addArchitect` (regCli) — InputBox + `client.addArchitect` + `refresh()`.
   - `codev.openArchitectTerminal` — add the N>1 QuickPick path for no-arg invocations.
-  - `codev.removeArchitect` — prefer raw name from `arg.id` over `arg.label` (defensive).
+  - `codev.removeArchitect` — derive raw name from `arg.id` (strip `workspace-architect-` prefix) instead of `arg.label` (MANDATORY now that labels are uppercased).
 - `packages/vscode/src/views/workspace.ts`
-  - Add `displayArchitectName()` helper; wrap the child label at line 271; set `item.id` to carry the raw name.
+  - Add `displayArchitectName()` helper (`name.toUpperCase()`); wrap the child label at line 271; set `item.id = 'workspace-architect-' + name` to carry the raw name.
 - `packages/vscode/package.json`
   - `contributes.commands`: add `codev.addArchitect` (with `$(add)` icon).
   - `contributes.menus.view/item/context`: inline `+` on `workspace-architects-root`.
@@ -86,12 +89,12 @@ The InputBox should validate with the **same rule Tower uses**. Three options:
   - `packages/codev/src/agent-farm/utils/architect-name.ts` — re-export the moved symbols from core (keep `autoNumberArchitectName` / `currentArchitectName` wherever lowest-risk; they can stay in codev if they pull process/env, or move too if pure).
 - Tests:
   - `packages/vscode/src/__tests__/extension-architect-commands.test.ts` — extend: `addArchitect` registered + validates + refreshes; `openArchitectTerminal` has the N>1 picker path; update the `targetName defaults to 'main'` sentinel to match the restructured handler.
-  - `packages/vscode/src/__tests__/workspace.test.ts` — assert `displayArchitectName('main') === 'Main'` and siblings unchanged; row label uses the helper.
+  - `packages/vscode/src/__tests__/workspace.test.ts` — assert `displayArchitectName('main') === 'MAIN'` and `displayArchitectName('ob-refine') === 'OB-REFINE'`; row label uses the helper; row `item.id` carries the raw lowercase name.
   - If A1: a small core unit test for the relocated `validateArchitectName` (or confirm the existing codev test still passes through the re-export).
 
 ## Risks & Alternatives Considered
 
-- **Risk: changing the row label silently breaks `removeArchitect` (label-derived name).** Mitigated by Option A keeping sibling labels raw, **and** by hardening `removeArchitect` to read the raw name from `item.id` first. Verified the menu `when` only exposes Remove on siblings.
+- **Risk (HIGH): UPPERCASE labels break `removeArchitect`'s label-derived name** (`WEB` label vs `web` identity). Mitigated by routing the raw name through `item.id` and having `removeArchitect` read `arg.id`, with a regression test. This is the load-bearing correctness fix of the casing change — not optional.
 - **Risk: Decision A1 broadens the change beyond `area/vscode` into core + codev.** Mitigated by the re-export shim (no call-site churn) and core's existing `agent-names` precedent. A2/A3 are the contained fallbacks if the reviewer prefers.
 - **Risk: QuickPick ordering / display mismatch.** `main` first then alphabetical; labels via the shared helper so picker and tree agree; resolve back to the raw name before opening.
 - **Risk: double-refresh (explicit `refresh()` + `architects-updated` SSE).** Benign — both just fire the tree's change emitter; matches the existing `removeArchitect` pattern.
@@ -106,6 +109,6 @@ The reviewer exercises the running worktree at the `dev-approval` gate (VS Code 
 - **Manual (Extension Development Host against a Tower workspace):**
   1. **Add (UI):** hover the **Architects** row → click `+` → enter `ob-refine` → row appears without manual refresh. Re-open `+`, enter `main` → inline validation rejects it; enter `Bad Name` / empty → rejected. Palette → "Codev: Add Architect" works too.
   2. **Cmd+K A picker:** with only `main` registered → `Cmd/Ctrl+K A` opens `main` directly (no picker). Add a sibling → `Cmd/Ctrl+K A` shows a QuickPick (`Main` first, then siblings alphabetical); picking opens the right terminal. Palette → "Codev: Open Architect Terminal" behaves the same. Clicking a tree row still opens directly (no picker).
-  3. **Casing:** the default architect row reads **Main** (Title Case), siblings read as typed; tree visually matches the other Workspace rows.
-  4. **Remove still works:** right-click a sibling → Remove → modal → row disappears (confirms the label/id change didn't break name resolution).
+  3. **Casing:** every architect row renders UPPERCASE (`MAIN`, `WEB`, `OB-REFINE`); hover tooltip still shows the raw lowercase name.
+  4. **Remove still works (critical with UPPERCASE):** right-click a sibling (e.g. shown as `WEB`) → Remove → modal → row disappears and Tower actually deregisters `web` (confirms `removeArchitect` resolves the raw name from `item.id`, not the uppercased label).
 - **Cross-platform:** N/A (desktop VS Code only); verify on the reviewer's OS.
