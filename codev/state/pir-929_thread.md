@@ -111,3 +111,28 @@ Doc-only addendum (no code change, per architect instruction): added the caveat 
 ### 2026-06-16/17 — pr gate APPROVED (human-instructed); protocol complete; NOT self-merged
 
 Human instructed `git pull` + `porch approve 929 pr --a-human-explicitly-approved-this`. `git pull` failed to fast-forward the local branch (origin fetch=cluesmith lacks builder/pir-929, which lives on the fork) but did fetch updates. `porch approve` passed all checks and committed the gate-approved state locally, but its `git push -u origin HEAD` was **rejected**: the architect had merged `main` into the fork's builder/pir-929 (commit 0fd70b72) to keep #1059 current, so the fork was ahead. Resolved by rebasing the single unpushed porch chore commit onto `fork/builder/pir-929` (only touches 929 status.yaml → no conflict) and pushing — fork now at `f337b61f`. Gate status: **approved**; `porch next 929` → status: complete, phase: verified. Per the standing pull-only instruction I did **NOT** run `gh pr merge` / pr-merge.sh — a cluesmith maintainer merges #1059. Architect notified. Project complete pending the upstream merge + architect-driven cleanup.
+
+### 2026-06-19 — RE-RESCOPE: CODEX-ONLY (agy dropped → #1063); plan revised at plan-approval gate
+
+Resumed session. Architect re-scoped 929 to **codex-only**: agy is dropped entirely (split to
+follow-up #1063 — agy's only role-injection channel is its first user turn `--prompt-interactive`,
+weaker/visible vs claude's `--append-system-prompt` / codex's `-c model_instructions_file=`). The plan
+file on disk was the STALE agy version (commit 3082c186 "agy replaces gemini"); rewrote it codex-only.
+
+Verified against `gh issue view 929` (codex-only banner) + architect brief. Confirmed actual branch
+state via grep before planning:
+- `getArchitectFiles` seam: only implementer = `GEMINI_HARNESS` (harness.ts:135); only consumer =
+  `writeArchitectContextFiles` (tower-utils.ts:181), itself called only from `buildArchitectArgs`
+  (:205). ⇒ removing gemini-architect makes the whole seam dead ⇒ delete it (interface method +
+  gemini impl + writeArchitectContextFiles + its call). `buildArchitectArgs` keeps `getArchitectHarness`
+  (still used by `buildRoleInjection` at :213).
+- `.gemini/settings.json` gitignore: root `.gitignore:11` + `lib/gitignore.ts:24` + test expectations
+  in gitignore.test.ts (140,211) & update.test.ts (530,550). No codev-skeleton mirror.
+- doctor.ts:699 affirms `codex || gemini` → split: affirm codex, bar gemini as architect (builder-only).
+
+**KEEP intact** (engine-neutral, the core deliverable): `buildResume` crash-loop seam + codex architect
+parity. **REVERT**: #1059's gemini-architect additions. **KEEP**: gemini *builder* surface
+(`GEMINI_SYSTEM_MD`) + gemini builder tests.
+
+Plan rewritten, committing + pushing to `builder/pir-929` (PR #1059 auto-updates). Parked at
+plan-approval — NOT implementing until architect approves.
