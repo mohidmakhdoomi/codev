@@ -198,3 +198,11 @@ PR body synced to PR #1059. Parked at the pr gate. Per the standing upstream pol
 is a cross-fork contribution: head mohidmakhdoomi:builder/pir-929 → base cluesmith:main) and this session's
 architect instruction ("the pr gate is mine/the maintainer's; do NOT self-merge"), I will NOT run
 `gh pr merge`. Waiting for human pr-gate approval + maintainer merge. Architect notified with all verdicts.
+
+### 2026-06-19 — pr gate APPROVED → protocol COMPLETE (not self-merged)
+
+Human approved the pr gate (bookkeeping) and posted the architect integration review on #1059 → APPROVE
+for merge. The gate approval advanced porch to `status: complete, phase: verified`. Ran `porch done 929`
+per architect instruction → "Project 929 already verified — nothing to do." NO `--merged` recorded and
+NO `gh pr merge` run: #1059 is a cross-fork PR (mohidmakhdoomi:builder/pir-929 → cluesmith:main); a
+cluesmith maintainer merges it. Protocol complete. Awaiting upstream merge + architect-driven cleanup.
