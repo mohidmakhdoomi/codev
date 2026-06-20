@@ -35,6 +35,7 @@ import { BuilderSpawnHandler } from './builder-spawn-handler.js';
 import { BuilderTerminalLinkProvider, ReconnectTerminalLinkProvider } from './terminal-link-provider.js';
 import { computeBuildersToClose, roleIdsFromBuilders } from './prune-builder-terminals.js';
 import { buildBuilderPickRows } from './builder-pick-rows.js';
+import { readBuildersFileViewAsTree } from './builders-config.js';
 import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
 import { BuildersProvider, AccordionGate } from './views/builders.js';
 import { PullRequestsProvider, PullRequestTreeItem } from './views/pull-requests.js';
@@ -546,13 +547,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	// header button / `codev.buildersFileViewAsTree`. Same mechanics as
 	// accordion above — read setting, mirror to context key, refresh
 	// provider on change so the tree redraws in the new mode.
-	const readFileViewAsTree = () =>
-		vscode.workspace.getConfiguration('codev').get<boolean>('buildersFileViewAsTree', true);
-	vscode.commands.executeCommand('setContext', 'codev.buildersFileViewAsTree', readFileViewAsTree());
+	vscode.commands.executeCommand('setContext', 'codev.buildersFileViewAsTree', readBuildersFileViewAsTree());
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeConfiguration((e) => {
 			if (!e.affectsConfiguration('codev.buildersFileViewAsTree')) { return; }
-			vscode.commands.executeCommand('setContext', 'codev.buildersFileViewAsTree', readFileViewAsTree());
+			vscode.commands.executeCommand('setContext', 'codev.buildersFileViewAsTree', readBuildersFileViewAsTree());
 			buildersProvider.refresh();
 		}),
 	);

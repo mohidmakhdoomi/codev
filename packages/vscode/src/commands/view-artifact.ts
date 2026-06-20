@@ -25,6 +25,7 @@ import { resolve } from 'node:path';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import type { ConnectionManager } from '../connection-manager.js';
 import { MarkdownPreviewProvider } from '../markdown-preview/preview-provider.js';
+import { builderById } from '../builder-lookup.js';
 
 type ArtifactKind = 'plan' | 'spec' | 'review';
 
@@ -66,7 +67,7 @@ async function viewArtifact(
   }
 
   const builder = builderIdArg
-    ? builders.find(b => b.id === builderIdArg)
+    ? builderById(overview, builderIdArg)
     : await pickBuilder(builders, kind);
   if (!builder) {
     if (builderIdArg) {

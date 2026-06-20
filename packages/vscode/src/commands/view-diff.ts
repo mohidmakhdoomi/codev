@@ -31,6 +31,7 @@ import type { ConnectionManager } from '../connection-manager.js';
 import { parseHunkRanges, parseUnifiedDiff } from '../diff-inject-ref.js';
 import { setDiffInjectSession, upsertDiffInjectEntry, type DiffInjectSessionEntry } from '../diff-inject-codelens.js';
 import { ensureDiffEditorCodeLens } from '../ensure-diff-codelens.js';
+import { builderById } from '../builder-lookup.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -320,7 +321,7 @@ export async function viewDiff(
   }
 
   const builder = builderIdArg
-    ? builders.find(b => b.id === builderIdArg)
+    ? builderById(overview, builderIdArg)
     : await pickBuilder(builders);
   if (!builder) {
     if (builderIdArg) {

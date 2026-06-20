@@ -29,6 +29,8 @@ import type { BuilderDiffCache, BuilderFileChange } from '../views/builder-diff-
 import { getDiffInjectEntry } from '../diff-inject-codelens.js';
 import { buildFilePathTree, flattenTreeOrder } from '../views/file-path-tree.js';
 import { openBuilderFileDiff } from './view-diff.js';
+import { builderWithWorktree } from '../builder-lookup.js';
+import { readBuildersFileViewAsTree } from '../builders-config.js';
 
 // ── Pure helpers (no vscode/git dependency — unit-tested directly) ──────────
 
@@ -48,11 +50,6 @@ export function orderedRelPaths(files: BuilderFileChange[]): string[] {
  */
 export function navigationOrder(files: BuilderFileChange[], viewAsTree: boolean): BuilderFileChange[] {
   return viewAsTree ? flattenTreeOrder(buildFilePathTree(files)) : files;
-}
-
-/** Read the Builders file-view-as-tree setting (mirrors `BuildersProvider`). */
-function viewAsTree(): boolean {
-  return vscode.workspace.getConfiguration('codev').get<boolean>('buildersFileViewAsTree', true);
 }
 
 /**
@@ -118,13 +115,12 @@ export async function navigateDiff(direction: 1 | -1, deps: NavDeps): Promise<vo
   }
 
   // 2. Resolve the worktree path for that builder (synchronous overview read).
-  const worktreePath = deps.overviewCache
-    .getData()
-    ?.builders.find(b => b.id === current.builderId)?.worktreePath;
-  if (!worktreePath) {
+  const builder = builderWithWorktree(deps.overviewCache.getData(), current.builderId);
+  if (!builder) {
     flash(`no worktree on record for ${current.builderId}`);
     return;
   }
+  const worktreePath = builder.worktreePath;
 
   // 3. Load the builder's ordered changed-file list (cached), then reorder it to
   //    match what the user sees in the Builders tree (#1066): depth-first tree
@@ -134,7 +130,7 @@ export async function navigateDiff(direction: 1 | -1, deps: NavDeps): Promise<vo
     flash('no changed files to navigate');
     return;
   }
-  const ordered = navigationOrder(result.files, viewAsTree());
+  const ordered = navigationOrder(result.files, readBuildersFileViewAsTree());
 
   // 4. Find where we are; bail if the current file isn't in this list.
   const idx = indexOfRelPath(ordered, current.relPath);

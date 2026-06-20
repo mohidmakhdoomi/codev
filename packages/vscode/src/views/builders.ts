@@ -5,6 +5,8 @@ import type { OverviewBuilder } from '@cluesmith/codev-types';
 import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
 import { UNCATEGORIZED_AREA } from '@cluesmith/codev-core/constants';
 import type { OverviewCache } from './overview-data.js';
+import { builderWithWorktree, type OverviewBuilderWithWorktree } from '../builder-lookup.js';
+import { readBuildersFileViewAsTree } from '../builders-config.js';
 import { BuilderGroupTreeItem, BuilderTreeItem } from './builder-tree-item.js';
 import { BuilderFileTreeItem } from './builder-file-tree-item.js';
 import { BuilderFolderTreeItem } from './builder-folder-tree-item.js';
@@ -189,10 +191,8 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
    * `worktreePath` to a non-null `string`, so callers can pass it to
    * `diffCache.getDiff` without re-guarding.
    */
-  private builderWithWorktree(builderId: string): (OverviewBuilder & { worktreePath: string }) | undefined {
-    const builder = this.cache.getData()?.builders.find(b => b.id === builderId);
-    if (!builder?.worktreePath) { return undefined; }
-    return builder as OverviewBuilder & { worktreePath: string };
+  private builderWithWorktree(builderId: string): OverviewBuilderWithWorktree | undefined {
+    return builderWithWorktree(this.cache.getData(), builderId);
   }
 
   private async parentForFileNode(
@@ -406,9 +406,7 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
 
   /** Read the file-view-as-tree setting; falls back to the spec default. */
   private viewAsTree(): boolean {
-    return vscode.workspace
-      .getConfiguration('codev')
-      .get<boolean>('buildersFileViewAsTree', true);
+    return readBuildersFileViewAsTree();
   }
 }
 
