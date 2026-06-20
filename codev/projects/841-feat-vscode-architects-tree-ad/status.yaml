@@ -1,7 +1,7 @@
 id: '841'
 title: feat-vscode-architects-tree-ad
 protocol: pir
-phase: implement
+phase: review
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -19,4 +19,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-19T22:48:56.842Z'
-updated_at: '2026-06-20T00:04:54.737Z'
+updated_at: '2026-06-20T00:05:01.184Z'
