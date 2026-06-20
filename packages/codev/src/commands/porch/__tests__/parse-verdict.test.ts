@@ -114,4 +114,10 @@ After addressing feedback:
 VERDICT: APPROVE`;
     expect(parseVerdict(output)).toBe('APPROVE');
   });
+
+  it('returns COMMENT when no verdict is found in a long output (ran but no verdict)', () => {
+    const output = `Review text that is long enough to pass the minimum length threshold for parsing.
+But it does not contain any VERDICT: line because the reviewer went off-task or didn't write one.`;
+    expect(parseVerdict(output)).toBe('COMMENT');
+  });
 });

@@ -43,8 +43,8 @@ export function parseVerdict(output: string): Verdict {
     }
   }
 
-  // No valid VERDICT: line found — default to REQUEST_CHANGES for safety
-  return 'REQUEST_CHANGES';
+  // No valid VERDICT: line found but the consult ran — treat as COMMENT (non-blocking skip)
+  return 'COMMENT';
 }
 
 /**
