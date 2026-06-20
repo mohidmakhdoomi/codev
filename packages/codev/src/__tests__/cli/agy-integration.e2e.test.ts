@@ -22,6 +22,28 @@ function isSkip(out: string): boolean {
 }
 
 describe('agy lane integration (guarded; real agy)', () => {
+  it('delivers the complete inline prompt under the agy 1.0.10 argument contract', async () => {
+    if (!resolveAgyBin()) return;
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-print-contract-'));
+    try {
+      const marker = `PRINT_CONTRACT_${Date.now()}`;
+      const outputPath = path.join(dir, 'review.txt');
+      await _runAgyConsultation(
+        `Reply with exactly: ${marker}`,
+        'Follow the response format exactly.',
+        dir,
+        outputPath,
+      );
+
+      const out = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, 'utf-8') : '';
+      if (isSkip(out)) return;
+      expect(out).toContain(marker);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 90_000);
+
   it('returns a review that used file contents, or skips non-blockingly', async () => {
     if (!resolveAgyBin()) {
       // agy CLI not installed in this environment — nothing to verify.

@@ -871,6 +871,45 @@ describe('doctor command', () => {
       }
     });
 
+    it('passes the probe text immediately after --print and retains the print timeout', async () => {
+      const agyBin = path.join(testBaseDir, 'agy-fake');
+      fs.writeFileSync(agyBin, '#!/bin/sh\n');
+      process.env.CODEV_AGY_BIN = agyBin;
+
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd.includes('which')) return Buffer.from('/usr/bin/command');
+        if (cmd.includes('gh auth status')) return Buffer.from('Logged in');
+        return Buffer.from('');
+      });
+      vi.mocked(spawnSync).mockImplementation((cmd: string) => ({
+        status: 0,
+        stdout: cmd === 'node' ? 'v20.0.0' : cmd === 'git' ? 'git version 2.40.0' : 'working',
+        stderr: '',
+        signal: null,
+        output: [null, 'working', ''],
+        pid: 0,
+      }));
+      vi.mocked(spawn).mockImplementation(
+        () => makeFakeChild({ stdout: 'OK', code: 0 }) as unknown as ReturnType<typeof spawn>,
+      );
+      vi.resetModules();
+
+      try {
+        const { doctor } = await import('../commands/doctor.js');
+        await doctor();
+
+        const call = vi.mocked(spawn).mock.calls.find(c => c[0] === agyBin);
+        expect(call).toBeDefined();
+        const args = call![1] as string[];
+        const printIndex = args.indexOf('--print');
+        expect(args[printIndex + 1]).toBe('Reply with just OK');
+        expect(args.slice(0, printIndex)).toContain('--print-timeout');
+        expect(args[args.indexOf('--print-timeout') + 1]).toBe('20s');
+      } finally {
+        delete process.env.CODEV_AGY_BIN;
+      }
+    });
+
     it('should show operational when Codex login status succeeds', async () => {
       vi.mocked(execSync).mockImplementation((cmd: string) => {
         if (cmd.includes('which')) {

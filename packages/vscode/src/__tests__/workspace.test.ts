@@ -49,6 +49,17 @@ describe('Spec 786 Phase 6 — WorkspaceProvider expandable Architects tree', ()
     expect(WS_SRC).toMatch(/arguments: \[name\]/);
   });
 
+  it('renders the row label via displayArchitectName (Issue 841 Gap 3 — UPPERCASE)', () => {
+    expect(WS_SRC).toMatch(/new vscode\.TreeItem\(displayArchitectName\(name\)\)/);
+    expect(WS_SRC).toMatch(/import \{ displayArchitectName \} from ['"]\.\/architect-display\.js['"]/);
+  });
+
+  it('carries the raw lowercase name in item.id so removeArchitect can resolve it', () => {
+    // The label is uppercased; the canonical name must travel through a
+    // channel independent of the label. item.id = `workspace-architect-<name>`.
+    expect(WS_SRC).toMatch(/item\.id = `workspace-architect-\$\{name\}`/);
+  });
+
   it('contextValue distinguishes main from siblings', () => {
     // Right-click "Remove Architect" is gated on `viewItem ==
     // workspace-architect-sibling` in package.json. Main MUST get a different

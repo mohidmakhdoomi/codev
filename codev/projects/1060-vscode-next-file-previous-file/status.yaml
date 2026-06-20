@@ -1,0 +1,29 @@
+id: '1060'
+title: vscode-next-file-previous-file
+protocol: pir
+phase: review
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: approved
+    requested_at: '2026-06-17T06:41:51.549Z'
+    approved_at: '2026-06-17T07:22:01.551Z'
+  dev-approval:
+    status: approved
+    requested_at: '2026-06-17T07:31:51.489Z'
+    approved_at: '2026-06-17T10:57:58.745Z'
+  pr:
+    status: pending
+    requested_at: '2026-06-17T11:08:51.510Z'
+iteration: 1
+build_complete: true
+history: []
+started_at: '2026-06-17T06:33:31.988Z'
+updated_at: '2026-06-17T11:08:51.510Z'
+pr_history:
+  - phase: review
+    pr_number: 1067
+    branch: builder/pir-1060
+    created_at: '2026-06-17T11:01:25.098Z'
+pr_ready_for_human: true

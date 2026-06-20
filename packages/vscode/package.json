@@ -84,6 +84,11 @@
         "category": "Codev"
       },
       {
+        "command": "codev.addArchitect",
+        "title": "Codev: Add Architect",
+        "icon": "$(add)"
+      },
+      {
         "command": "codev.openBuilderTerminal",
         "title": "Codev: Open Builder Terminal..."
       },
@@ -201,6 +206,14 @@
       {
         "command": "codev.openBuilderFileDiff",
         "title": "Codev: Open Builder File Diff"
+      },
+      {
+        "command": "codev.diffNextFile",
+        "title": "Codev: Go to Next File in Diff"
+      },
+      {
+        "command": "codev.diffPreviousFile",
+        "title": "Codev: Go to Previous File in Diff"
       },
       {
         "command": "codev.openWorktreeWindow",
@@ -455,6 +468,11 @@
           "group": "1_primary@1"
         },
         {
+          "command": "codev.addArchitect",
+          "when": "view == codev.workspace && viewItem == workspace-architects-root",
+          "group": "inline@1"
+        },
+        {
           "command": "codev.approveGate",
           "when": "view == codev.builders && viewItem =~ /^blocked-builder-/",
           "group": "inline@1"
@@ -701,6 +719,16 @@
         "when": "codev.activeEditorIsBuilderFile && editorHasSelection"
       },
       {
+        "command": "codev.diffNextFile",
+        "key": "ctrl+alt+]",
+        "when": "codev.activeEditorIsBuilderFile"
+      },
+      {
+        "command": "codev.diffPreviousFile",
+        "key": "ctrl+alt+[",
+        "when": "codev.activeEditorIsBuilderFile"
+      },
+      {
         "command": "workbench.view.extension.codev",
         "key": "ctrl+alt+c",
         "mac": "cmd+alt+c",
@@ -840,6 +868,11 @@
           "default": true,
           "description": "Render a builder's changed-files list as a folder tree (with single-child folder chains compacted, like VSCode's Source Control panel) instead of a flat list. Toggleable via the Builders title-bar button."
         },
+        "codev.buildersAutoReveal": {
+          "type": "boolean",
+          "default": true,
+          "description": "Builders view: when the active builder-diff editor changes (keyboard navigation, a click inside the multi-file View Diff, or a per-file diff), reveal and select the matching file's row in the tree. The Builders-view equivalent of the Explorer's auto-reveal. When off, the sidebar selection only follows an explicit click."
+        },
         "codev.backlogShowAll": {
           "type": "boolean",
           "default": false,
@@ -857,6 +890,18 @@
           ],
           "default": "stage",
           "description": "Which axis the Builders view groups by. 'stage' (default) is the action axis; 'area' is the domain axis. Toggleable via the Builders title-bar button."
+        },
+        "codev.markdownPreview.fontSize": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Prose font size (in pixels) for the Codev Markdown Preview. 0 uses the built-in default (16px, the github-markdown-css baseline). Code blocks are sized relative to this."
+        },
+        "codev.markdownPreview.lineHeight": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Prose line-height (unitless multiplier) for the Codev Markdown Preview. 0 uses the built-in default (1.5, the github-markdown-css baseline)."
         }
       }
     },

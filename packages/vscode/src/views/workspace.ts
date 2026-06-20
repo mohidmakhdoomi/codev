@@ -5,6 +5,7 @@ import type { TerminalManager } from '../terminal-manager.js';
 import { getTowerAddress } from '../workspace-detector.js';
 import { resolveWorkspaceDevTarget } from '../commands/dev-shared.js';
 import { loadWorktreeConfig, hasRunnableDevCommand } from '../load-worktree-config.js';
+import { displayArchitectName } from './architect-display.js';
 
 /**
  * Workspace-level entry points: architect terminal, Tower web dashboard,
@@ -269,7 +270,13 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
     }
 
     return names.map(name => {
-      const item = new vscode.TreeItem(name);
+      // Label is UPPERCASE (Issue 841 Gap 3); the raw lowercase `name` is the
+      // canonical identifier. `item.id` carries it so `codev.removeArchitect`
+      // can resolve the real name independent of the (uppercased) display
+      // label — reading `arg.label` would otherwise send a DELETE for a name
+      // Tower doesn't know (e.g. 'WEB' vs 'web').
+      const item = new vscode.TreeItem(displayArchitectName(name));
+      item.id = `workspace-architect-${name}`;
       item.iconPath = new vscode.ThemeIcon('person');
       item.tooltip = `Open the ${name} architect terminal`;
       // Spec 786 Phase 6: contextValue gates the right-click context menu.

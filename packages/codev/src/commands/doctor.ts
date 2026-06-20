@@ -388,7 +388,7 @@ function verifyAgy(): Promise<CheckResult> {
   if (!bin) return Promise.resolve({ status: 'skip', version: 'not installed', note: AGY_INSTALL_HINT });
 
   return new Promise<CheckResult>((resolve) => {
-    const proc = spawn(bin, ['--print', '--print-timeout', '20s', 'Reply with just OK'], {
+    const proc = spawn(bin, ['--print-timeout', '20s', '--print', 'Reply with just OK'], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let settled = false;

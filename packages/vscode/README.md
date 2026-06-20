@@ -215,6 +215,8 @@ When a builder reaches a human-approval gate, a toast surfaces it with the issue
 | `codev.gateToasts.enabled` | `true` | Show a toast when a builder reaches a human-approval gate |
 | `codev.buildersAutoCollapse` | `true` | Builders view accordion — expanding one builder auto-collapses the others |
 | `codev.buildersFileViewAsTree` | `true` | Render a builder's changed-files list as a folder tree (`false` for a flat list) |
+| `codev.markdownPreview.fontSize` | `0` | Prose font size (px) for the Codev Markdown Preview. `0` = built-in default (16px). Edit in Settings (Cmd+,) → the open preview reflows live |
+| `codev.markdownPreview.lineHeight` | `0` | Prose line-height (unitless) for the Codev Markdown Preview. `0` = built-in default (1.5). Reflows the open preview live |
 
 ## Advanced
 
