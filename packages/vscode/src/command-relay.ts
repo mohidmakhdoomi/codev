@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { CommandRequest } from '@cluesmith/codev-types';
 import { COMMAND_EVENT } from '@cluesmith/codev-types';
@@ -55,6 +56,15 @@ export function wireCommandProvider(connectionManager: ConnectionManager): vscod
   // Map a canonical verb to this provider's VSCode command and run it. A verb
   // absent from VERB_COMMANDS is ignored (the map is the allowlist).
   const runVerb = async (req: CommandRequest): Promise<void> => {
+    // Workspace scope: a single Tower may serve several workspaces, so drop a
+    // command addressed to a different one. Only enforced when the command carries
+    // a workspace AND this window knows its own (mirrors builder-spawn-handler);
+    // absent today, so this is a no-op until a controller populates it.
+    const ownWorkspace = connectionManager.getWorkspacePath();
+    if (req.workspace && ownWorkspace &&
+        path.resolve(req.workspace) !== path.resolve(ownWorkspace)) {
+      return;
+    }
     // Self-gate on focus: only the focused window runs a relayed verb, so multiple
     // windows on one workspace execute it exactly once (a single active provider).
     // Pending: a "claim active provider" handshake would let an unfocused provider

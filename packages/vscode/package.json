@@ -75,6 +75,14 @@
         "title": "Codev: Forward Selection to Builder"
       },
       {
+        "command": "codev.forwardCurrentFileToBuilder",
+        "title": "Codev: Forward Current File to Builder"
+      },
+      {
+        "command": "codev.forwardCurrentHunkToBuilder",
+        "title": "Codev: Forward Current Hunk to Builder"
+      },
+      {
         "command": "codev.openArchitectTerminal",
         "title": "Codev: Open Architect Terminal"
       },

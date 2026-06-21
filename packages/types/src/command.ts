@@ -17,10 +17,19 @@
  * editor provider. The verb (e.g. `view-diff`, `forward-hunk`) is
  * provider-agnostic; the provider maps it to its own implementation. `args`
  * carries verb operands (typically the target builder id).
+ *
+ * `workspace` (optional) is the absolute path of the workspace the command
+ * targets. A provider that knows its own workspace drops a command whose
+ * `workspace` does not match, so a single Tower serving multiple workspaces does
+ * not run a verb against the wrong one. Omitted today (no controller populates it
+ * yet); when present, it is the authoritative scope (mirrors how `builder-spawned`
+ * carries `workspacePath`). The focus-gate alone is insufficient once a second
+ * workspace exists.
  */
 export interface CommandRequest {
   verb: string;
   args?: unknown[];
+  workspace?: string;
 }
 
 /** Result of a relayed command (the `/api/command` response). */

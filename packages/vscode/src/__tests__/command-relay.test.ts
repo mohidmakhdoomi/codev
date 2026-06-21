@@ -30,7 +30,7 @@ const vscode = (await import('vscode')) as unknown as {
 };
 const { wireCommandProvider } = await import('../command-relay.js');
 
-function makeConnMgr() {
+function makeConnMgr(workspacePath: string | null = null) {
   let sse: ((e: { type: string; data: string }) => void) | null = null;
   return {
     mgr: {
@@ -38,6 +38,7 @@ function makeConnMgr() {
         sse = l;
         return { dispose: () => { sse = null; } };
       },
+      getWorkspacePath: () => workspacePath,
     },
     // Tower sends {type, title, body:JSON} on the SSE data field, no event: name.
     fire: (type: string, payload: unknown) =>
@@ -104,5 +105,35 @@ describe('wireCommandProvider', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(vscode.commands.executeCommand).not.toHaveBeenCalled();
+  });
+
+  it('drops a command addressed to a different workspace', async () => {
+    const { mgr, fire } = makeConnMgr('/work/alpha');
+    wireCommandProvider(mgr as never);
+
+    fire('command', { verb: 'view-diff', args: ['0809'], workspace: '/work/beta' });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(vscode.commands.executeCommand).not.toHaveBeenCalled();
+  });
+
+  it('runs a command addressed to this workspace', async () => {
+    const { mgr, fire } = makeConnMgr('/work/alpha');
+    wireCommandProvider(mgr as never);
+
+    fire('command', { verb: 'view-diff', args: ['0809'], workspace: '/work/alpha' });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('codev.viewDiff', '0809');
+  });
+
+  it('runs a workspace-less command (scope not yet populated by controllers)', async () => {
+    const { mgr, fire } = makeConnMgr('/work/alpha');
+    wireCommandProvider(mgr as never);
+
+    fire('command', { verb: 'view-diff', args: ['0809'] });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('codev.viewDiff', '0809');
   });
 });

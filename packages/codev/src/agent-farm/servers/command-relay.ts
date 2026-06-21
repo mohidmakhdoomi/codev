@@ -81,6 +81,10 @@ export async function handleCommandRoute(
  * verb (`view-diff`, `forward-hunk`, ...). Tower fans it out as a `command` SSE
  * event; the provider maps the verb to its own implementation. Fire-and-forget:
  * the verb allowlist + execution live provider-side.
+ *
+ * Tower stays a dumb relay: it does not interpret `workspace`, just carries it
+ * through so a provider can drop a command meant for a different workspace (a
+ * single Tower may serve several). The field is optional and absent today.
  */
 export async function handleCommand(
   req: http.IncomingMessage,
@@ -96,7 +100,9 @@ export async function handleCommand(
   if (!body.verb || typeof body.verb !== 'string') {
     return sendJson(res, 400, { ok: false, error: 'Missing verb' });
   }
-  d.broadcast(COMMAND_EVENT, { verb: body.verb, args: body.args ?? [] });
+  const event: CommandRequest = { verb: body.verb, args: body.args ?? [] };
+  if (typeof body.workspace === 'string') event.workspace = body.workspace;
+  d.broadcast(COMMAND_EVENT, event);
   return sendJson(res, 200, { ok: true });
 }
 

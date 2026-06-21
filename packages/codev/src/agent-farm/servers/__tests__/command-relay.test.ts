@@ -61,6 +61,16 @@ describe('command relay', () => {
     expect(broadcast).toHaveBeenLastCalledWith('command', { verb: 'refresh-overview', args: [] });
   });
 
+  it('carries a workspace through to the broadcast when present', async () => {
+    await handleCommand(fakeReq({ verb: 'view-diff', args: ['0809'], workspace: '/work/alpha' }), fakeRes().res);
+    expect(broadcast).toHaveBeenLastCalledWith('command', { verb: 'view-diff', args: ['0809'], workspace: '/work/alpha' });
+  });
+
+  it('omits workspace from the broadcast when absent (no undefined field)', async () => {
+    await handleCommand(fakeReq({ verb: 'view-diff', args: ['0809'] }), fakeRes().res);
+    expect(broadcast).toHaveBeenLastCalledWith('command', { verb: 'view-diff', args: ['0809'] });
+  });
+
   it('rejects a malformed JSON body with 400', async () => {
     const out = fakeRes();
     const badReq = Readable.from([Buffer.from('not json')]) as unknown as http.IncomingMessage;
