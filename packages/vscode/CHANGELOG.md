@@ -1,5 +1,11 @@
 # Change Log
 
+## [Unreleased]
+
+### What's new
+
+- **External-controller command relay and four new commands.** The VS Code extension now exposes a Tower-driven command channel: external controllers (a Stream Deck device, a hosted page, any HTTP poster) can POST a verb to Tower's `/api/command` and the focused VS Code window dispatches it to an allowlisted command. The relay is workspace-scoped (the provider drops events whose `workspace` field doesn't match the active workspace, mirroring the `builder-spawned` cross-workspace filter), focus-gated (only the focused window runs a relayed verb, so multi-window setups execute exactly once), and allowlisted (only declared verbs reach the provider). Four new commands ship in this PR's verb set and are independently usable from the command palette and keyboard: `codev.forwardCurrentFileToBuilder` (cursor's current file to the builder PTY), `codev.forwardCurrentHunkToBuilder` (cursor's current hunk to the builder PTY), `codev.diffFirstFile` and `codev.diffFirstHunk` (jump to the first file or first hunk in the View Diff session, completing the existing keyboard walk from PR #1067 and #1075).
+
 ## [3.2.1] - 2026-06-21
 
 ### What's new

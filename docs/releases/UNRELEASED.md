@@ -33,6 +33,22 @@
     6. Re-cp the template back to UNRELEASED.md to start the next cycle
 -->
 
+## Tower command relay: external controllers can drive the active VS Code editor (#1087 / #1088 / #1089, PR #1091)
+
+A new Tower-side command channel lets external controllers (a Stream Deck device, a hosted page, a CLI script, anything that can POST to Tower) drive the active VS Code window with a canonical set of verbs. Codev's VS Code extension exposes an allowlist-gated provider that subscribes to a Tower SSE stream and dispatches a small set of verbs to existing commands. This is the substrate that the separate Codev Stream Deck integration sits on; Codev does not ship a Stream Deck client itself, just the protocol surface.
+
+What ships in this PR:
+
+- A new wire contract for `CommandRequest` carrying `{ verb, args, workspace? }`. The verb-map is the security allowlist: only declared verbs reach the provider. Live verb set as of this release includes the four palette-and-keyboard commands listed below plus `view-diff`, `spawn-builder`, `run-dev`, `workspace-dev-start`, and `workspace-dev-stop`.
+- A Tower HTTP route `POST /api/command` that broadcasts the request as an SSE envelope to active providers. The route sits behind Tower's existing `isRequestAllowed` auth gate so it inherits Tower's posture rather than bypassing it.
+- A VS Code-side provider (`command-relay.ts`) that subscribes to the SSE stream, gates on `vscode.window.state.focused` for single-active-provider semantics (the focused window wins; an unfocused window stays idle), applies workspace scoping (drops events whose `workspace` field doesn't match `getWorkspacePath()`), and dispatches to the existing command via `executeCommand`. The workspace filter mirrors the precedent set by `builder-spawned` cross-workspace handling in `builder-spawn-handler.ts`.
+- Four new commands wired into the relay's allowlist plus the command palette plus keyboard surfaces: `codev.forwardCurrentFileToBuilder` (forwards the cursor's current file path to the active builder PTY), `codev.forwardCurrentHunkToBuilder` (forwards the cursor's current hunk), `codev.diffFirstFile` and `codev.diffFirstHunk` (jump to the first file or first hunk in a View Diff session, completing the existing keyboard walk shipped in PR #1067 and PR #1075).
+- A shared SSE envelope deduplication helper (`sse-envelope.ts`) so multi-subscriber streams don't double-dispatch.
+
+The workspace-scoping field is defensive infrastructure landed ahead of demand: no controller populates it today, so the focus-gate is the only filter in active use. As soon as a controller starts addressing specific workspaces, the provider already does the right thing without further extension-side code change. The privileged verbs (`spawn-builder`, `run-dev`, `workspace-dev-start`, `workspace-dev-stop`) are safe to ship today because the focus-gate prevents accidental cross-workspace dispatch, and the workspace field is ready when controller-side addressing lands.
+
+CMAP-3 caught and the author addressed two findings at review time: the four new commands now appear in the manifest (so they're palette-discoverable and keybindable, not just relay-callable), and the workspace-scope filter was added as described above (originally the relay was focus-gate-only, which the reviewer flagged as insufficient for multi-workspace setups). The defensive workspace filter is the second-place issue from the reviewer's three-option recommendation, kept in scope because it's separable from controller-side scoping and prevents a real wrong-target risk on the privileged verbs.
+
 ## Polish
 
 <!-- Small vscode items as bullets:
