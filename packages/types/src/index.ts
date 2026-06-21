@@ -12,15 +12,11 @@ export {
 } from './sse.js';
 
 export {
-  type WantsEditorContext,
   type CommandRequest,
-  type EditorContext,
-  type EditorContextReport,
   type CommandResult,
-  EDITOR_ROUTES,
-  EDITOR_ROUTE_PREFIX,
-  EDITOR_EVENTS,
-} from './editor.js';
+  COMMAND_ROUTE,
+  COMMAND_EVENT,
+} from './command.js';
 
 export {
   type ArchitectState,

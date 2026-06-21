@@ -1,10 +1,9 @@
 /**
- * No-hardware integration test for the editor + command relay.
+ * No-hardware integration test for the command relay.
  *
- * Boots a real Tower and drives the SSE + REST lifecycle with simulated
- * controller/provider clients: the heartbeat, the editor relay (wants-context,
- * context fan-out), and the command relay (a canonical verb relayed to the
- * provider over SSE).
+ * Boots a real Tower and drives the REST -> SSE path with a simulated
+ * controller/provider: a controller POSTs `/api/command` and the canonical verb
+ * is relayed to the provider over SSE.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -94,7 +93,7 @@ function postJson(path: string, body: unknown): Promise<Response> {
   });
 }
 
-describe('editor + command relay (integration)', () => {
+describe('command relay (integration)', () => {
   let tower: TowerHandle;
 
   beforeAll(async () => {
@@ -103,35 +102,6 @@ describe('editor + command relay (integration)', () => {
 
   afterAll(async () => {
     await tower.stop();
-  });
-
-  it('acknowledges a heartbeat', async () => {
-    const res = await postJson('/api/editor/heartbeat', {});
-    expect(await res.json()).toEqual({ ok: true });
-  });
-
-  it('broadcasts wants-context to subscribers on first demand', async () => {
-    const sse = new SseCollector();
-    await sse.waitReady();
-
-    await postJson('/api/editor/wants-context', { wanted: true });
-    const ev = await sse.waitFor('editor-wants-context');
-    expect(ev.payload).toEqual({ wanted: true });
-
-    sse.close();
-  });
-
-  it('fans editor-context reports out to controller subscribers', async () => {
-    const sse = new SseCollector();
-    await sse.waitReady();
-
-    await postJson('/api/editor/context', {
-      value: { diffFocused: true, hasSelection: true, artifactFocused: false },
-    });
-    const ev = await sse.waitFor('editor-context');
-    expect(ev.payload).toMatchObject({ diffFocused: true, hasSelection: true });
-
-    sse.close();
   });
 
   it('relays a canonical command verb to the provider', async () => {
@@ -144,5 +114,10 @@ describe('editor + command relay (integration)', () => {
     expect(ev.payload).toEqual({ verb: 'view-diff', args: ['0809'] });
 
     sse.close();
+  });
+
+  it('rejects a verb-less command with 400', async () => {
+    const res = await postJson('/api/command', {});
+    expect(res.status).toBe(400);
   });
 });

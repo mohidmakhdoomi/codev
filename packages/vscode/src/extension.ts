@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from './connection-manager.js';
-import { wireEditorProvider } from './editor-relay.js';
+import { wireCommandProvider } from './command-relay.js';
 import { TerminalManager } from './terminal-manager.js';
 import { OverviewCache } from './views/overview-data.js';
 import { spawnBuilder } from './commands/spawn.js';
@@ -1160,10 +1160,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		connectionManager.onSSEEvent(({ type, data }) => builderSpawnHandler.handle(type, data)),
 	);
 
-	// VSCode as the editor provider for Tower's editor + command relay: run scroll
-	// + canonical verbs from a controller and report editor position/context for
-	// the controller's UI.
-	context.subscriptions.push(wireEditorProvider(connectionManager));
+	// VSCode as the command provider for Tower's command relay: run canonical
+	// verbs sent by a controller (the focused window self-gates).
+	context.subscriptions.push(wireCommandProvider(connectionManager));
 
 	// Make builder names clickable in any terminal output
 	context.subscriptions.push(
