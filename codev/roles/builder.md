@@ -200,6 +200,27 @@ Builders may submit multiple sequential PRs within a single worktree session. Th
 - **Worktree cleanup is architect-driven** -- the architect decides when to run `afx cleanup`, not the builder
 - If a builder session is interrupted, use `afx spawn XXXX --resume` to reconnect to the existing worktree
 
+## Worktree isolation: filesystem path discipline
+
+Your worktree (`.builders/<id>/`) is **nested inside the main checkout**, and at the
+branch base the two trees are **byte-identical**. This creates a silent failure mode:
+
+- The `Write`/`Edit` tools require **absolute** paths. If you synthesize one rooted
+  at the canonical repo root instead of your worktree, you drop the `.builders/<id>/`
+  segment and write into the **main checkout** — a real, writable directory. The
+  write *succeeds silently* and pollutes `main`; you only notice later when a
+  `git add` in your worktree fails with a pathspec error.
+- Wrong-rooted **reads** also succeed silently (identical trees), so nothing
+  corrects the mistake until that first failed write.
+
+Rules:
+- **Absolute paths for Write/Edit must be rooted at your worktree.** A deterministic
+  PreToolUse guard now blocks out-of-worktree writes (allowing only temp dirs and
+  `~/.claude`); if you see that denial, re-root the path under your worktree.
+- **Bash `cwd` is your worktree — prefer relative paths there.** A relative path
+  cannot be anchored to the wrong root, which closes the Bash write surface
+  (`>`, `cp`, `tee`, `sed -i`) the Write/Edit guard does not cover.
+
 ## Constraints
 
 - **Stay in scope** - Only implement what's in the spec
