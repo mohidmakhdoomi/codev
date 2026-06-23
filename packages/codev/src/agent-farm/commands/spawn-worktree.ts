@@ -682,6 +682,9 @@ function writeWorktreeFiles(
 ): void {
   for (const file of files) {
     const targetPath = resolve(worktreePath, file.relativePath);
+    // Generated files may live in a subdir that doesn't exist yet in a fresh
+    // worktree (e.g. .claude/hooks/ for the write-guard — Issue #1018).
+    mkdirSync(dirname(targetPath), { recursive: true });
     if (file.relativePath.endsWith('.json') && existsSync(targetPath)) {
       try {
         const existing = JSON.parse(readFileSync(targetPath, 'utf-8'));
@@ -770,9 +773,10 @@ done
       .join('\n');
     const envBlock = envExports ? `${envExports}\n` : '';
 
-    // Write any harness-specific worktree files (e.g., opencode.json for OpenCode)
+    // Write any harness-specific worktree files (e.g., opencode.json for OpenCode,
+    // the write-guard hook for Claude — Issue #1018)
     if (harness.getWorktreeFiles) {
-      writeWorktreeFiles(harness.getWorktreeFiles(roleWithPort, roleFile), worktreePath);
+      writeWorktreeFiles(harness.getWorktreeFiles(roleWithPort, roleFile, worktreePath), worktreePath);
     }
 
     scriptContent = `#!/bin/bash
@@ -859,9 +863,10 @@ export function buildWorktreeLaunchScript(
       .join('\n');
     const envBlock = envExports ? `${envExports}\n` : '';
 
-    // Write any harness-specific worktree files (e.g., opencode.json for OpenCode)
+    // Write any harness-specific worktree files (e.g., opencode.json for OpenCode,
+    // the write-guard hook for Claude — Issue #1018)
     if (harness.getWorktreeFiles) {
-      writeWorktreeFiles(harness.getWorktreeFiles(roleWithPort, roleFile), worktreePath);
+      writeWorktreeFiles(harness.getWorktreeFiles(roleWithPort, roleFile, worktreePath), worktreePath);
     }
 
     return `#!/bin/bash
