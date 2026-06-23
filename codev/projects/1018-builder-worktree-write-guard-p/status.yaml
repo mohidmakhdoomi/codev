@@ -1,7 +1,7 @@
 id: '1018'
 title: builder-worktree-write-guard-p
 protocol: pir
-phase: implement
+phase: review
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -19,4 +19,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-23T00:38:54.889Z'
-updated_at: '2026-06-23T23:21:39.772Z'
+updated_at: '2026-06-23T23:22:25.026Z'
