@@ -1,0 +1,18 @@
+id: '1018'
+title: builder-worktree-write-guard-p
+protocol: pir
+phase: plan
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: pending
+  dev-approval:
+    status: pending
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-06-23T00:38:54.889Z'
+updated_at: '2026-06-23T00:38:54.890Z'
