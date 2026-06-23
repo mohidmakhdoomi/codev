@@ -10,7 +10,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync, execSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   WORKTREE_WRITE_GUARD_SCRIPT,
@@ -19,6 +18,16 @@ import {
   GUARD_SETTINGS_RELPATH,
 } from '../agent-farm/utils/worktree-write-guard.js';
 
+// IMPORTANT (Issue #1018, CI fix): fixtures must NOT live under the OS temp dir.
+// The guard allowlists /tmp and /private/tmp, and on Linux `os.tmpdir()` IS /tmp,
+// so a fake "outside-worktree" path placed there would be allowlisted and the
+// deny-tests would wrongly pass-as-allow (green on macOS where tmpdir is
+// /var/folders, red on Linux CI). Anchoring fixtures under the package's
+// node_modules (gitignored, never allowlisted, literal non-symlinked path on
+// both platforms) makes the deny-tests platform-independent and exercises the
+// same literal-path comparison Linux production hits.
+const FIXTURE_HOME = path.join(path.resolve(__dirname, '..', '..'), 'node_modules', '.cguard-fixtures');
+
 let base: string;
 let mainCheckout: string;
 let worktree: string;
@@ -26,7 +35,8 @@ let homeDir: string;
 let scriptPath: string;
 
 beforeAll(() => {
-  base = fs.mkdtempSync(path.join(os.tmpdir(), 'cguard-'));
+  fs.mkdirSync(FIXTURE_HOME, { recursive: true });
+  base = fs.mkdtempSync(path.join(FIXTURE_HOME, 'cguard-'));
   mainCheckout = path.join(base, 'main');
   worktree = path.join(mainCheckout, '.builders', 'wt');
   homeDir = path.join(base, 'home');
@@ -37,7 +47,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  fs.rmSync(base, { recursive: true, force: true });
+  fs.rmSync(FIXTURE_HOME, { recursive: true, force: true });
 });
 
 interface GuardResult {
@@ -47,9 +57,10 @@ interface GuardResult {
 }
 
 /**
- * Run the guard with a deterministic env. TMPDIR is deliberately omitted so the
- * temp-backed fixture dirs are NOT treated as an allowlisted temp dir — only the
- * worktree, /tmp, /private/tmp, and $HOME/.claude should pass.
+ * Run the guard with a deterministic env. TMPDIR is deliberately omitted (and
+ * fixtures live outside the OS temp dir, see FIXTURE_HOME) so that only the
+ * worktree, /tmp, /private/tmp, and $HOME/.claude are allowlisted — nothing else
+ * should pass.
  */
 function runGuard(
   toolName: string,
@@ -152,7 +163,7 @@ describe('worktree-write-guard script', () => {
   });
 
   it('falls back to `git rev-parse` when CODEV_WORKTREE_ROOT is unset', () => {
-    const gitRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'cguard-git-'));
+    const gitRepo = fs.mkdtempSync(path.join(FIXTURE_HOME, 'cguard-git-'));
     try {
       const env = { cwd: gitRepo, stdio: 'pipe' as const };
       execSync('git init -q', env);
