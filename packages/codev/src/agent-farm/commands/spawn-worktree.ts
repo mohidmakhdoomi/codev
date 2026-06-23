@@ -14,7 +14,7 @@ import { globSync } from 'glob';
 import type { Config, ProtocolDefinition } from '../types.js';
 import { logger, fatal } from '../utils/logger.js';
 import { getBuilderHarness, getWorktreeConfig } from '../utils/config.js';
-import { shellEscapeSingleQuote } from '../utils/harness.js';
+import { shellEscapeSingleQuote, type HarnessProvider } from '../utils/harness.js';
 import { defaultSessionOptions } from '../../terminal/index.js';
 import { run, runStreaming, commandExists } from '../utils/shell.js';
 import { fetchIssueOrThrow, type ForgeIssue } from '../../lib/github.js';
@@ -716,6 +716,23 @@ function writeWorktreeFiles(
 }
 
 /**
+ * Install harness-specific worktree files. Role-independent — keyed on the
+ * worktree path — so the Claude write-guard hook (Issue #1018) lands for EVERY
+ * fresh Claude spawn mode, not only role-bearing ones. `roleContent`/`roleFile`
+ * are '' for no-role spawns; CLAUDE_HARNESS ignores them and uses only the path.
+ */
+function installHarnessWorktreeFiles(
+  harness: HarnessProvider,
+  roleContent: string,
+  roleFile: string,
+  worktreePath: string,
+): void {
+  if (harness.getWorktreeFiles) {
+    writeWorktreeFiles(harness.getWorktreeFiles(roleContent, roleFile, worktreePath), worktreePath);
+  }
+}
+
+/**
  * Start a terminal session for a builder.
  *
  * When `resumeSessionId` is provided, the launch script invokes
@@ -775,9 +792,7 @@ done
 
     // Write any harness-specific worktree files (e.g., opencode.json for OpenCode,
     // the write-guard hook for Claude — Issue #1018)
-    if (harness.getWorktreeFiles) {
-      writeWorktreeFiles(harness.getWorktreeFiles(roleWithPort, roleFile, worktreePath), worktreePath);
-    }
+    installHarnessWorktreeFiles(harness, roleWithPort, roleFile, worktreePath);
 
     scriptContent = `#!/bin/bash
 cd "${worktreePath}"
@@ -792,6 +807,11 @@ done
     // Fresh spawn without role injection.
     const promptFile = resolve(worktreePath, '.builder-prompt.txt');
     writeFileSync(promptFile, prompt);
+
+    // Install harness worktree files even without a role, so the write-guard
+    // (Issue #1018) is deterministic across all Claude spawn modes.
+    installHarnessWorktreeFiles(getBuilderHarness(config.workspaceRoot), '', '', worktreePath);
+
     scriptContent = `#!/bin/bash
 cd "${worktreePath}"
 while true; do
@@ -865,9 +885,7 @@ export function buildWorktreeLaunchScript(
 
     // Write any harness-specific worktree files (e.g., opencode.json for OpenCode,
     // the write-guard hook for Claude — Issue #1018)
-    if (harness.getWorktreeFiles) {
-      writeWorktreeFiles(harness.getWorktreeFiles(roleWithPort, roleFile, worktreePath), worktreePath);
-    }
+    installHarnessWorktreeFiles(harness, roleWithPort, roleFile, worktreePath);
 
     return `#!/bin/bash
 cd "${worktreePath}"
@@ -879,6 +897,9 @@ ${envBlock}while true; do
 done
 `;
   }
+  // Install harness worktree files even without a role, so the write-guard
+  // (Issue #1018) is deterministic across all Claude spawn modes.
+  installHarnessWorktreeFiles(getBuilderHarness(workspaceRoot), '', '', worktreePath);
   return `#!/bin/bash
 cd "${worktreePath}"
 while true; do
