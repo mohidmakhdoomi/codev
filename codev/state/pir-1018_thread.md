@@ -76,3 +76,10 @@ Checks: `npm run build` ✓ (exit 0), `npm test` ✓ (3358 passed, 0 failed).
 Note: full `npm run build` must run before `npm test` — the terminal
 session-manager *integration* tests need the built shellper binary; without the
 build they fail to connect (environmental, not related to this change).
+
+## Phase: review (iteration 1)
+
+dev-approval approved by human. Wrote review retrospective; routed COLD governance
+updates (arch.md write-guard subsection + 3 lessons-learned entries). HOT tiers
+untouched (capped/full). Opening PR next; porch verify runs single-pass 3-way
+consult (advisory). Then wait at pr gate for human merge.

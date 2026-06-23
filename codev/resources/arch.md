@@ -448,6 +448,17 @@ When spawning a builder (`afx spawn 3 --protocol spir`):
    - `.builder-role.md`: Role definition (from `codev/roles/builder.md`)
    - `.builder-start.sh`: Launch script for builder session
 
+#### Worktree Write-Guard (Issue #1018)
+
+A builder worktree is **nested inside the main checkout** and byte-identical to it at the branch base. The `Write`/`Edit` tools require absolute paths, so the builder model synthesizes one; when it anchors at the inferred canonical repo root instead of its worktree cwd, the `.builders/<id>/` segment is dropped and the write silently lands in the main checkout. This is intrinsic model/CLI path-synthesis behavior that drifts across upgrades, so instructions/memory don't hold — only a deterministic guard does.
+
+The guard is a Claude **PreToolUse hook**, installed per-worktree at spawn time through the existing `HarnessProvider.getWorktreeFiles()` → `writeWorktreeFiles()` path (`CLAUDE_HARNESS` only — `PreToolUse` is Claude-specific). `buildWorktreeGuardFiles()` (`packages/codev/src/agent-farm/utils/worktree-write-guard.ts`, the single source of truth) emits two files:
+
+- `.claude/hooks/worktree-write-guard.cjs` — a self-contained Node hook (no project imports; ships as a TS string constant since `tsc` copies no assets). It denies any `Write`/`Edit` whose `file_path` resolves outside the worktree root, allowlisting temp dirs (`/tmp`, `/private/tmp`, `$TMPDIR`) and `$HOME/.claude` (builder memory/config). Paths are canonicalized via realpath-of-longest-existing-ancestor (handles non-existent new files and macOS `/tmp`→`/private/tmp`). **Fail-open** on any error so it never bricks a session.
+- `.claude/settings.local.json` — wires the hook on `Write|Edit|MultiEdit`, baking the worktree root in as `CODEV_WORKTREE_ROOT` (deterministic) with `git rev-parse --show-toplevel` as a runtime fallback.
+
+Scope: write surface only. Reads are untouched, preserving codev's intentional cross-checkout reads (architect reads builder threads, sibling-thread reads). The complementary control for the Bash write surface (`>`, `cp`, `tee`) is relative-path discipline (cwd = worktree), documented in `roles/builder.md`. The architect session is unaffected — it launches via `buildRoleInjection` in the main checkout and never receives the hook (and modifying `main` is its job by design). The consult sub-agent read-surface sibling (#1092) is a separate fix.
+
 #### Directory Structure
 
 ```
