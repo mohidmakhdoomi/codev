@@ -83,3 +83,18 @@ dev-approval approved by human. Wrote review retrospective; routed COLD governan
 updates (arch.md write-guard subsection + 3 lessons-learned entries). HOT tiers
 untouched (capped/full). Opening PR next; porch verify runs single-pass 3-way
 consult (advisory). Then wait at pr gate for human merge.
+
+### PR #1098 + consultation outcome
+3-way (single pass): gemini=APPROVE, claude=APPROVE, codex=REQUEST_CHANGES.
+Codex caught a real gap: guard only emitted in role-bearing spawn branches, so
+no-role Claude builders bypassed it. FIXED — role-independent
+`installHarnessWorktreeFiles` helper wired into all 4 fresh-spawn branches
+(startBuilderSession + buildWorktreeLaunchScript, role + no-role) + 2 regression
+tests in spawn-worktree.test.ts (no-role test fails pre-fix). resume path
+intentionally excluded (existing worktree already guarded). Claude's shallow-merge
+note deferred (near-zero risk). Build+test green (3360 passed). Dispositions in
+codev/projects/1018-*/1018-review-iter1-rebuttals.md.
+
+### Status: pr gate PENDING
+Architect notified (led with REQUEST_CHANGES + fix). Waiting for human to merge +
+approve pr gate. Will NOT merge until porch reports gate_status: approved.
