@@ -33,6 +33,26 @@
     6. Re-cp the template back to UNRELEASED.md to start the next cycle
 -->
 
+## Builder worktree write-guard: deterministic protection against main-checkout pollution (#1018, PR #1098)
+
+Strict-mode builders run in isolated git worktrees nested inside the main checkout. The `Write` / `Edit` tools require absolute paths, so the builder model must synthesize one; the current runtime sometimes anchors that path at the inferred canonical repo root instead of the worktree `cwd`, dropping the `.builders/<id>/` segment. The wrong path is a real writable directory (the main checkout's working tree), so the mis-write succeeds silently. Byte-identical trees at branch base mean wrong-rooted reads succeed silently too, so nothing corrects the model until a later `git add` in the worktree fails with a pathspec error. The polluted file just sits in main's working tree.
+
+This is not a Codev regression; it is intrinsic path-synthesis drift in the builder runtime that moves across model and CLI upgrades. Instructions and per-agent memory do not hold across that drift. Only a deterministic guard does.
+
+The guard ships as a per-worktree Claude Code `PreToolUse` settings hook. At spawn time, the harness generates `.claude/settings.local.json` plus a self-contained Node guard script (`.claude/hooks/worktree-write-guard.cjs`) inside the new worktree. The guard:
+
+- Rejects any `Write` or `Edit` whose absolute path resolves outside the worktree root, naming the worktree root in the rejection message so the model re-roots on the next attempt. Silent main-checkout pollution becomes a loud, correctable failure.
+- Allowlists scratch directories (`/tmp`, `/private/tmp`, `$HOME/.claude` for builder memory writes).
+- Reads the worktree root from `CODEV_WORKTREE_ROOT` baked at spawn time (absolute), with `git rev-parse --show-toplevel` as the runtime fallback. Both are canonicalised through `realpath` so the macOS `/tmp` versus `/private/tmp` symlink difference is normalised.
+- Resolves the longest-existing-ancestor before joining the tail, so paths to non-existent new files canonicalise correctly.
+- Fails open on any error (bad JSON, unresolvable root, missing git). A safety net must never brick a builder; worst case reverts to today's unguarded behavior.
+
+Coverage is deterministic across all Claude builder spawn modes: the harness installation runs in both `startBuilderSession` and `buildWorktreeLaunchScript`, in both the role-bearing and no-role branches. The `--resume` path is intentionally excluded, since it reuses an existing worktree already guarded at its original spawn. A throwaway-builder verification matrix at dev-approval confirmed: a Write to the main checkout blocks with a re-root message, a legitimate `/tmp` write passes, a worktree-rooted Write passes and lands in the worktree, a `~/.claude/...` memory write passes, and a genuine sibling-thread cross-checkout read still works (reads are unaffected by this issue).
+
+A role-doc backstop in `roles/builder.md` and `codev-skeleton/roles/builder.md` names the failure mode so the model has a chance to self-correct even when the guard is removed or bypassed. Backstop only; instructions do not hold across model drift.
+
+Scope decision recorded at the plan gate: builder-only. The consult sub-agent read surface (issue #1092) is the architectural cousin of this guard but is intentionally out of scope. The guard module is factored so its boundary logic can later back a consult-side hook without duplication. #1092 stays open as a separate, lower-severity issue (mostly self-healing: the SDK's not-found error includes a cwd note that lets the model re-root, asymmetric to the silent-success path #1018 addresses).
+
 ## Tower command relay: external controllers can drive the active VS Code editor (#1087 / #1088 / #1089, PR #1091)
 
 A new Tower-side command channel lets external controllers (a Stream Deck device, a hosted page, a CLI script, anything that can POST to Tower) drive the active VS Code window with a canonical set of verbs. Codev's VS Code extension exposes an allowlist-gated provider that subscribes to a Tower SSE stream and dispatches a small set of verbs to existing commands. This is the substrate that the separate Codev Stream Deck integration sits on; Codev does not ship a Stream Deck client itself, just the protocol surface.
