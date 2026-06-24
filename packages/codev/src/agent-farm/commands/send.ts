@@ -41,21 +41,66 @@ export function detectWorkspaceRoot(): string | null {
 }
 
 /**
+ * Thrown when CWD is confirmed to be inside `.builders/<id>/` but the canonical
+ * builder identity cannot be verified against the workspace `state.db`.
+ *
+ * We refuse to fall back to the bare worktree directory name (e.g. `bugfix-774`)
+ * here: that non-canonical id does not match any `builders.id` (`builder-bugfix-774`),
+ * so Tower's affinity resolver (`lookupBuilderSpawningArchitect` → undefined)
+ * silently drops to the "non-builder sender → main first" branch — the builder's
+ * `afx send architect` lands on `main` instead of its spawning architect.
+ *
+ * Per "fail fast, never implement fallbacks": a fatal environmental fault must
+ * surface loudly, not be laundered into a subtle misroute (issue #1094).
+ */
+export class BuilderIdResolutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BuilderIdResolutionError';
+  }
+}
+
+/**
+ * Build an actionable message for a `state.db` open failure, naming the likely
+ * cause. A better-sqlite3 ABI mismatch (a `node` on PATH built for a different
+ * NODE_MODULE_VERSION than codev's native module) is the real-world trigger
+ * from issue #1094 and gets a specific reinstall hint.
+ */
+export function describeStateDbOpenFailure(dbPath: string, worktreeDirName: string, err: unknown): string {
+  const detail = err instanceof Error ? err.message : String(err);
+  const abiMismatch = /NODE_MODULE_VERSION|different Node\.js version|was compiled against/i.test(detail);
+  const hint = abiMismatch
+    ? "This is a better-sqlite3 native-module ABI mismatch: the 'node' on your PATH differs from the one codev was built for. Reinstall codev under your current node (e.g. `npm install -g @cluesmith/codev`)."
+    : 'Check the file for corruption, a permissions problem, or a stale lock.';
+  return (
+    `Cannot resolve builder identity for worktree '${worktreeDirName}': ` +
+    `failed to open workspace state.db at ${dbPath} (${detail}). ${hint} ` +
+    `Refusing to send with an unverified identity — it would silently misroute to 'main' (issue #1094).`
+  );
+}
+
+/**
  * Detect the current builder ID from worktree path.
  *
  * Looks up the canonical builder ID by opening the **workspace's** state.db
  * directly (not the singleton). When CWD is `.builders/<id>/`, the singleton
  * `getDb()` resolves to the worktree's own state.db — which is empty because
  * the worktree is itself a full git checkout with its own `codev/`. Reading
- * that empty DB causes the lookup to miss and the function to fall back to
- * the worktree directory name (e.g. `bugfix-774`), breaking multi-architect
- * routing downstream because the canonical ID is `builder-bugfix-774`.
+ * that empty DB causes the lookup to miss; that miss must NOT fall back to the
+ * worktree directory name (e.g. `bugfix-774`), because the canonical ID is
+ * `builder-bugfix-774` and a non-canonical id misroutes affinity routing
+ * downstream (issue #774, then issue #1094 for the silent-fallback class).
  *
  * Mirrors the per-workspace-handle pattern used by
- * `lookupBuilderSpawningArchitect` in state.ts. Issue #774.
+ * `lookupBuilderSpawningArchitect` in state.ts.
  *
- * Falls back to the worktree directory name only as a safety net.
- * Returns null if not in a builder worktree.
+ * Contract:
+ *   - Returns `null` when CWD is not inside a builder worktree (not a builder).
+ *   - Returns the canonical builder ID when it can be verified against state.db.
+ *   - **Throws `BuilderIdResolutionError`** when CWD *is* a builder worktree but
+ *     the canonical ID cannot be verified (state.db missing, unopenable, or no
+ *     matching row). Failing loud here is deliberate: returning a bare,
+ *     unverified id silently misroutes `afx send architect` to `main` (#1094).
  */
 export function detectCurrentBuilderId(): string | null {
   const cwd = process.cwd();
@@ -68,15 +113,23 @@ export function detectCurrentBuilderId(): string | null {
 
   // Open the WORKSPACE's state.db readonly — not the singleton getDb(),
   // which resolves to the worktree-local state.db when CWD is inside
-  // .builders/<id>/.
+  // .builders/<id>/. From here on we are unambiguously in a builder worktree,
+  // so any inability to resolve the canonical id is an ERROR condition, not a
+  // "this isn't a builder" condition.
   const dbPath = join(workspacePath, '.agent-farm', 'state.db');
-  if (!existsSync(dbPath)) return worktreeDirName;
+  if (!existsSync(dbPath)) {
+    throw new BuilderIdResolutionError(
+      `Cannot resolve builder identity for worktree '${worktreeDirName}': ` +
+        `workspace state.db not found at ${dbPath} (is Tower running for this workspace?). ` +
+        `Refusing to send with an unverified identity — it would silently misroute to 'main' (issue #1094).`,
+    );
+  }
 
   let wsDb: Database.Database;
   try {
     wsDb = new Database(dbPath, { readonly: true });
-  } catch {
-    return worktreeDirName;
+  } catch (err) {
+    throw new BuilderIdResolutionError(describeStateDbOpenFailure(dbPath, worktreeDirName, err));
   }
 
   try {
@@ -94,7 +147,11 @@ export function detectCurrentBuilderId(): string | null {
     const tail = rows.find(r => r.worktree.split('/').pop() === worktreeDirName);
     if (tail) return tail.id;
 
-    return worktreeDirName;
+    throw new BuilderIdResolutionError(
+      `Cannot resolve canonical builder id for worktree '${worktreeDirName}': ` +
+        `no matching builder row in ${dbPath} (the worktree may be stale or unregistered). ` +
+        `Refusing to send with an unverified identity — it would silently misroute to 'main' (issue #1094).`,
+    );
   } finally {
     wsDb.close();
   }
@@ -218,8 +275,16 @@ export async function send(options: SendOptions): Promise<void> {
   // Detect workspace for target resolution and sender provenance
   const workspace = detectWorkspaceRoot() ?? undefined;
 
-  // Detect sender identity (builder ID if in a worktree, otherwise 'architect')
-  const from = detectCurrentBuilderId() ?? 'architect';
+  // Detect sender identity (builder ID if in a worktree, otherwise 'architect').
+  // In a confirmed builder worktree, detectCurrentBuilderId throws when the
+  // canonical id can't be verified — abort loudly here rather than send an
+  // unverified `from` that Tower would silently route to 'main' (issue #1094).
+  let from: string;
+  try {
+    from = detectCurrentBuilderId() ?? 'architect';
+  } catch (err) {
+    fatal(err instanceof Error ? err.message : String(err));
+  }
 
   // Ensure Tower is running
   const client = new TowerClient();

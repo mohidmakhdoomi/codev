@@ -38,6 +38,20 @@ export function addressSpoofingErrorMessage(builderId: string): string {
   return `builder ${builderId} may only address its own spawning architect`;
 }
 
+/**
+ * Heuristic: does `sender` look like a builder identity (canonical
+ * `builder-<protocol>-<id>` or the bare worktree form `<protocol>-<id>[-slug]`)
+ * rather than an architect? Used only for the issue #1094 defense-in-depth
+ * warning. Any `architect`/`arch`-prefixed name (e.g. the numbered architect
+ * names `architect-3`) is excluded; the call site additionally suppresses the
+ * warning for any currently-registered architect name.
+ */
+export function looksLikeBuilderId(sender: string): boolean {
+  const s = sender.toLowerCase();
+  if (s === 'arch' || s.startsWith('architect')) return false;
+  return /^builder-[a-z0-9]+-/.test(s) || /-\d+(?:-[a-z0-9-]+)?$/.test(s);
+}
+
 // ============================================================================
 // Message Frame
 // ============================================================================
@@ -342,6 +356,18 @@ function resolveAgentInWorkspace(
     }
 
     // Non-builder sender (or no sender): 'main' first, then first registered.
+    // Issue #1094 defense-in-depth: a sender that LOOKS like a builder id but
+    // had no state.db row (lookupBuilderSpawningArchitect → undefined) means
+    // affinity routing was silently bypassed — most likely a non-canonical,
+    // unverified builder id (e.g. a bare worktree name). Make it visible
+    // instead of quietly delivering to 'main'.
+    if (sender && !entry.architects.has(sender) && looksLikeBuilderId(sender)) {
+      console.warn(
+        `[tower] affinity routing bypassed: sender '${sender}' looks like a builder id but has ` +
+          `no matching row in workspace '${path.basename(workspacePath)}' — routing 'architect' to ` +
+          `'main'. The sender may be a non-canonical builder id (issue #1094).`,
+      );
+    }
     const terminalId =
       entry.architects.get(DEFAULT_ARCHITECT_NAME) ?? entry.architects.values().next().value!;
     return { terminalId, workspacePath, agent: 'architect' };

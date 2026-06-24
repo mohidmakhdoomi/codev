@@ -3,7 +3,7 @@
  * Spec 0110: Messaging Infrastructure — Phase 4
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // ============================================================================
 // Mocks
@@ -66,6 +66,7 @@ vi.mock('node:fs', async () => {
   };
 });
 
+import { tmpdir } from 'node:os';
 import { send, detectWorkspaceRoot } from '../commands/send.js';
 import { fatal } from '../utils/logger.js';
 
@@ -74,18 +75,17 @@ import { fatal } from '../utils/logger.js';
 // ============================================================================
 
 /**
- * Detect the 'from' value the send command will use based on CWD.
- * If CWD is inside .builders/<dir>/, `from` will be the builder's canonical ID
- * (from state.db) or the dir name. Otherwise 'architect'.
+ * The 'from' sender identity these tests expect. The suite runs from a CWD
+ * outside any `.builders/<id>/` worktree (see beforeEach), so
+ * detectCurrentBuilderId() returns null and send() uses 'architect'.
+ *
+ * Builder-id detection (and its #1094 fail-loud behavior when state.db is
+ * unreadable inside a worktree) is covered by bugfix-774 / bugfix-1094 tests;
+ * these tests deliberately isolate from it so they exercise send()'s other
+ * behavior without depending on the physical CWD of the test runner.
  */
 function getExpectedFrom(): string {
-  const cwd = process.cwd();
-  const match = cwd.match(/\.builders\/([^/]+)/);
-  if (!match) return 'architect';
-  // In tests, loadState returns our mock with builders that have worktree paths.
-  // The worktree dir match will look for match[1] in state.db.
-  // Our defaultState doesn't match the actual CWD dir, so it falls back to dir name.
-  return match[1]; // e.g., '0110'
+  return 'architect';
 }
 
 function defaultState() {
@@ -105,11 +105,21 @@ function defaultState() {
 // ============================================================================
 
 describe('send command', () => {
+  const origCwd = process.cwd();
+
   beforeEach(() => {
+    // Run from outside any `.builders/<id>/` worktree so the sender identity
+    // resolves deterministically to 'architect' regardless of where the test
+    // runner physically lives (it may itself run inside a builder worktree).
+    process.chdir(tmpdir());
     vi.clearAllMocks();
     mockIsRunning.mockResolvedValue(true);
     mockSendMessage.mockResolvedValue({ ok: true, resolvedTo: 'builder-spir-109' });
     mockLoadState.mockReturnValue(defaultState());
+  });
+
+  afterEach(() => {
+    process.chdir(origCwd);
   });
 
   describe('single target send', () => {
