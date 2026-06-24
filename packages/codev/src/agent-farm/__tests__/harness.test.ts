@@ -76,7 +76,7 @@ describe('harness', () => {
     });
 
     it('getWorktreeFiles returns opencode.json with instructions', () => {
-      const files = OPENCODE_HARNESS.getWorktreeFiles!(ROLE_CONTENT, ROLE_FILE);
+      const files = OPENCODE_HARNESS.getWorktreeFiles!(ROLE_CONTENT, ROLE_FILE, '/abs/wt');
       expect(files).toHaveLength(1);
       expect(files[0].relativePath).toBe('opencode.json');
       const parsed = JSON.parse(files[0].content);
@@ -84,9 +84,16 @@ describe('harness', () => {
     });
   });
 
-  describe('getWorktreeFiles backward compatibility', () => {
-    it('CLAUDE_HARNESS does not have getWorktreeFiles', () => {
-      expect(CLAUDE_HARNESS.getWorktreeFiles).toBeUndefined();
+  describe('getWorktreeFiles', () => {
+    it('CLAUDE_HARNESS installs the worktree write-guard (Issue #1018)', () => {
+      const files = CLAUDE_HARNESS.getWorktreeFiles!(ROLE_CONTENT, ROLE_FILE, '/abs/wt');
+      const relPaths = files.map((f) => f.relativePath).sort();
+      expect(relPaths).toEqual(
+        ['.claude/hooks/worktree-write-guard.cjs', '.claude/settings.local.json'].sort(),
+      );
+      const settings = files.find((f) => f.relativePath === '.claude/settings.local.json');
+      const parsed = JSON.parse(settings!.content);
+      expect(parsed.hooks.PreToolUse[0].matcher).toContain('Write');
     });
 
     it('CODEX_HARNESS does not have getWorktreeFiles', () => {
