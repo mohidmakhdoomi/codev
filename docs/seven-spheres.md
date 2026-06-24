@@ -1,9 +1,10 @@
 # The Seven Spheres of Human-AI Co-Development
 
-By Waleed Kadous : published 2026-02-10
+By Waleed Kadous  
+Published 2026-02-10  
 Original: https://cluesmith.com/blog/seven-spheres
 
-![The Seven Spheres of Human-AI Co-Development](./assets/seven-spheres-cover.png)
+<img src="./assets/seven-spheres-cover.png" alt="The Seven Spheres of Human-AI Co-Development" width="640">
 
 **TL;DR:** I've been talking to a lot of developers about how they use AI. What's striking isn't the tools they use, it's how differently they work with them. Some treat AI like fancy autocomplete. Others have AI managing other AIs. These aren't just preferences. They're different spheres of operation, and each one has a different perspective. This is leading to a lot of confused conversations where people talk past each other. Hopefully this guide can (a) help bridge the gap between different spheres (b) invite you to join us as we explore the outer spheres together.
 
