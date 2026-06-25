@@ -43,8 +43,49 @@ describe('Spec 786 Phase 6 — extension.ts architect commands', () => {
     );
   });
 
-  it("targetName defaults to 'main' when no arg is supplied", () => {
-    expect(EXT_SRC).toMatch(/const targetName = architectName \?\? ['"]main['"]/);
+  it("targetName defaults to 'main' for a no-arg, single-architect workspace", () => {
+    // Issue 841 Gap 2 restructured this: no-arg invocations only default to
+    // 'main' when there's at most one architect; with >1 a picker runs. The
+    // single-architect branch still preserves today's open-main behaviour.
+    const openBlock = EXT_SRC.split("reg('codev.openArchitectTerminal'")[1] ?? '';
+    expect(openBlock).toMatch(/let targetName = architectName/);
+    expect(openBlock).toMatch(/targetName = ['"]main['"]/);
+  });
+
+  it('codev.openArchitectTerminal shows a picker when no-arg and >1 architect', () => {
+    // Gap 2: keyboard/palette invocation with multiple architects prompts.
+    const openBlock = EXT_SRC.split("reg('codev.openArchitectTerminal'")[1] ?? '';
+    expect(openBlock).toMatch(/targetName === undefined/);
+    expect(openBlock).toMatch(/architects\.length > 1/);
+    expect(openBlock).toMatch(/showQuickPick/);
+    expect(openBlock).toMatch(/sortArchitectsForPicker/);
+  });
+
+  it('codev.addArchitect is registered and validates with the shared rule', () => {
+    // Gap 1: the new UI command. Validates via the codev-core validator (same
+    // rule Tower enforces) and refreshes the tree on success.
+    expect(EXT_SRC).toMatch(/(?:registerCommand|regCli)\(['"]codev\.addArchitect['"]/);
+    const addBlock = EXT_SRC.split("regCli('codev.addArchitect'")[1] ?? '';
+    expect(addBlock).toMatch(/showInputBox/);
+    expect(addBlock).toMatch(/validateInput:.*validateArchitectName/);
+    expect(addBlock).toMatch(/client\.addArchitect\(/);
+    expect(addBlock).toMatch(/workspaceProvider\.refresh\(\)/);
+  });
+
+  it('codev.addArchitect imports validateArchitectName from codev-core (single source)', () => {
+    expect(EXT_SRC).toMatch(
+      /import \{ validateArchitectName \} from ['"]@cluesmith\/codev-core\/architect-name['"]/
+    );
+  });
+
+  it("codev.removeArchitect resolves the raw name from item.id, not the (uppercased) label", () => {
+    // Issue 841 Gap 3: with UPPERCASE labels, arg.label != the canonical name,
+    // so removeArchitect MUST read the raw name from item.id
+    // (`workspace-architect-<name>`). Reading the label would DELETE a name
+    // Tower doesn't know (e.g. 'WEB' vs 'web').
+    const removeBlock = EXT_SRC.split("regCli('codev.removeArchitect'")[1] ?? '';
+    expect(removeBlock).toMatch(/workspace-architect-/);
+    expect(removeBlock).toMatch(/arg\.id/);
   });
 
   it('codev.removeArchitect is registered', () => {

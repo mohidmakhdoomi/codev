@@ -750,7 +750,7 @@ describe('consult command', () => {
       return { consult, spawn: vi.mocked(cp.spawn) };
     }
 
-    it('invokes agy with --print --sandbox --add-dir (agentic, never the IDE/yolo)', async () => {
+    it('passes the folded consultation prompt immediately after --print', async () => {
       const { consult, spawn } = await loadAgy();
       spawn.mockClear();
 
@@ -762,6 +762,9 @@ describe('consult command', () => {
       expect(args).toContain('--print');
       expect(args).toContain('--sandbox');
       expect(args).toContain('--add-dir');
+      const printIndex = args.indexOf('--print');
+      expect(args[printIndex + 1]).toContain('review this');
+      expect(args[printIndex + 1]).toContain('Consultant Role');
       // Safety (replaces the #370 --yolo concern): never auto-approve all tools.
       expect(args).not.toContain('--dangerously-skip-permissions');
     });
@@ -793,7 +796,24 @@ describe('consult command', () => {
 
       const call = spawn.mock.calls.find(c => c[0] === agyBin);
       expect(call).toBeDefined(); // resolved to the agy backend
-      expect(call![1] as string[]).toContain('--print');
+      const args = call![1] as string[];
+      const printIndex = args.indexOf('--print');
+      expect(args[printIndex + 1]).toContain('review this');
+    });
+
+    it('passes --prompt-file contents as the value of --print', async () => {
+      const promptFile = path.join(testBaseDir, 'agy-prompt.md');
+      fs.writeFileSync(promptFile, 'PROMPT_FILE_MARKER');
+      const { consult, spawn } = await loadAgy();
+      spawn.mockClear();
+
+      await consult({ model: 'gemini', promptFile });
+
+      const call = spawn.mock.calls.find(c => c[0] === agyBin);
+      expect(call).toBeDefined();
+      const args = call![1] as string[];
+      const printIndex = args.indexOf('--print');
+      expect(args[printIndex + 1]).toContain('PROMPT_FILE_MARKER');
     });
 
     it('folds the reviewer role into the prompt (no GEMINI_SYSTEM_MD env)', async () => {
@@ -805,7 +825,7 @@ describe('consult command', () => {
       const call = spawn.mock.calls.find(c => c[0] === agyBin);
       expect(call).toBeDefined();
       const args = call![1] as string[];
-      const promptArg = args[args.length - 1];
+      const promptArg = args[args.indexOf('--print') + 1];
       expect(promptArg).toContain('UNIQUE_QUERY_MARKER'); // query inlined
       expect(promptArg).toContain('Consultant Role');     // role folded in
       const opts = call![2] as { env?: Record<string, string> };
@@ -822,7 +842,7 @@ describe('consult command', () => {
       const call = spawn.mock.calls.find(c => c[0] === agyBin);
       expect(call).toBeDefined();
       const args = call![1] as string[];
-      const promptArg = args[args.length - 1];
+      const promptArg = args[args.indexOf('--print') + 1];
       expect(promptArg).not.toContain(huge); // not inlined on argv
       expect(promptArg).toMatch(/Read the full consultation prompt from this file/);
     });

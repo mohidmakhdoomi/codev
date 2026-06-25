@@ -13,6 +13,7 @@
  */
 
 import { findLatestSessionId } from './claude-session-discovery.js';
+import { buildWorktreeGuardFiles } from './worktree-write-guard.js';
 
 // =============================================================================
 // Types
@@ -41,9 +42,13 @@ export interface HarnessProvider {
   /**
    * Optional: files to write in the worktree before launching the agent.
    * Used by harnesses that rely on file-based configuration (e.g., OpenCode
-   * uses opencode.json's instructions field for role injection).
+   * uses opencode.json's instructions field for role injection; Claude uses it
+   * to install the worktree write-guard hook — Issue #1018).
+   *
+   * `worktreePath` is the absolute path to the builder's worktree, needed by
+   * harnesses that bake worktree-specific values into generated files.
    */
-  getWorktreeFiles?(roleContent: string, roleFilePath: string): Array<{
+  getWorktreeFiles?(roleContent: string, roleFilePath: string, worktreePath: string): Array<{
     relativePath: string;
     content: string;
   }>;
@@ -95,6 +100,10 @@ export const CLAUDE_HARNESS: HarnessProvider = {
       scriptFragment: `--resume '${shellEscapeSingleQuote(sessionId)}'`,
     };
   },
+  // Install the worktree write-guard PreToolUse hook (Issue #1018) so a builder
+  // cannot silently write outside its worktree (e.g. into the main checkout).
+  getWorktreeFiles: (_content, _filePath, worktreePath) =>
+    buildWorktreeGuardFiles(worktreePath),
 };
 
 export const CODEX_HARNESS: HarnessProvider = {

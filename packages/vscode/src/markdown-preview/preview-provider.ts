@@ -53,6 +53,16 @@ export class MarkdownPreviewProvider implements vscode.CustomTextEditorProvider 
     };
     panel.webview.html = this.renderHtml(panel.webview);
 
+    // Live-reflow on a typography settings change (#1053, Tier 3): re-render the document so the
+    // new `--codev-canvas-*` overrides take effect without the reviewer reopening the preview.
+    // The webview re-sends `ready`, which re-pushes the current content + markers.
+    const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('codev.markdownPreview')) {
+        panel.webview.html = this.renderHtml(panel.webview);
+      }
+    });
+    panel.onDidDispose(() => configSub.dispose());
+
     const pushUpdate = (): void => {
       // Send the raw document text: the canvas renderer strips REVIEW/comment lines itself
       // (and keeps blocks intact + data-line accurate), so the host no longer pre-hides them.
@@ -107,10 +117,14 @@ export class MarkdownPreviewProvider implements vscode.CustomTextEditorProvider 
       webview
         .asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', file))
         .toString();
+    // User typography overrides (#1053, Tier 3). 0 = "use the built-in github-baseline default".
+    const cfg = vscode.workspace.getConfiguration('codev.markdownPreview');
     return renderMarkdownPreviewHtml({
       cspSource: webview.cspSource,
       scriptUri: asUri('markdown-preview.js'),
       styleUri: asUri('markdown-preview.css'),
+      fontSizePx: cfg.get<number>('fontSize', 0),
+      lineHeight: cfg.get<number>('lineHeight', 0),
     });
   }
 }

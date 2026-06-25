@@ -307,6 +307,27 @@ describe('spawn-worktree', () => {
       );
       expect(opencodeCall).toBeUndefined();
     });
+
+    it('installs the write-guard for claude WITH a role (#1018)', async () => {
+      getBuilderHarnessMock.mockReturnValueOnce(CLAUDE_HARNESS);
+      const { writeFileSync } = await import('node:fs');
+      const role = { content: 'You are a builder', source: 'codev' };
+      buildWorktreeLaunchScript('/tmp/worktree', 'claude', role);
+      const written = vi.mocked(writeFileSync).mock.calls.map(c => String(c[0]));
+      expect(written.some(p => p.endsWith('.claude/settings.local.json'))).toBe(true);
+      expect(written.some(p => p.endsWith('.claude/hooks/worktree-write-guard.cjs'))).toBe(true);
+    });
+
+    it('installs the write-guard for claude even WITHOUT a role (#1018 — no-role spawn path)', async () => {
+      // Regression: the guard must be deterministic across all Claude spawn
+      // modes. A no-role spawn previously fell through unguarded.
+      getBuilderHarnessMock.mockReturnValueOnce(CLAUDE_HARNESS);
+      const { writeFileSync } = await import('node:fs');
+      buildWorktreeLaunchScript('/tmp/worktree', 'claude', null);
+      const written = vi.mocked(writeFileSync).mock.calls.map(c => String(c[0]));
+      expect(written.some(p => p.endsWith('.claude/settings.local.json'))).toBe(true);
+      expect(written.some(p => p.endsWith('.claude/hooks/worktree-write-guard.cjs'))).toBe(true);
+    });
   });
 
   // =========================================================================

@@ -45,6 +45,33 @@ describe('package.json contributes.commands', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('declares the cross-file diff navigation commands (#1060), palette-discoverable + bound', () => {
+    // Palette-discoverable: declared with a title and NOT hidden via a
+    // commandPalette `when:false` entry. Also bound to Ctrl+Alt+] / Ctrl+Alt+[,
+    // gated by `codev.activeEditorIsBuilderFile` so the keys only fire on a
+    // builder diff (and don't shadow those chords elsewhere). Avoids function
+    // keys — within-file hunk nav keeps F7 / Shift+F7.
+    const palette: Array<{ command: string; when?: string }> =
+      PKG.contributes.menus?.commandPalette ?? [];
+    const keybindings: Array<{ command: string; key?: string; when?: string }> =
+      PKG.contributes.keybindings ?? [];
+    const expectedKey: Record<string, string> = {
+      'codev.diffNextFile': 'ctrl+alt+]',
+      'codev.diffPreviousFile': 'ctrl+alt+[',
+    };
+    for (const command of ['codev.diffNextFile', 'codev.diffPreviousFile']) {
+      expect(titleByCommand.get(command), `${command} missing title`).toBeTruthy();
+      const hidden = palette.find((m) => m.command === command && m.when === 'false');
+      expect(hidden, `${command} must stay palette-discoverable`).toBeUndefined();
+
+      const binding = keybindings.find((k) => k.command === command);
+      expect(binding, `${command} missing keybinding`).toBeDefined();
+      expect(binding!.key).toBe(expectedKey[command]);
+      expect(binding!.key, `${command} must not use a function key`).not.toMatch(/F\d/i);
+      expect(binding!.when).toBe('codev.activeEditorIsBuilderFile');
+    }
+  });
+
   it('does not label a command "(internal)" if it is exposed in view/item/context', () => {
     const offenders = viewContextCommands
       .filter((cmd) => /\(internal\)/i.test(titleByCommand.get(cmd) ?? ''))

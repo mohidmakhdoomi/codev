@@ -76,6 +76,20 @@ function issueIdFromUri(uri: vscode.Uri): string | undefined {
   return uri.path.replace(/\.md$/, '');
 }
 
+/**
+ * Pick the editor group for the issue preview with the same count-then-pick
+ * model the builder/shell terminals use (#804, terminal-manager.ts): target
+ * group 2 when a second group already exists, else group 1. Reading layout
+ * state directly is what makes the placement deterministic — no focus
+ * side-effect, no dependence on `Beside`'s active-group-relative semantics.
+ */
+export function pickIssuePreviewColumn(groupCount: number): vscode.ViewColumn {
+  if (groupCount >= 2) {
+    return vscode.ViewColumn.Two;
+  }
+  return vscode.ViewColumn.One;
+}
+
 function renderIssue(issueId: string, issue: IssueView): string {
   const lines: string[] = [
     `# #${issueId} ${issue.title}`,
@@ -160,16 +174,29 @@ export async function viewBacklogIssue(
 
   provider.set(issueId, renderIssue(issueId, issue));
   const uri = vscode.Uri.parse(`${SCHEME}:${issueId}.md`);
-  // Render as a read-only markdown preview in editor group 2 — the same
-  // placement model as builder terminals (which target ViewColumn.Two).
+  // Render as a read-only markdown preview in editor group 2 when one exists,
+  // else group 1 — the same count-then-pick model as builder terminals (#804).
   //
-  // `markdown.showPreviewToSide` opens in ViewColumn.Beside, which is
-  // RELATIVE to the active editor group, not an absolute column. Without
-  // anchoring, the first click (sidebar focused → group 1 active) lands
-  // in group 2, but a second click while that preview is focused makes
-  // "Beside" resolve to group 3, then 4, … — a brand-new group per click.
-  // Focusing group 1 first pins "Beside" to group 2 every time, so issue
-  // previews consistently reuse a single group like the builder terminals.
-  await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
-  await vscode.commands.executeCommand('markdown.showPreviewToSide', uri);
+  // We open the built-in preview's custom-editor viewType via `vscode.openWith`
+  // (which accepts an explicit ViewColumn + TextDocumentShowOptions) rather than
+  // the `markdown.showPreview` / `showPreviewToSide` commands. Those commands
+  // anchor the preview to the *active* editor group and ignore any column
+  // argument, so the old code had to `focusFirstEditorGroup` first to make
+  // `Beside` resolve to group 2 — a focus side-effect that yanked the user away
+  // from wherever they were sitting and, if any caller skipped the focus step,
+  // chained previews into groups 3/4/5. Reading `tabGroups` and passing the
+  // column explicitly removes both fragilities; `preserveFocus` keeps focus on
+  // the backlog row the user clicked.
+  //
+  // The viewType `vscode.markdown.preview.editor` is VS Code's BUILT-IN markdown
+  // preview (markdown-language-features manifest), distinct from Codev's own
+  // `codev.markdownPreview` artifact canvas — so this stays on the built-in
+  // renderer and does not pre-empt #1068.
+  const viewColumn = pickIssuePreviewColumn(vscode.window.tabGroups.all.length);
+  await vscode.commands.executeCommand(
+    'vscode.openWith',
+    uri,
+    'vscode.markdown.preview.editor',
+    { viewColumn, preserveFocus: true },
+  );
 }

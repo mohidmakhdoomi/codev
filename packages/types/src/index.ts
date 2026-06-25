@@ -12,6 +12,13 @@ export {
 } from './sse.js';
 
 export {
+  type CommandRequest,
+  type CommandResult,
+  COMMAND_ROUTE,
+  COMMAND_EVENT,
+} from './command.js';
+
+export {
   type ArchitectState,
   type Builder,
   type UtilTerminal,

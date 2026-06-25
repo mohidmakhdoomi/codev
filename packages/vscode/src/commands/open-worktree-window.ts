@@ -17,6 +17,7 @@
 
 import * as vscode from 'vscode';
 import type { ConnectionManager } from '../connection-manager.js';
+import { builderById } from '../builder-lookup.js';
 
 export async function openWorktreeWindow(
   connectionManager: ConnectionManager,
@@ -37,7 +38,7 @@ export async function openWorktreeWindow(
   }
 
   const builder = builderIdArg
-    ? builders.find(b => b.id === builderIdArg)
+    ? builderById(overview, builderIdArg)
     : await pickBuilder(builders);
   if (!builder) {
     if (builderIdArg) {

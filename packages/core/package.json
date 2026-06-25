@@ -1,6 +1,6 @@
 {
   "name": "@cluesmith/codev-core",
-  "version": "3.1.9",
+  "version": "3.2.1",
   "description": "Core runtime utilities for Codev — Tower client, auth, workspace helpers, escape buffer",
   "type": "module",
   "exports": {
@@ -31,6 +31,10 @@
     "./agent-names": {
       "types": "./dist/agent-names.d.ts",
       "default": "./dist/agent-names.js"
+    },
+    "./architect-name": {
+      "types": "./dist/architect-name.d.ts",
+      "default": "./dist/architect-name.js"
     },
     "./builder-helpers": {
       "types": "./dist/builder-helpers.d.ts",

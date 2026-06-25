@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from './connection-manager.js';
+import { wireCommandProvider } from './command-relay.js';
 import { TerminalManager } from './terminal-manager.js';
 import { OverviewCache } from './views/overview-data.js';
 import { spawnBuilder } from './commands/spawn.js';
@@ -7,10 +8,11 @@ import { sendMessage } from './commands/send.js';
 import { approveGate } from './commands/approve.js';
 import { cleanupBuilder } from './commands/cleanup.js';
 import { openWorktreeWindow } from './commands/open-worktree-window.js';
-import { viewDiff, activateDiffView, diffUrisForChange, registerFileInjectSession } from './commands/view-diff.js';
-import { activateDiffInjectCodeLens, getDiffInjectEntry } from './diff-inject-codelens.js';
-import { ensureDiffEditorCodeLens } from './ensure-diff-codelens.js';
-import { buildBuilderRangeRef } from './diff-inject-ref.js';
+import { viewDiff, activateDiffView, openBuilderFileDiff } from './commands/view-diff.js';
+import { navigateDiff, navigateDiffToFirst, diffFirstHunk, recordDiffNavPosition } from './commands/diff-nav.js';
+import { activateDiffInjectCodeLens, getDiffInjectEntry, onDidChangeDiffInjectRegistry } from './diff-inject-codelens.js';
+import { isStandaloneTextTab } from './diff-tab-input.js';
+import { buildBuilderRangeRef, buildBuilderFileRef } from './diff-inject-ref.js';
 import { runWorktreeDev } from './commands/run-worktree-dev.js';
 import { stopWorktreeDev } from './commands/stop-worktree-dev.js';
 import { runWorkspaceDev, stopWorkspaceDev } from './commands/run-workspace-dev.js';
@@ -34,6 +36,7 @@ import { BuilderSpawnHandler } from './builder-spawn-handler.js';
 import { BuilderTerminalLinkProvider, ReconnectTerminalLinkProvider } from './terminal-link-provider.js';
 import { computeBuildersToClose, roleIdsFromBuilders } from './prune-builder-terminals.js';
 import { buildBuilderPickRows } from './builder-pick-rows.js';
+import { readBuildersFileViewAsTree } from './builders-config.js';
 import { isIdleWaiting } from '@cluesmith/codev-core/builder-helpers';
 import { BuildersProvider, AccordionGate } from './views/builders.js';
 import { PullRequestsProvider, PullRequestTreeItem } from './views/pull-requests.js';
@@ -46,6 +49,8 @@ import { PanelPlaceholderProvider } from './views/panel-placeholder.js';
 import { DevServerTreeProvider } from './views/dev-server.js';
 import { formatTargetName } from './views/dev-server-format.js';
 import { WorkspaceProvider } from './views/workspace.js';
+import { displayArchitectName, sortArchitectsForPicker } from './views/architect-display.js';
+import { validateArchitectName } from '@cluesmith/codev-core/architect-name';
 import { BuilderTreeItem } from './views/builder-tree-item.js';
 import { BuilderFileTreeItem } from './views/builder-file-tree-item.js';
 import { BuilderDiffCache } from './views/builder-diff-cache.js';
@@ -491,19 +496,63 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 	);
 
+	// Builders active-file sync (#1066): when the active editor becomes a tracked
+	// builder-diff file, reveal + select its row in the Builders tree — the
+	// Explorer's `explorer.autoReveal` for builder diffs. One function covers
+	// every entry point that moves the diff editor without touching the sidebar:
+	// keyboard navigation (#1060), clicking a file in the multi-file View Diff,
+	// and the per-file diff. The `getDiffInjectEntry` gate is the no-hijack
+	// guarantee: a normal source file or the diff's base/left side (not in the
+	// registry) resolves to undefined, leaving the selection alone. `focus:false`
+	// keeps focus in the editor — the sidebar follows, it doesn't grab.
+	//
+	// Fired on BOTH the active-editor change AND the diff-inject registry change,
+	// because `openBuilderFileDiff` opens the diff (→ active-editor event) *before*
+	// it registers the file (→ registry event). On a file's first open the
+	// active-editor event sees an empty registry and bails; the registry event
+	// then re-runs the reveal once the entry exists. Same dual-trigger the
+	// context-key sync uses (see `activateDiffInjectCodeLens`).
+	const readAutoReveal = () =>
+		vscode.workspace.getConfiguration('codev').get<boolean>('buildersAutoReveal', true);
+	const revealActiveBuilderFile = async (): Promise<void> => {
+		if (!readAutoReveal()) { return; }
+		const fsPath = vscode.window.activeTextEditor?.document.uri.fsPath;
+		if (!fsPath) { return; }
+		const entry = getDiffInjectEntry(fsPath);
+		if (!entry) { return; }
+		// Skip the reveal when the builder file is open as a normal editor tab
+		// rather than in a diff. The registry is keyed by the worktree file path,
+		// which a standalone open shares — gating this out keeps a plain open from
+		// hijacking the sidebar selection. (Checking "plain text tab" rather than
+		// "diff tab" avoids TabInputTextMultiDiff, absent from stable @types/vscode.)
+		if (isStandaloneTextTab(vscode.window.tabGroups.activeTabGroup?.activeTab?.input)) { return; }
+		const item = await buildersProvider.findFileItem(entry.builderId, entry.relPath);
+		if (!item) { return; }
+		// The active editor may have changed during the await (rapid navigation);
+		// don't let a slow lookup override a newer file's reveal.
+		if (vscode.window.activeTextEditor?.document.uri.fsPath !== fsPath) { return; }
+		try {
+			await buildersView!.reveal(item, { select: true, expand: true, focus: false });
+		} catch {
+			// Benign if the row is no longer present (e.g. mid-cleanup).
+		}
+	};
+	context.subscriptions.push(
+		vscode.window.onDidChangeActiveTextEditor(() => { revealActiveBuilderFile(); }),
+		onDidChangeDiffInjectRegistry(() => { revealActiveBuilderFile(); }),
+	);
+
 	// Builders file-view-as-tree: each builder's changed-files list renders
 	// as a folder tree (with single-child folder chains compacted, like
 	// VSCode SCM) when on, or as a flat list when off. Toggle via the
 	// header button / `codev.buildersFileViewAsTree`. Same mechanics as
 	// accordion above — read setting, mirror to context key, refresh
 	// provider on change so the tree redraws in the new mode.
-	const readFileViewAsTree = () =>
-		vscode.workspace.getConfiguration('codev').get<boolean>('buildersFileViewAsTree', true);
-	vscode.commands.executeCommand('setContext', 'codev.buildersFileViewAsTree', readFileViewAsTree());
+	vscode.commands.executeCommand('setContext', 'codev.buildersFileViewAsTree', readBuildersFileViewAsTree());
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeConfiguration((e) => {
 			if (!e.affectsConfiguration('codev.buildersFileViewAsTree')) { return; }
-			vscode.commands.executeCommand('setContext', 'codev.buildersFileViewAsTree', readFileViewAsTree());
+			vscode.commands.executeCommand('setContext', 'codev.buildersFileViewAsTree', readBuildersFileViewAsTree());
 			buildersProvider.refresh();
 		}),
 	);
@@ -638,20 +687,44 @@ export async function activate(context: vscode.ExtensionContext) {
 		reg('codev.openArchitectTerminal', async (architectName?: string) => {
 			// Spec 786 Phase 6: the command accepts an optional architect name.
 			// Sidebar children pass their architect name via `command.arguments`.
-			// Existing palette / no-arg invocations default to `main`.
 			const client = connectionManager?.getClient();
 			const workspacePath = connectionManager?.getWorkspacePath();
 			if (!client || !workspacePath || connectionManager?.getState() !== 'connected') {
 				vscode.window.showErrorMessage('Codev: Not connected to Tower');
 				return;
 			}
-			const targetName = architectName ?? 'main';
 			try {
 				const state = await client.getWorkspaceState(workspacePath);
-				// Resolve the terminal id for the requested architect. Prefer
-				// the new `architects` collection (Spec 786 Phase 5); fall back
-				// to the scalar `architect` for older Tower versions.
+				// Resolve the architect list. Prefer the new `architects`
+				// collection (Spec 786 Phase 5); fall back to the scalar
+				// `architect` for older Tower versions.
 				const architects = state?.architects ?? (state?.architect ? [state.architect] : []);
+
+				// Issue 841 Gap 2: when invoked with no name (keybinding Cmd/Ctrl+K A
+				// or the Command Palette) and the workspace has more than one
+				// architect, prompt for which to open. Single-architect workspaces
+				// keep today's behaviour (open `main` directly, no picker).
+				let targetName = architectName;
+				if (targetName === undefined) {
+					if (architects.length > 1) {
+						const items = sortArchitectsForPicker(architects).map(a => {
+							const item: { label: string; name: string; description?: string } = {
+								label: displayArchitectName(a.name),
+								name: a.name,
+							};
+							if (a.name === 'main') { item.description = 'default'; }
+							return item;
+						});
+						const picked = await vscode.window.showQuickPick(items, {
+							placeHolder: 'Select an architect terminal to open',
+						});
+						if (!picked) { return; } // user dismissed the picker
+						targetName = picked.name;
+					} else {
+						targetName = 'main';
+					}
+				}
+
 				const match = architects.find(a => a.name === targetName);
 				const fallback = targetName === 'main' ? architects[0] : undefined;
 				const target = match ?? fallback;
@@ -664,6 +737,44 @@ export async function activate(context: vscode.ExtensionContext) {
 				vscode.window.showErrorMessage('Codev: Failed to get workspace state');
 			}
 		}),
+		// Issue 841 Gap 1: register a new sibling architect from the UI (the
+		// inline `+` on the Architects tree row, or the Command Palette). The
+		// Tower REST endpoint + client method (TowerClient.addArchitect)
+		// already exist; this is the missing UI affordance. Mirrors
+		// codev.removeArchitect's connection guard + refresh-on-success.
+		regCli('codev.addArchitect', async () => {
+			const client = connectionManager?.getClient();
+			const workspacePath = connectionManager?.getWorkspacePath();
+			if (!client || !workspacePath || connectionManager?.getState() !== 'connected') {
+				vscode.window.showErrorMessage('Codev: Not connected to Tower');
+				return;
+			}
+			const name = await vscode.window.showInputBox({
+				title: 'Add Architect',
+				prompt: 'Name for the new sibling architect',
+				placeHolder: 'e.g. web, mobile, security',
+				// Validate with the exact rule Tower enforces server-side
+				// (Issue 841 — shared validator in codev-core). Gives inline
+				// red-text feedback before the round-trip; Tower still has the
+				// final say on duplicates (which this pure check can't see).
+				validateInput: value => validateArchitectName(value.trim()),
+			});
+			if (name === undefined) { return; } // user cancelled
+			const trimmed = name.trim();
+			try {
+				const result = await client.addArchitect(workspacePath, trimmed);
+				if (result.ok) {
+					vscode.window.showInformationMessage(`Codev: Added architect '${result.name ?? trimmed}'.`);
+					// Refresh immediately so the new row appears without waiting
+					// for the `architects-updated` SSE (mirrors removeArchitect).
+					workspaceProvider.refresh();
+				} else {
+					vscode.window.showErrorMessage(`Codev: ${result.error ?? `Failed to add architect '${trimmed}'.`}`);
+				}
+			} catch (err) {
+				vscode.window.showErrorMessage(`Codev: Failed to add architect '${trimmed}': ${err instanceof Error ? err.message : String(err)}`);
+			}
+		}),
 		// Spec 786 Phase 6: remove a sibling architect via the REST endpoint
 		// from Phase 4. Wired to the right-click context menu on sibling
 		// entries (`viewItem == workspace-architect-sibling`) — see
@@ -672,8 +783,18 @@ export async function activate(context: vscode.ExtensionContext) {
 				let name: string | undefined;
 			if (typeof arg === 'string') {
 				name = arg;
-			} else if (arg instanceof vscode.TreeItem && typeof arg.label === 'string') {
-				name = arg.label;
+			} else if (arg instanceof vscode.TreeItem) {
+				// Issue 841 Gap 3: the row label is now UPPERCASE (display-only),
+				// so it no longer equals the canonical name. Resolve the raw
+				// lowercase name from `item.id` (`workspace-architect-<name>`),
+				// which the Architects tree sets for exactly this reason. Fall
+				// back to the label only if the id is somehow absent.
+				const id = arg.id;
+				if (typeof id === 'string' && id.startsWith('workspace-architect-')) {
+					name = id.slice('workspace-architect-'.length);
+				} else if (typeof arg.label === 'string') {
+					name = arg.label;
+				}
 			}
 			if (!name) {
 				vscode.window.showErrorMessage('Codev: Could not determine which architect to remove.');
@@ -874,26 +995,57 @@ export async function activate(context: vscode.ExtensionContext) {
 				vscode.window.showWarningMessage('Codev: Builder terminal not available');
 			}
 		}),
+		// Forward the whole active diff file as a reference (the Forward File action).
+		reg('codev.forwardCurrentFileToBuilder', async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (!editor) { return; }
+			const entry = getDiffInjectEntry(editor.document.uri.fsPath);
+			if (!entry) { return; }
+			await vscode.commands.executeCommand(
+				'codev.forwardToBuilder', entry.builderId, buildBuilderFileRef(entry.relPath));
+		}),
+		// Forward the changed hunk under the cursor (the Forward Hunk action): the
+		// diff-inject session already carries the new-side hunk ranges (1-based).
+		reg('codev.forwardCurrentHunkToBuilder', async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (!editor) { return; }
+			const entry = getDiffInjectEntry(editor.document.uri.fsPath);
+			if (!entry) { return; }
+			const line = editor.selection.active.line + 1;
+			const hunk = entry.hunks.find(h => line >= h.start && line <= h.end);
+			if (!hunk) {
+				vscode.window.setStatusBarMessage('Codev: place the cursor in a changed hunk', 3000);
+				return;
+			}
+			await vscode.commands.executeCommand(
+				'codev.forwardToBuilder', entry.builderId, buildBuilderRangeRef(entry.relPath, hunk.start, hunk.end));
+		}),
 		reg('codev.openBuilderFileDiff', async (arg: unknown) => {
 			if (!(arg instanceof BuilderFileTreeItem)) { return; }
-			// Open the diff FIRST so it appears instantly. Lens registration and
-			// the git hunk computation happen after — the entry registers
-			// synchronously (symbol/file lenses render right away) and the hunk
-			// lenses refresh in once git resolves (#789). Doing this before the
-			// open used to block the diff on a git subprocess.
-			const { left, right } = diffUrisForChange(arg.plan, { wt: arg.worktreePath, ref: arg.baseRef });
-			const title = `${arg.plan.resourcePath} (#${arg.builderId})`;
-			await vscode.commands.executeCommand('vscode.diff', left, right, title);
-			await registerFileInjectSession({
+			await openBuilderFileDiff(context, {
 				worktreePath: arg.worktreePath,
 				baseRef: arg.baseRef,
 				builderId: arg.builderId,
 				plan: arg.plan,
 			});
-			// Offer to enable diffEditor.codeLens (off by default — VS Code hides
-			// CodeLens in diff editors). After the open, so it never delays it.
-			await ensureDiffEditorCodeLens(context);
+			// Seed the nav anchor so next/previous-file works even when this open
+			// was a deleted/binary file (no `file:` doc → absent from the
+			// diff-inject registry that navigation otherwise resolves against).
+			recordDiffNavPosition(arg.builderId, arg.plan.resourcePath);
 		}),
+		// Cross-file navigation in a builder diff review (#1060): walk the
+		// builder's changed-file list top-to-bottom (next) / bottom-to-top (prev),
+		// opening each file's per-file diff. CLI-independent — operates on editor
+		// state + the shared diff cache, not Tower.
+		reg('codev.diffNextFile', () =>
+			navigateDiff(1, { context, overviewCache, diffCache: builderDiffCache })),
+		reg('codev.diffPreviousFile', () =>
+			navigateDiff(-1, { context, overviewCache, diffCache: builderDiffCache })),
+		// "Reset to start" gestures (e.g. a controller dial press): jump to the
+		// first file in the list / the first hunk of the active diff.
+		reg('codev.diffFirstFile', () =>
+			navigateDiffToFirst({ context, overviewCache, diffCache: builderDiffCache })),
+		reg('codev.diffFirstHunk', () => diffFirstHunk()),
 		regCli('codev.runWorktreeDev', (arg: vscode.TreeItem | string | undefined) =>
 			runWorktreeDev(connectionManager!, terminalManager!, extractBuilderId(arg))),
 		regCli('codev.stopWorktreeDev', () =>
@@ -1007,6 +1159,10 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		connectionManager.onSSEEvent(({ type, data }) => builderSpawnHandler.handle(type, data)),
 	);
+
+	// VSCode as the command provider for Tower's command relay: run canonical
+	// verbs sent by a controller (the focused window self-gates).
+	context.subscriptions.push(wireCommandProvider(connectionManager));
 
 	// Make builder names clickable in any terminal output
 	context.subscriptions.push(

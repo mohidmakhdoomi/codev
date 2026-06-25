@@ -45,6 +45,7 @@ import { ensureWorktreeConfigWatcher } from './worktree-config-watcher.js';
 import { hasTeam, loadTeamMembers, loadMessages, type TeamMember, type TeamMessage } from '../../lib/team.js';
 import { fetchTeamGitHubData, type TeamMemberGitHubData } from '../../lib/team-github.js';
 import { resolveTarget, broadcastMessage, isResolveError } from './tower-messages.js';
+import { handleCommandRoute, COMMAND_ROUTE } from './command-relay.js';
 import { formatArchitectMessage, formatBuilderMessage } from '../utils/message-format.js';
 import { SendBuffer } from './send-buffer.js';
 import type { BufferedMessage } from './send-buffer.js';
@@ -233,6 +234,13 @@ export async function handleRequest(
       const tunnelSub = url.pathname.slice('/api/tunnel/'.length);
       await handleTunnelEndpoint(req, res, tunnelSub);
       return;
+    }
+
+    // Command relay: /api/command — the module self-routes and lazily
+    // initializes, so this is the only Tower-side seam. Relays a canonical verb
+    // to the active editor provider for any controller.
+    if (url.pathname === COMMAND_ROUTE) {
+      return await handleCommandRoute(req, res, url, ctx);
     }
 
     // Workspace API: /api/workspaces/:encodedPath/activate|deactivate|status (Spec 0090 Phase 1)

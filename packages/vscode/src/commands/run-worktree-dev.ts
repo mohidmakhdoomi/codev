@@ -13,6 +13,7 @@ import { resolveAgentName } from '@cluesmith/codev-core/agent-names';
 import type { ConnectionManager } from '../connection-manager.js';
 import type { TerminalManager } from '../terminal-manager.js';
 import { startDevForTarget } from './dev-shared.js';
+import { builderById } from '../builder-lookup.js';
 
 export async function runWorktreeDev(
   connectionManager: ConnectionManager,
@@ -34,7 +35,7 @@ export async function runWorktreeDev(
     return;
   }
   const builder = builderIdArg
-    ? builders.find(b => b.id === builderIdArg)
+    ? builderById(overview, builderIdArg)
     : await pickBuilder(builders);
   if (!builder) {
     if (builderIdArg) {

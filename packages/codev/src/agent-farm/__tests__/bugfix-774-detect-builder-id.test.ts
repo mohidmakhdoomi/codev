@@ -19,7 +19,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 
-import { detectCurrentBuilderId } from '../commands/send.js';
+import {
+  detectCurrentBuilderId,
+  BuilderIdResolutionError,
+  describeStateDbOpenFailure,
+} from '../commands/send.js';
 import { LOCAL_SCHEMA } from '../db/schema.js';
 
 function writeBuilderRow(dbPath: string, id: string, worktree: string): void {
@@ -77,24 +81,78 @@ describe('detectCurrentBuilderId — issue #774', () => {
     expect(detectCurrentBuilderId()).toBe('builder-bugfix-1599');
   });
 
-  it('falls back to worktree dir name when workspace state.db is missing', () => {
+  // Issue #1094: in a confirmed builder worktree, an inability to verify the
+  // canonical id is an ERROR — never a silent bare-name fallback (which would
+  // misroute `afx send architect` to 'main'). The three unverifiable paths
+  // below must all throw rather than return the bare worktree dir name.
+
+  it('throws (does not return bare name) when workspace state.db is missing', () => {
     rmSync(join(workspacePath, '.agent-farm'), { recursive: true });
     process.chdir(worktreePath);
-    expect(detectCurrentBuilderId()).toBe('bugfix-1599');
+    expect(() => detectCurrentBuilderId()).toThrow(BuilderIdResolutionError);
+    expect(() => detectCurrentBuilderId()).toThrow(/bugfix-1599/);
   });
 
-  it('falls back to worktree dir name when no row matches', () => {
+  it('throws (does not return bare name) when no builder row matches', () => {
     // Workspace DB exists but has no row for this worktree.
     const wsDb = new Database(join(workspacePath, '.agent-farm', 'state.db'));
     wsDb.prepare('DELETE FROM builders').run();
     wsDb.close();
 
     process.chdir(worktreePath);
-    expect(detectCurrentBuilderId()).toBe('bugfix-1599');
+    expect(() => detectCurrentBuilderId()).toThrow(BuilderIdResolutionError);
+    expect(() => detectCurrentBuilderId()).toThrow(/no matching builder row/);
+  });
+
+  it('throws (does not return bare name) when state.db cannot be opened — issue #1094', () => {
+    // The real incident: a Node ABI mismatch made `new Database()` throw, and
+    // the old `catch { return worktreeDirName }` swallowed it, shipping the
+    // bare name `bugfix-1599`. Simulate an unopenable DB by replacing the file
+    // with a directory at the same path (existsSync passes; open throws).
+    rmSync(join(workspacePath, '.agent-farm'), { recursive: true });
+    mkdirSync(join(workspacePath, '.agent-farm', 'state.db'), { recursive: true });
+
+    process.chdir(worktreePath);
+
+    // Must NOT silently return the bare worktree directory name.
+    let returned: string | null | undefined;
+    try {
+      returned = detectCurrentBuilderId();
+    } catch (err) {
+      expect(err).toBeInstanceOf(BuilderIdResolutionError);
+      expect((err as Error).message).toContain('bugfix-1599');
+      expect((err as Error).message).not.toBe('bugfix-1599');
+      expect((err as Error).message).toMatch(/issue #1094/);
+      return;
+    }
+    // Reaching here means it returned instead of throwing — fail loudly.
+    expect(returned).toBeUndefined(); // never reached if it threw; asserts no silent bare-name
+    throw new Error(`Expected a throw, got a silent return of '${returned}'`);
   });
 
   it('returns null when not in a builder worktree', () => {
     process.chdir(workspacePath);
     expect(detectCurrentBuilderId()).toBeNull();
+  });
+});
+
+describe('describeStateDbOpenFailure — issue #1094 actionable messages', () => {
+  it('names the better-sqlite3 ABI mismatch and points at reinstalling codev', () => {
+    const abiErr = new Error(
+      "The module was compiled against a different Node.js version using NODE_MODULE_VERSION 147. " +
+        "This version of Node.js requires NODE_MODULE_VERSION 127.",
+    );
+    const msg = describeStateDbOpenFailure('/ws/.agent-farm/state.db', 'bugfix-2461', abiErr);
+    expect(msg).toMatch(/ABI mismatch/i);
+    expect(msg).toMatch(/reinstall codev/i);
+    expect(msg).toContain('bugfix-2461');
+    expect(msg).toMatch(/issue #1094/);
+  });
+
+  it('gives a generic hint for non-ABI open failures', () => {
+    const msg = describeStateDbOpenFailure('/ws/.agent-farm/state.db', 'bugfix-2461', new Error('disk I/O error'));
+    expect(msg).toMatch(/corruption|permissions|stale lock/i);
+    expect(msg).not.toMatch(/ABI mismatch/i);
+    expect(msg).toContain('bugfix-2461');
   });
 });
