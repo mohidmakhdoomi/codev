@@ -153,7 +153,7 @@ describe('codev.hasDevCommand gating for dev-server commands', () => {
   for (const cmd of ['codev.runWorktreeDev', 'codev.stopWorktreeDev']) {
     it(`${cmd} builder-row menu entry is gated by codev.hasDevCommand`, () => {
       const entry = viewItemMenuEntries.find(
-        e => e.command === cmd && e.when.includes('view == codev.builders'));
+        e => e.command === cmd && e.when.includes('view == codev.agents'));
       expect(entry, `builders view/item/context entry for ${cmd}`).toBeDefined();
       expect(entry!.when, `${cmd} when-clause`).toContain('&& codev.hasDevCommand');
     });

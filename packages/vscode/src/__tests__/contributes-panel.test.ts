@@ -59,7 +59,7 @@ describe('codevPanel placeholder view (#812)', () => {
     const sidebar = (views.codev ?? []).map((v) => v.id);
     expect(sidebar).toEqual([
       'codev.workspace',
-      'codev.builders',
+      'codev.agents',
       'codev.backlog',
       'codev.pullRequests',
       'codev.recentlyClosed',

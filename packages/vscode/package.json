@@ -490,62 +490,62 @@
         },
         {
           "command": "codev.approveGate",
-          "when": "view == codev.builders && viewItem =~ /^blocked-builder-/",
+          "when": "view == codev.agents && viewItem =~ /^blocked-builder-/",
           "group": "inline@1"
         },
         {
           "command": "codev.openBuilderById",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
           "group": "1_primary@1"
         },
         {
           "command": "codev.approveGate",
-          "when": "view == codev.builders && viewItem =~ /^blocked-builder-/",
+          "when": "view == codev.agents && viewItem =~ /^blocked-builder-/",
           "group": "1_primary@2"
         },
         {
           "command": "codev.viewSpecFile",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-(spir|aspir)(-review)?$/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-(spir|aspir)(-review)?$/",
           "group": "1_primary@3"
         },
         {
           "command": "codev.viewPlanFile",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-(spir|aspir|pir)(-review)?$/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-(spir|aspir|pir)(-review)?$/",
           "group": "1_primary@4"
         },
         {
           "command": "codev.viewReviewFile",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-((spir|aspir|air)(-review)?|pir-review)$/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-((spir|aspir|air)(-review)?|pir-review)$/",
           "group": "1_primary@5"
         },
         {
           "command": "codev.viewDiff",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
           "group": "2_worktree@0"
         },
         {
           "command": "codev.openWorktreeWindow",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
           "group": "2_worktree@1"
         },
         {
           "command": "codev.openWorktreeFolder",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
           "group": "2_worktree@2"
         },
         {
           "command": "codev.runWorktreeSetup",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
           "group": "3_dev@1"
         },
         {
           "command": "codev.runWorktreeDev",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/ && codev.hasDevCommand",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/ && codev.hasDevCommand",
           "group": "3_dev@2"
         },
         {
           "command": "codev.stopWorktreeDev",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/ && codev.hasDevCommand",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/ && codev.hasDevCommand",
           "group": "3_dev@3"
         },
         {
@@ -592,37 +592,37 @@
       "view/title": [
         {
           "command": "codev.refreshOverview",
-          "when": "view == codev.builders",
+          "when": "view == codev.agents",
           "group": "navigation"
         },
         {
           "command": "codev.disableBuildersAutoCollapse",
-          "when": "view == codev.builders && codev.buildersAutoCollapse",
+          "when": "view == codev.agents && codev.buildersAutoCollapse",
           "group": "navigation"
         },
         {
           "command": "codev.enableBuildersAutoCollapse",
-          "when": "view == codev.builders && !codev.buildersAutoCollapse",
+          "when": "view == codev.agents && !codev.buildersAutoCollapse",
           "group": "navigation"
         },
         {
           "command": "codev.disableBuildersFileTreeMode",
-          "when": "view == codev.builders && codev.buildersFileViewAsTree",
+          "when": "view == codev.agents && codev.buildersFileViewAsTree",
           "group": "navigation"
         },
         {
           "command": "codev.enableBuildersFileTreeMode",
-          "when": "view == codev.builders && !codev.buildersFileViewAsTree",
+          "when": "view == codev.agents && !codev.buildersFileViewAsTree",
           "group": "navigation"
         },
         {
           "command": "codev.groupBuildersByArea",
-          "when": "view == codev.builders && codev.buildersGroupBy != 'area'",
+          "when": "view == codev.agents && codev.buildersGroupBy != 'area'",
           "group": "navigation"
         },
         {
           "command": "codev.groupBuildersByPhase",
-          "when": "view == codev.builders && codev.buildersGroupBy == 'area'",
+          "when": "view == codev.agents && codev.buildersGroupBy == 'area'",
           "group": "navigation"
         },
         {
@@ -794,7 +794,7 @@
     "views": {
       "codev": [
         { "id": "codev.workspace", "name": "Workspace" },
-        { "id": "codev.builders", "name": "Builders" },
+        { "id": "codev.agents", "name": "Agents" },
         { "id": "codev.backlog", "name": "Backlog" },
         { "id": "codev.pullRequests", "name": "Pull Requests" },
         { "id": "codev.recentlyClosed", "name": "Recently Closed" },

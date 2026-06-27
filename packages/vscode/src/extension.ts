@@ -53,6 +53,7 @@ import { formatTargetName } from './views/dev-server-format.js';
 import { WorkspaceProvider } from './views/workspace.js';
 import { displayArchitectName, sortArchitectsForPicker } from './views/architect-display.js';
 import { validateArchitectName } from '@cluesmith/codev-core/architect-name';
+import { resolveMainArchitect, addArchitectRequestMessage, ADD_ARCHITECT_RECIPIENT } from './commands/add-architect.js';
 import { BuilderTreeItem } from './views/builder-tree-item.js';
 import { BuilderFileTreeItem } from './views/builder-file-tree-item.js';
 import { BuilderDiffCache } from './views/builder-diff-cache.js';
@@ -415,7 +416,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	// List views use createTreeView so their title can carry a live item
 	// count; the rest stay on registerTreeDataProvider.
 	const buildersProvider = new BuildersProvider(overviewCache, builderDiffCache);
-	buildersView = vscode.window.createTreeView('codev.builders', { treeDataProvider: buildersProvider });
+	buildersView = vscode.window.createTreeView('codev.agents', { treeDataProvider: buildersProvider });
 	// Publish a builder-active event when a builder row is selected in the sidebar.
 	// Builder tree items carry `builderId` (= OverviewBuilder.id); selecting a
 	// builder's root node or a file row re-targets any configured hook.
@@ -794,11 +795,18 @@ export async function activate(context: vscode.ExtensionContext) {
 				vscode.window.showErrorMessage('Codev: Failed to get workspace state');
 			}
 		}),
-		// Issue 841 Gap 1: register a new sibling architect from the UI (the
-		// inline `+` on the Architects tree row, or the Command Palette). The
-		// Tower REST endpoint + client method (TowerClient.addArchitect)
-		// already exist; this is the missing UI affordance. Mirrors
-		// codev.removeArchitect's connection guard + refresh-on-success.
+		// Issue 1104: architect creation is now CONVERSATIONAL, not a direct
+		// CLI/REST call. The action asks the `main` architect (the workspace
+		// orchestrator) to create the new architect, so the roster stays
+		// intentional — main decides whether the specialisation makes sense,
+		// runs `afx workspace add-architect`, and briefs it. Letting any
+		// developer create an unbriefed architect from the sidebar `+` leads to
+		// architect proliferation and roster drift in main's working memory.
+		//
+		// Main must be active: if no main session is running there is nothing to
+		// ask, so the action refuses with the CLI fallback rather than silently
+		// creating one. (Power users can still bypass main via
+		// `afx workspace add-architect --name <name>`.)
 		regCli('codev.addArchitect', async () => {
 			const client = connectionManager?.getClient();
 			const workspacePath = connectionManager?.getWorkspacePath();
@@ -806,30 +814,49 @@ export async function activate(context: vscode.ExtensionContext) {
 				vscode.window.showErrorMessage('Codev: Not connected to Tower');
 				return;
 			}
+			// Resolve main from the live roster (the overview payload carries it
+			// since Issue 1104). A present `main` is reachable by construction —
+			// Tower lists only architects with a live session.
+			const overview = await client.getOverview(workspacePath);
+			const main = resolveMainArchitect(overview?.architects ?? []);
+			if (!main) {
+				await vscode.window.showInformationMessage(
+					'Codev: No active main architect to ask.',
+					{
+						modal: true,
+						detail: 'Add Architect asks the main architect to create the new architect, but no main session is running. Start the workspace with `afx workspace start`, or add one directly via `afx workspace add-architect --name <name>`.',
+					},
+				);
+				return;
+			}
 			const name = await vscode.window.showInputBox({
 				title: 'Add Architect',
-				prompt: 'Name for the new sibling architect',
+				prompt: 'Name for the new architect (main decides whether to create it)',
 				placeHolder: 'e.g. web, mobile, security',
 				// Validate with the exact rule Tower enforces server-side
-				// (Issue 841 — shared validator in codev-core). Gives inline
-				// red-text feedback before the round-trip; Tower still has the
-				// final say on duplicates (which this pure check can't see).
+				// (Issue 841 — shared validator in codev-core). Parity with
+				// `afx workspace add-architect`'s own check.
 				validateInput: value => validateArchitectName(value.trim()),
 			});
 			if (name === undefined) { return; } // user cancelled
 			const trimmed = name.trim();
 			try {
-				const result = await client.addArchitect(workspacePath, trimmed);
+				// Dispatch the request to main via the `architect:main` addressing
+				// form (Tower's /api/send). No tree refresh here — the roster
+				// updates via the `architects-updated` SSE once main actually
+				// creates the architect.
+				const result = await client.sendMessage(
+					ADD_ARCHITECT_RECIPIENT,
+					addArchitectRequestMessage(trimmed),
+					{ workspace: workspacePath },
+				);
 				if (result.ok) {
-					vscode.window.showInformationMessage(`Codev: Added architect '${result.name ?? trimmed}'.`);
-					// Refresh immediately so the new row appears without waiting
-					// for the `architects-updated` SSE (mirrors removeArchitect).
-					workspaceProvider.refresh();
+					vscode.window.showInformationMessage(`Codev: Asked main to add a '${trimmed}' architect.`);
 				} else {
-					vscode.window.showErrorMessage(`Codev: ${result.error ?? `Failed to add architect '${trimmed}'.`}`);
+					vscode.window.showErrorMessage(`Codev: ${result.error ?? `Failed to message main about '${trimmed}'.`}`);
 				}
 			} catch (err) {
-				vscode.window.showErrorMessage(`Codev: Failed to add architect '${trimmed}': ${err instanceof Error ? err.message : String(err)}`);
+				vscode.window.showErrorMessage(`Codev: Failed to message main about '${trimmed}': ${err instanceof Error ? err.message : String(err)}`);
 			}
 		}),
 		// Spec 786 Phase 6: remove a sibling architect via the REST endpoint
