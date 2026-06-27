@@ -1022,6 +1022,48 @@ describe('tower-routes', () => {
       expect(statusCode()).toBe(200);
       expect(mockOverviewGetOverview).toHaveBeenCalledWith('/my/workspace', expect.any(Set));
     });
+
+    it('enriches the payload with the architect roster, main-first, dead sessions skipped (Issue 1104)', async () => {
+      // Roster registration order is vscode → main → dead; `main` must surface
+      // at index 0 and the dead (sessionless) registration must be dropped.
+      mockGetRehydratedTerminalsEntry.mockResolvedValueOnce({
+        architects: new Map([['vscode', 't-vscode'], ['main', 't-main'], ['dead', 't-dead']]),
+        builders: new Map(),
+        shells: new Map(),
+        fileTabs: new Map(),
+      });
+      mockGetTerminalManager.mockReturnValue({ getSession: mockGetSession });
+      mockGetSession.mockImplementation((id: string) =>
+        id === 't-dead' ? undefined : { pid: 100, lastDataAt: 0 });
+      mockIsSessionPersistent.mockReturnValue(false);
+      mockOverviewGetOverview.mockResolvedValueOnce({ builders: [], pendingPRs: [], backlog: [] });
+
+      const req = makeReq('GET', '/api/overview?workspace=/test/workspace');
+      const { res, statusCode, body } = makeRes();
+      await handleRequest(req, res, makeCtx());
+
+      expect(statusCode()).toBe(200);
+      const parsed = JSON.parse(body());
+      expect(parsed.architects.map((a: { name: string }) => a.name)).toEqual(['main', 'vscode']);
+    });
+
+    it('emits an empty architect roster when the workspace has no architects (Issue 1104)', async () => {
+      mockGetRehydratedTerminalsEntry.mockResolvedValueOnce({
+        architects: new Map(),
+        builders: new Map(),
+        shells: new Map(),
+        fileTabs: new Map(),
+      });
+      mockGetTerminalManager.mockReturnValue({ getSession: mockGetSession });
+      mockOverviewGetOverview.mockResolvedValueOnce({ builders: [], pendingPRs: [], backlog: [] });
+
+      const req = makeReq('GET', '/api/overview?workspace=/test/workspace');
+      const { res, statusCode, body } = makeRes();
+      await handleRequest(req, res, makeCtx());
+
+      expect(statusCode()).toBe(200);
+      expect(JSON.parse(body()).architects).toEqual([]);
+    });
   });
 
   describe('POST /api/overview/refresh', () => {

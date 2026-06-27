@@ -30,7 +30,8 @@ import type { PtySessionInfo } from '../../terminal/pty-session.js';
 import type { BuilderSpawnedPayload, DashboardState, ArchitectState, TowerVersionInfo } from '@cluesmith/codev-types';
 import { getBuilders, setArchitectByName } from '../state.js';
 import { DEFAULT_COLS, defaultSessionOptions } from '../../terminal/index.js';
-import type { SSEClient } from './tower-types.js';
+import type { SSEClient, WorkspaceTerminals } from './tower-types.js';
+import type { TerminalManager } from '../../terminal/pty-manager.js';
 import { parseJsonBody, isRequestAllowed } from '../utils/server-utils.js';
 import {
   isRateLimited,
@@ -861,6 +862,38 @@ async function handleStatus(res: http.ServerResponse): Promise<void> {
   res.end(JSON.stringify({ instances }));
 }
 
+/**
+ * Build the `ArchitectState[]` roster from a workspace's (rehydrated) terminals
+ * entry: one entry per registered architect whose PtySession is live (stale or
+ * racing registrations are skipped), with `main` moved to index 0 so consumers
+ * can rely on `architects[0]` as the default architect.
+ *
+ * Single source of truth (Issue 1104) shared by the dashboard-state handler
+ * (`/api/state`) and the overview handler (`/api/overview`), so the two payloads
+ * carry an identical roster and can't drift. Extracted verbatim from the
+ * dashboard-state builder's former inline loop.
+ */
+function collectArchitects(entry: WorkspaceTerminals, manager: TerminalManager): ArchitectState[] {
+  const collected: ArchitectState[] = [];
+  for (const [architectName, terminalId] of entry.architects) {
+    const session = manager.getSession(terminalId);
+    if (!session) continue;
+    collected.push({
+      name: architectName,
+      port: 0,
+      pid: session.pid || 0,
+      terminalId,
+      persistent: isSessionPersistent(terminalId, session),
+    });
+  }
+  const mainIdx = collected.findIndex(a => a.name === 'main');
+  if (mainIdx > 0) {
+    const [mainEntry] = collected.splice(mainIdx, 1);
+    collected.unshift(mainEntry);
+  }
+  return collected;
+}
+
 async function handleOverview(res: http.ServerResponse, url: URL, workspaceOverride?: string, ctx?: RouteContext): Promise<void> {
   // Accept workspace from: explicit override (workspace-scoped route), ?workspace= param, or first known path.
   let workspaceRoot = workspaceOverride || url.searchParams.get('workspace');
@@ -908,6 +941,12 @@ async function handleOverview(res: http.ServerResponse, url: URL, workspaceOverr
     if (!builder) { continue; }
     builder.lastDataAt = new Date(ptySession.lastDataAt).toISOString();
   }
+
+  // Issue 1104: enrich with the live architect roster (main-first) so the
+  // VSCode Agents tree can render its architect tier and attribution badge
+  // straight off the overview cache. Same `collectArchitects` helper (and so
+  // the same roster) the dashboard-state handler uses.
+  data.architects = collectArchitects(entry, terminalManager);
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
@@ -1814,29 +1853,12 @@ async function handleWorkspaceState(
     teamEnabled: await hasTeam(path.join(workspacePath, 'codev', 'team')),
   };
 
-  // Spec 761: build the architects collection from entry.architects.
-  // - Skip entries whose session is unavailable (race / stale registration).
-  // - Move 'main' to index 0 when present so consumers can rely on
-  //   architects[0] as the default architect.
+  // Spec 761: build the architects collection from entry.architects (skip dead
+  // sessions, main-first). Shared with /api/overview via `collectArchitects`
+  // (Issue 1104) so both payloads carry an identical roster.
   // Spec 755: the scalar `state.architect` is preserved as a backward-compat
   // pointer to the same default architect (architects[0] when present).
-  const collectedArchitects: ArchitectState[] = [];
-  for (const [architectName, terminalId] of entry.architects) {
-    const session = manager.getSession(terminalId);
-    if (!session) continue;
-    collectedArchitects.push({
-      name: architectName,
-      port: 0,
-      pid: session.pid || 0,
-      terminalId,
-      persistent: isSessionPersistent(terminalId, session),
-    });
-  }
-  const mainIdx = collectedArchitects.findIndex(a => a.name === 'main');
-  if (mainIdx > 0) {
-    const [mainEntry] = collectedArchitects.splice(mainIdx, 1);
-    collectedArchitects.unshift(mainEntry);
-  }
+  const collectedArchitects = collectArchitects(entry, manager);
   state.architects = collectedArchitects;
   state.architect = collectedArchitects[0] ?? null;
 

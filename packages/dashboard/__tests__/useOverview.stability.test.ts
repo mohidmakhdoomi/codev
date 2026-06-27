@@ -23,6 +23,7 @@ const makeOverview = (backlogTitle = 'Fix login bug'): OverviewData => ({
     },
   ],
   recentlyClosed: [],
+  architects: [],
 });
 
 // Mock api module — control what fetchOverview returns per call
