@@ -41,3 +41,30 @@ area/cross-cutting may fit better than area/vscode (architect's call). Plan revi
 Decision: keep `ArchitectState[]` (not a leaner `string[]`) for shape-parity with
 DashboardState.architects + the shared `collectArchitects` helper, even though the Agents tree only
 reads `name` today. Reviewer confirmed. Plan already reflects this — no change.
+
+## Implement phase
+
+Plan approved. Two reviewer corrections applied at the start of implement:
+1. NO Add Architect `+` on the Agents title bar — a `+` there is ambiguous (add-builder vs
+   add-architect). Add Architect stays only in Workspace > Architects.
+2. Rename the view ID `codev.builders` → `codev.agents` (not just the label) for consistency.
+   Config keys (buildersGroupBy/AutoCollapse/FileViewAsTree) and command ids keep their names —
+   only the tree-view id + all `view == codev.builders` when-clauses changed.
+
+Built:
+- **Wire (Option B):** `OverviewData.architects: ArchitectState[]`; extracted `collectArchitects`
+  in tower-routes.ts, reused by dashboard-state + handleOverview (single source of truth);
+  overview.ts defaults `architects: []` (handleOverview injects the live roster like lastDataAt).
+- **Agents tree:** `architect-grouping.ts` (pure partition + badge helper), `ArchitectGroupTreeItem`,
+  adaptive root in builders.ts (architectCount>1 → architect tier; else today's behaviour bit-for-bit).
+  Passive architect → leaf; orphan/stale-owner builders → non-interactive Unassigned bucket;
+  3-level getParent chain for reveal; group ids namespaced by architect to avoid collisions.
+- **Conversational Add Architect:** `commands/add-architect.ts` (resolveMain + request message),
+  extension.ts handler routes to `architect:main` via sendMessage; refuses with modal+CLI fallback
+  when no main session.
+
+All green: full build ✓, vscode check-types+lint+522 unit ✓, dashboard 322 ✓, codev 3375 ✓.
+Note: the architect-attribution `description` badge is dormant in the nested tree (owner is always
+the ancestor) — it only surfaces for stale-owner builders under Unassigned. Working as designed.
+Dashboard Agents view is NOT built here (out of scope) — the enrichment just makes the roster
+available for future reuse.
