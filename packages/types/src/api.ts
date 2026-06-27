@@ -286,15 +286,15 @@ export interface OverviewData {
   backlog: OverviewBacklogItem[];
   recentlyClosed: OverviewRecentlyClosed[];
   /**
-   * Registered architects for the workspace (Issue 1104), main-first. Carries
-   * the same `ArchitectState[]` shape `DashboardState.architects` exposes,
-   * built by the shared `collectArchitects` helper from the live terminal
-   * roster, so the overview payload and the dashboard-state payload never
+   * The workspace's architects with a live session (Issue 1104), main-first.
+   * Carries the same `ArchitectState[]` shape `DashboardState.architects`
+   * exposes, built by the shared `liveArchitects` helper from the live terminal
+   * sessions, so the overview payload and the dashboard-state payload never
    * drift. Only architects with a live session are listed (stale registrations
-   * are skipped). `[]` when the workspace has no architects or the roster is
-   * unavailable — never `undefined`, so consumers don't branch. Lets the VSCode
-   * Agents tree render its architect tier and the architect-attribution badge
-   * straight off the overview cache without a second fetch.
+   * are skipped). `[]` when the workspace has no architects or none are live —
+   * never `undefined`, so consumers don't branch. Lets the VSCode Agents tree
+   * render its architect tier and the architect-attribution badge straight off
+   * the overview cache without a second fetch.
    */
   architects: ArchitectState[];
   /** Auto-detected GitHub login of the current user (via the user-identity forge concept). */

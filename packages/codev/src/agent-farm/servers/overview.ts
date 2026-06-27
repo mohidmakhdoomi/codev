@@ -958,8 +958,8 @@ export class OverviewCache {
     }
 
     // `architects` defaults to `[]` here — the filesystem/git-derived overview
-    // has no view of the live terminal roster. `handleOverview` (tower-routes.ts)
-    // injects the real roster via `collectArchitects` before serialization,
+    // has no view of the live terminal sessions. `handleOverview` (tower-routes.ts)
+    // injects the real architect list via `liveArchitects` before serialization,
     // mirroring how it enriches `lastDataAt`.
     const result: OverviewData = { builders, pendingPRs, backlog, recentlyClosed, architects: [] };
     if (currentUser) {

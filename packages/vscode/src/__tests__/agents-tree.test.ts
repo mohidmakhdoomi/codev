@@ -100,7 +100,7 @@ describe('Agents tree — adaptive root (#1104)', () => {
         builder({ id: 'a', spawnedByArchitect: 'main' }),
         builder({ id: 'b', spawnedByArchitect: 'vscode' }),
       ],
-      [arch('vscode'), arch('main')], // collectArchitects returns main-first; emulate that order
+      [arch('vscode'), arch('main')], // liveArchitects returns main-first; emulate that order
     );
     const roots = await provider.getChildren();
     expect(roots.every(r => r instanceof ArchitectGroupTreeItem)).toBe(true);
