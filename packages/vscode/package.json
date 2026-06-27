@@ -128,12 +128,12 @@
       },
       {
         "command": "codev.enableBuildersAutoCollapse",
-        "title": "Codev: Turn On Builders Auto-Collapse",
+        "title": "Codev: Turn On Auto-Collapse",
         "icon": "$(unfold)"
       },
       {
         "command": "codev.disableBuildersAutoCollapse",
-        "title": "Codev: Turn Off Builders Auto-Collapse",
+        "title": "Codev: Turn Off Auto-Collapse",
         "icon": "$(fold)"
       },
       {
@@ -148,12 +148,12 @@
       },
       {
         "command": "codev.groupBuildersByArea",
-        "title": "Codev: Group Builders by Area",
+        "title": "Codev: Group by Area",
         "icon": "$(tag)"
       },
       {
         "command": "codev.groupBuildersByPhase",
-        "title": "Codev: Group Builders by Phase",
+        "title": "Codev: Group by Phase",
         "icon": "$(milestone)"
       },
       {
@@ -872,22 +872,22 @@
           "type": "number",
           "default": 60,
           "minimum": 0,
-          "markdownDescription": "Auto-refresh the Builders / Pull Requests / Backlog / Recently Closed views every N seconds while the Codev sidebar is visible. `0` disables periodic refresh (event-only, the previous behavior). A shared Tower-side 30s cache throttles GitHub calls across all windows."
+          "markdownDescription": "Auto-refresh the Agents / Pull Requests / Backlog / Recently Closed views every N seconds while the Codev sidebar is visible. `0` disables periodic refresh (event-only, the previous behavior). A shared Tower-side 30s cache throttles GitHub calls across all windows."
         },
         "codev.buildersAutoCollapse": {
           "type": "boolean",
           "default": true,
-          "description": "Builders view accordion: expanding one builder auto-collapses the others, so only one builder's changed-files diff is open at a time."
+          "description": "Agents view accordion: expanding one builder auto-collapses the others, so only one builder's changed-files diff is open at a time."
         },
         "codev.buildersFileViewAsTree": {
           "type": "boolean",
           "default": true,
-          "description": "Render a builder's changed-files list as a folder tree (with single-child folder chains compacted, like VSCode's Source Control panel) instead of a flat list. Toggleable via the Builders title-bar button."
+          "description": "Render a builder's changed-files list as a folder tree (with single-child folder chains compacted, like VSCode's Source Control panel) instead of a flat list. Toggleable via the Agents title-bar button."
         },
         "codev.buildersAutoReveal": {
           "type": "boolean",
           "default": true,
-          "description": "Builders view: when the active builder-diff editor changes (keyboard navigation, a click inside the multi-file View Diff, or a per-file diff), reveal and select the matching file's row in the tree. The Builders-view equivalent of the Explorer's auto-reveal. When off, the sidebar selection only follows an explicit click."
+          "description": "Agents view: when the active builder-diff editor changes (keyboard navigation, a click inside the multi-file View Diff, or a per-file diff), reveal and select the matching file's row in the tree. The Agents-view equivalent of the Explorer's auto-reveal. When off, the sidebar selection only follows an explicit click."
         },
         "codev.backlogShowAll": {
           "type": "boolean",
@@ -905,7 +905,7 @@
             "Group builders by their area/* label (the domain axis), matching the Backlog view."
           ],
           "default": "stage",
-          "description": "Which axis the Builders view groups by. 'stage' (default) is the action axis; 'area' is the domain axis. Toggleable via the Builders title-bar button."
+          "description": "Which axis the Agents view groups by. 'stage' (default) is the action axis; 'area' is the domain axis. Toggleable via the Agents title-bar button."
         },
         "codev.markdownPreview.fontSize": {
           "type": "number",
