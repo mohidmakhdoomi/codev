@@ -37,3 +37,7 @@ main-resolve also reads `data.architects` instead of getWorkspaceStatus.
 
 Scope note flagged in plan: now spans packages/types + packages/codev + packages/vscode →
 area/cross-cutting may fit better than area/vscode (architect's call). Plan revised + recommitted.
+
+Decision: keep `ArchitectState[]` (not a leaner `string[]`) for shape-parity with
+DashboardState.architects + the shared `collectArchitects` helper, even though the Agents tree only
+reads `name` today. Reviewer confirmed. Plan already reflects this — no change.
