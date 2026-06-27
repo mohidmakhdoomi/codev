@@ -33,37 +33,60 @@ the reviewer at the plan gate rather than hunt for a tree that isn't there.
   populated by the overview server from `state.db.builders.spawned_by_architect`
   (`overview.ts:822-828`). This is the builder→architect edge. `null` for legacy / unmatched rows.
 - **Architect roster** (names, which is `main`, presence of passive architects like REVIEWER that
-  never spawn) is **not** in `OverviewData`. It is fetched via
-  `client.getWorkspaceStatus(workspacePath)` → `terminals.filter(t => t.type === 'architect')`,
-  each carrying `architectName` (`tower-client.ts:330,34-48`). `WorkspaceProvider` already consumes
-  this and re-renders on the `architects-updated` SSE envelope (`workspace.ts:44-53`).
+  never spawn) is **not** in `OverviewData` *today*. It is currently surfaced two ways: the
+  `WorkspaceProvider` fetches it via `client.getWorkspaceStatus(workspacePath)` →
+  `terminals.filter(t => t.type === 'architect')` and re-renders on the `architects-updated` SSE
+  envelope (`workspace.ts:44-53,253-293`); and the dashboard-state handler builds it from
+  `entry.architects` (`tower-routes.ts:1823-1841`). **This plan adds it to `OverviewData`** (see
+  Proposed Change §1) so the Agents tree reads it synchronously from the overview cache.
 
-So the Agents tree needs *both* the builder list (overview cache, synchronous) *and* the architect
-roster (async workspace-status fetch). The roster is required — deriving architects from
-`spawnedByArchitect` alone would silently drop passive architects, which the issue explicitly wants
+So the Agents tree needs *both* the builder list and the architect roster — and after the §1
+enrichment, both arrive together on the overview cache (synchronous render, no extra fetch). The
+roster is required — deriving architects from `spawnedByArchitect` alone would silently drop passive
+architects, which the issue explicitly wants
 rendered as interactive leaf rows.
 
 ## Proposed Change
 
-### 1. Architect-roster source in BuildersProvider — **Option A (recommended)**
+### 1. Architect-roster source — enrich `/api/overview` with `architects: ArchitectState[]` (chosen)
 
-Give `BuildersProvider` an architect roster it refreshes the same way `WorkspaceProvider` does:
+Put the architect roster on the overview payload so a single atomic cache carries builders + roster,
+the tree renders synchronously, and the dashboard can reuse the exact same data (the issue's "both
+views read from the same architect roster" becomes literally true — one wire field, one cache).
 
-- On construction, subscribe to the `architects-updated` SSE envelope (and reuse the existing
-  overview-cache `onDidChange`), fetch `getWorkspaceStatus`, cache `architectName[]` (main-first),
-  and fire `onDidChangeTreeData`.
-- `architectCount` = roster length. Drives the adaptive root.
+Tower side (`tower-routes.ts`):
+- `handleOverview` (`tower-routes.ts:864`) already has the roster in hand: `entry.architects`
+  (a `Map<architectName, terminalId>` from `getRehydratedTerminalsEntry`). The `ArchitectState[]`
+  build logic that the dashboard-state handler uses (`tower-routes.ts:1823-1841`: collect from
+  `entry.architects`, skip dead sessions, move `main` to index 0) is **extracted into a shared
+  helper** `collectArchitects(entry, manager): ArchitectState[]` and called from **both** sites —
+  single source of truth (no inline-literal drift between the two endpoints).
+- In `handleOverview`, set `data.architects = collectArchitects(entry, manager)` before serializing.
 
-Rationale: keeps the entire change inside the VSCode extension, mirrors an established, tested
-pattern (`WorkspaceProvider.getArchitectChildren`), and changes no wire contract. The roster fetch
-is cached (not re-fetched per `getChildren` call), so render stays cheap.
+Wire type (`packages/types/src/api.ts`):
+- Add `architects: ArchitectState[]` to `OverviewData` (required field; `[]` for an empty/
+  unreachable roster — never `undefined`, so consumers don't branch). `ArchitectState` already
+  carries `name`, `terminalId`, `pid`, `persistent` — exactly what the Agents tree needs to render
+  rows, resolve a terminal for click-to-open, and resolve `main` for Add Architect.
 
-**Alternative B (considered, not chosen): enrich `/api/overview` with `architects: ArchitectState[]`.**
-Cleaner in one respect — a single atomic cache carrying builders + roster, synchronous render, and
-the dashboard could reuse it. Rejected for this PIR because it changes the `OverviewData` wire type
-and adds roster plumbing into the Tower overview builder (`overview.ts`), pushing a VSCode-scoped
-change into `area/tower` and `area/core`. If the reviewer prefers B at the plan gate I will switch;
-it is a clean swap of the data source behind the same tree logic.
+VSCode side:
+- `BuildersProvider` reads `data.architects` straight off `overviewCache.getData()` — **synchronous**,
+  no extra fetch, no extra subscription. `OverviewCache` already refreshes on *every* SSE event,
+  and Tower emits `architects-updated` on add/remove (`tower-routes.ts:388-393,447-451`), so the
+  roster stays live through the existing path. `architectCount = data.architects.length`.
+
+Note on scope/labels: this enrichment touches `packages/types` (wire contract) and
+`packages/codev` (Tower overview handler) in addition to `packages/vscode`. The issue is currently
+labeled `area/vscode`; with the overview enrichment the change is genuinely multi-area. I will flag
+to the architect that `area/cross-cutting` may be the more accurate label (architect's call — I will
+not relabel).
+
+**Alternative A (considered, not chosen): fetch the roster in `BuildersProvider` via
+`getWorkspaceStatus` + an `architects-updated` subscription, mirroring `WorkspaceProvider`.**
+Fully VSCode-contained and changes no wire contract, but the roster would be VSCode-only (not
+reusable by the dashboard), the fetch is async (warm-up / render-blocking risk), and it
+duplicates a roster Tower can hand over for free. Rejected in favor of B per the reviewer's
+direction that the enrichment be reusable.
 
 ### 2. Adaptive root in the tree (`builders.ts`)
 
@@ -132,10 +155,10 @@ rows and is unaffected by an added ancestor level, but I will add regression cov
 
 Rewrite `codev.addArchitect`:
 
-1. Resolve the `main` architect's session from `getWorkspaceStatus` (terminals, `type==='architect'`,
-   `architectName==='main'`). If main is absent or has no live session, show a modal explaining the
-   action asks main to add, with the CLI fallback (`afx workspace add-architect --name <name>` /
-   `afx workspace start`). Refuse — do **not** silently fall back to direct creation.
+1. Resolve the `main` architect from the overview cache (`data.architects.find(a => a.name === 'main')`
+   — the same enriched roster the tree uses). If main is absent (or has no `terminalId`), show a modal
+   explaining the action asks main to add, with the CLI fallback (`afx workspace add-architect --name
+   <name>` / `afx workspace start`). Refuse — do **not** silently fall back to direct creation.
 2. Input box for the new architect name, reusing the existing `validateArchitectName` shared
    validator (parity with `afx workspace add-architect`).
 3. Dispatch `client.sendMessage('architect:main', "Please add a <name> architect.", { workspace })`
@@ -149,10 +172,23 @@ contributions are needed beyond pointing the Agents title `+` at it.
 
 ## Files to Change
 
+### Tower / wire (Option B enrichment)
+
+- `packages/types/src/api.ts` — add `architects: ArchitectState[]` to `OverviewData` (required,
+  defaults to `[]`).
+- `packages/codev/src/agent-farm/servers/tower-routes.ts` — extract `collectArchitects(entry, manager):
+  ArchitectState[]` from the dashboard-state builder (`:1823-1841`), reuse it there and in
+  `handleOverview` (`:864`) to set `data.architects`.
+- `packages/codev/src/agent-farm/__tests__/overview.test.ts` — assert `/api/overview` now carries the
+  architects roster (main-first, dead-session skip, empty-roster `[]`).
+
+### VSCode tree
+
 - `packages/vscode/src/views/builders.ts` — adaptive `rootChildren()` (architectCount branch),
   architect-node `getChildren` branch, architect partition by `spawnedByArchitect` + Unassigned
-  bucket, two-tier `getParent`, `description` badge wiring, roster cache + `architects-updated`
-  subscription.
+  bucket, two-tier `getParent`, `description` badge wiring. Roster read synchronously from
+  `overviewCache.getData().architects` (no extra subscription — the cache already refreshes on
+  `architects-updated`).
 - `packages/vscode/src/views/builder-tree-item.ts` — new `ArchitectGroupTreeItem` (label, count,
   tier-1 rollup icon, `contextValue`, click→`codev.openArchitectTerminal`); leaf vs collapsed state.
 - `packages/vscode/src/views/builder-row.ts` — no signature change expected; possibly a small helper
@@ -176,17 +212,24 @@ contributions are needed beyond pointing the Agents title `+` at it.
 - **Risk: the "remove standalone Architects tree" bullet has no target in VSCode.** Mitigation:
   treat it as a no-op, keep Workspace > Architects intact, and confirm the reading at the plan gate.
   This is the single most important thing for the reviewer to validate before any code is written.
-- **Risk: async roster fetch vs synchronous render.** `rootChildren()` is currently synchronous.
-  Mitigation: cache the roster in the provider (fetched on SSE/refresh), so `getChildren` reads it
-  synchronously; never block render on a fetch. `architectCount` defaults to 1 until the first roster
-  load completes → the tree renders today's behaviour during the brief warm-up, never a broken tree.
+- **Risk: roster warm-up before the first overview load.** With Option B the roster is read
+  synchronously from `overviewCache.getData()`, but that is `null` until the first `/api/overview`
+  fetch lands. Mitigation: a null/empty roster → `architectCount === 0` → the `=== 1`/0 branch →
+  today's behaviour. The tree never renders a broken multi-architect shape during warm-up; it just
+  shows the single-architect layout until the roster arrives (then re-renders on the cache event).
+- **Risk: `OverviewData` wire-contract change.** Adding a required `architects` field. Mitigation:
+  default to `[]` server-side so any consumer that ignores the field is unaffected; the field is
+  additive (no existing field changes). VSCode reads it defensively (`data.architects ?? []`).
+- **Risk: `collectArchitects` extraction altering dashboard-state behaviour.** Mitigation: the
+  extracted helper must be byte-equivalent to the inlined loop (main-first, dead-session skip); a
+  dashboard-state regression test (or reuse of the existing overview/state tests) guards it.
 - **Risk: builders with `spawnedByArchitect: null` (legacy / unmatched) disappearing.** Mitigation:
   explicit "Unassigned" architect bucket in multi-architect mode. (Confirm at gate.)
 - **Risk: `getParent` regressions break accordion + active-file reveal.** Mitigation: dedicated
   autoreveal test for the three-level chain; single-architect chain kept byte-identical.
-- **Alternative — enrich `/api/overview` with the roster (Option B):** cleaner single cache, but
-  crosses into `area/tower`/`area/core` and changes a wire type. Deferred unless the reviewer prefers
-  it.
+- **Alternative — fetch the roster VSCode-side via `getWorkspaceStatus` (Option A):** VSCode-contained,
+  no wire change, but the roster isn't reusable by the dashboard and the fetch is async. Rejected per
+  the reviewer's direction to make the enrichment reusable (Option B chosen).
 - **Alternative — keep two views, add a badge only (issue's rejected "plain badge"):** doesn't give
   the architect-rooted triage view the issue asks for; rejected per the issue's own design discussion.
 - **Alternative — rename view id to `codev.agents`:** cleaner naming but risks saved-layout / when-
@@ -196,7 +239,11 @@ contributions are needed beyond pointing the Agents title `+` at it.
 
 The reviewer exercises the running worktree at the `dev-approval` gate.
 
-- **Unit (vitest, `pnpm --filter @cluesmith/codev-vscode test` from the worktree):**
+- **Unit — Tower (`pnpm --filter @cluesmith/codev test` from the worktree):**
+  - `/api/overview` payload now includes `architects` (main-first; dead sessions skipped; empty
+    roster → `[]`).
+  - `collectArchitects` produces the same `ArchitectState[]` the dashboard-state path did (no drift).
+- **Unit — VSCode (vitest, `pnpm --filter @cluesmith/codev-vscode test` from the worktree):**
   - Architect partition: builders bucket to the right architect by `spawnedByArchitect`; null →
     Unassigned.
   - Tier-1 rollup: worst-of severity + counts sum across an architect's area/phase groups.

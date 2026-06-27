@@ -24,3 +24,16 @@ WorkspaceProvider — keeps change VSCode-contained, no OverviewData wire change
 B (enrich /api/overview with architects) is cleaner single-cache but crosses into area/tower.
 
 Plan written to codev/plans/1104-vscode-merge-architects-builde.md. Awaiting plan-approval gate.
+
+## Plan revision 1 — reviewer chose Option B
+
+Reviewer directed Option B: enrich `/api/overview` with `architects: ArchitectState[]` so the roster
+is reusable (dashboard + extension share one cache). Confirmed it's clean: `handleOverview`
+(tower-routes.ts:864) already holds `entry.architects`; extract `collectArchitects(entry, manager)`
+from the dashboard-state builder (tower-routes.ts:1823-1841) and reuse at both sites (single source
+of truth). Add `architects` to OverviewData (types/api.ts), VSCode reads it synchronously off the
+overview cache (no extra subscription — cache already refreshes on architects-updated). Add Architect
+main-resolve also reads `data.architects` instead of getWorkspaceStatus.
+
+Scope note flagged in plan: now spans packages/types + packages/codev + packages/vscode →
+area/cross-cutting may fit better than area/vscode (architect's call). Plan revised + recommitted.
