@@ -306,7 +306,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		statusBarItem.text = text;
 	};
 
-	// List views show their item count in the title: "Builders (3)".
+	// List views show their item count in the title: "Agents (3)".
 	// createTreeView (not registerTreeDataProvider) is required to get a
 	// settable .title. When there's no data yet (disconnected/loading) the
 	// title falls back to the plain base name — no misleading "(0)".
@@ -320,7 +320,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		const data = overviewCache.getData();
 		const withCount = (base: string, n: number | undefined) =>
 			typeof n === 'number' ? `${base} (${n})` : base;
-		if (buildersView) { buildersView.title = withCount('Builders', data?.builders.length); }
+		if (buildersView) { buildersView.title = withCount('Agents', data?.builders.length); }
 		if (pullRequestsView) { pullRequestsView.title = withCount('Pull Requests', data?.pendingPRs.length); }
 		if (backlogView) {
 			// Backlog title reflects the *visible* row count (mine-only vs show-all),
