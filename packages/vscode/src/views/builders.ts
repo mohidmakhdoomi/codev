@@ -7,7 +7,12 @@ import { UNCATEGORIZED_AREA } from '@cluesmith/codev-core/constants';
 import type { OverviewCache } from './overview-data.js';
 import { builderWithWorktree, type OverviewBuilderWithWorktree } from '../builder-lookup.js';
 import { readBuildersFileViewAsTree } from '../builders-config.js';
-import { BuilderGroupTreeItem, BuilderTreeItem } from './builder-tree-item.js';
+import { ArchitectGroupTreeItem, BuilderGroupTreeItem, BuilderTreeItem } from './builder-tree-item.js';
+import {
+  partitionByArchitect,
+  architectBadge,
+  type ArchitectPartition,
+} from './architect-grouping.js';
 import { BuilderFileTreeItem } from './builder-file-tree-item.js';
 import { BuilderFolderTreeItem } from './builder-folder-tree-item.js';
 import { buildFilePathTree, type FilePathNode } from './file-path-tree.js';
@@ -95,6 +100,21 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
   // flatten case (area mode only — builders are root again), so `getParent`
   // returns `undefined` and the accordion works unchanged on that branch.
   private groupParentByBuilderId = new Map<string, BuilderGroupTreeItem>();
+  // Multi-architect tier (Issue 1104). Populated by `multiArchRoot` when
+  // `architectCount > 1`; empty (and unused) in the single-architect / zero
+  // path, which keeps today's two-level behaviour bit-for-bit. Precomputed at
+  // root render (not lazily) so `getParent` can walk builder → group →
+  // architect for `reveal` before any node is expanded.
+  //   - architectChildren: architect-node id → its level-2 children (group
+  //     nodes, or flattened builder rows in the lone-Uncategorized case).
+  //   - groupRows: namespaced group-node id → its builder rows.
+  //   - multiArchBuilderParent: builder id → its parent row (a group node, or
+  //     the architect node directly in the flattened case).
+  //   - multiArchGroupParent: group-node id → its owning architect node.
+  private architectChildren = new Map<string, vscode.TreeItem[]>();
+  private groupRows = new Map<string, BuilderTreeItem[]>();
+  private multiArchBuilderParent = new Map<string, vscode.TreeItem>();
+  private multiArchGroupParent = new Map<string, ArchitectGroupTreeItem>();
   // Accordion row-id versioning (#913) — see AccordionRowIds.
   private readonly rowIds = new AccordionRowIds();
 
@@ -160,7 +180,21 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
   //  - Group rows themselves are roots.
   getParent(element: vscode.TreeItem): vscode.ProviderResult<vscode.TreeItem> {
     if (element instanceof BuilderTreeItem) {
-      return this.groupParentByBuilderId.get(element.builderId);
+      // Multi-architect: builder → group node (or architect node when the
+      // architect's builders flattened). Single-architect: builder → group
+      // node (or undefined in the lone-Uncategorized flatten). The multi-arch
+      // map is empty in single-architect mode, so the fallback is today's path.
+      return this.multiArchBuilderParent.get(element.builderId)
+        ?? this.groupParentByBuilderId.get(element.builderId);
+    }
+    // Multi-architect group node → its owning architect node. Single-architect
+    // group nodes are roots (architectName undefined → not in the map).
+    if (element instanceof BuilderGroupTreeItem) {
+      return this.multiArchGroupParent.get(element.id as string);
+    }
+    // Architect-tier nodes are roots.
+    if (element instanceof ArchitectGroupTreeItem) {
+      return undefined;
     }
     if (element instanceof BuilderFileTreeItem || element instanceof BuilderFolderTreeItem) {
       return this.parentForFileNode(element);
@@ -255,24 +289,65 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     if (element instanceof BuilderFileTreeItem) {
       return [];
     }
-    // Group rows expand to their builders.
+    // Architect-tier nodes (multi-architect mode) expand to their precomputed
+    // level-2 children (group nodes, or flattened builder rows).
+    if (element instanceof ArchitectGroupTreeItem) {
+      return this.architectChildren.get(element.id as string) ?? [];
+    }
+    // Group rows expand to their builders. In multi-architect mode the group is
+    // architect-namespaced and its rows are precomputed (so two architects'
+    // same-keyed groups don't cross-contaminate); in single-architect mode the
+    // rows are computed on demand by group key (today's behaviour, untouched).
     if (element instanceof BuilderGroupTreeItem) {
+      if (element.architectName !== undefined) {
+        return this.groupRows.get(element.id as string) ?? [];
+      }
       return this.rowsForGroup(element.groupName);
     }
-    // Root: group headers, or the single-Uncategorized flatten case (area mode).
+    // Root: architect nodes (multi-architect), or group headers / the
+    // single-Uncategorized flatten case (single-architect, today's behaviour).
     return this.rootChildren();
   }
 
   private rootChildren(): vscode.TreeItem[] {
+    // Reset both tier models every root render; the active branch repopulates
+    // exactly the maps it needs, and the dormant branch's maps stay empty (so
+    // `getParent`'s `??` fallback resolves to the right tier).
+    this.clearTierMaps();
+
     const data = this.cache.getData();
     if (!data) {
-      this.groupParentByBuilderId.clear();
       return [];
     }
 
     const now = Date.now();
+    // The architect tier earns its keep only when more than one architect is
+    // registered (Issue 1104). With 0 or 1 architect the level adds nothing, so
+    // we root at area/phase groups exactly as before — today's behaviour, kept
+    // bit-for-bit as the single-architect regression target.
+    const architects = data.architects ?? [];
+    if (architects.length > 1) {
+      return this.multiArchRoot(data.builders, architects.map(a => a.name), now);
+    }
+    return this.singleArchRoot(orderForDisplay(data.builders, now), now);
+  }
+
+  /** Clear every per-render tier map (both single- and multi-architect). */
+  private clearTierMaps(): void {
+    this.groupParentByBuilderId.clear();
+    this.architectChildren.clear();
+    this.groupRows.clear();
+    this.multiArchBuilderParent.clear();
+    this.multiArchGroupParent.clear();
+  }
+
+  /**
+   * Single-architect (or zero-architect) root: today's area/phase grouping,
+   * unchanged. Returns flattened builder rows for the lone-Uncategorized case,
+   * else `BuilderGroupTreeItem` headers (each rendered Expanded — #913).
+   */
+  private singleArchRoot(ordered: OverviewBuilder[], now: number): vscode.TreeItem[] {
     const grouping = this.active();
-    const ordered = orderForDisplay(data.builders, now);
     const groups = grouping.group(ordered);
 
     // A repo that doesn't use `area/*` labels yields a single `Uncategorized`
@@ -280,14 +355,12 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     // — zero visual regression for unlabeled repos. Stage mode opts out of this
     // (the stage axis always applies; every builder has a stage).
     if (grouping.flattenLoneUncategorized && groups.length === 1 && groups[0].key === UNCATEGORIZED_AREA) {
-      this.groupParentByBuilderId.clear();
       return groups[0].items.map(b => this.makeBuilderRow(b, now));
     }
 
     // Groups always render Expanded (#913) — no persisted state. VSCode's
     // native per-id memory keeps a user-collapsed group collapsed for the
     // rest of the session; on a fresh session this default applies again.
-    this.groupParentByBuilderId.clear();
     return groups.map(g => {
       const groupItem = new BuilderGroupTreeItem(
         g.key,
@@ -302,6 +375,94 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     });
   }
 
+  /**
+   * Multi-architect root (Issue 1104): one architect node per roster entry
+   * (main-first), each owning today's area/phase grouping at level 2. Passive
+   * architects (zero builders) render as leaf nodes; builders with no resolvable
+   * owner collect under a trailing non-interactive "Unassigned" node.
+   *
+   * The whole subtree is precomputed here (not lazily per expansion) so
+   * `getParent` can resolve the builder → group → architect chain for `reveal`
+   * while everything is still collapsed. Level-2 sub-grouping delegates to the
+   * existing active strategy over each architect's slice, so the area/phase
+   * toggle and the lone-Uncategorized flatten behave identically one tier down.
+   */
+  private multiArchRoot(
+    builders: OverviewBuilder[],
+    architectNames: string[],
+    now: number,
+  ): vscode.TreeItem[] {
+    const ordered = orderForDisplay(builders, now);
+    const partitions = partitionByArchitect(ordered, architectNames);
+    return partitions.map(p => this.makeArchitectNode(p, architectNames.length, now));
+  }
+
+  /**
+   * Build one architect node and precompute its level-2 children (group nodes,
+   * or flattened builder rows when its slice is a lone Uncategorized group),
+   * wiring the parent maps as it goes. A passive architect (empty slice) becomes
+   * a leaf node with no children.
+   */
+  private makeArchitectNode(
+    partition: ArchitectPartition,
+    architectCount: number,
+    now: number,
+  ): ArchitectGroupTreeItem {
+    const node = new ArchitectGroupTreeItem(
+      partition.name,
+      partition.builders.length,
+      rollupGroupState(partition.builders, now),
+      partition.interactive,
+    );
+
+    if (partition.builders.length === 0) {
+      return node; // passive architect → leaf, no children
+    }
+
+    // For a real architect the node IS the row's ancestor, so the attribution
+    // badge is suppressed; under "Unassigned" it is not, so a builder whose
+    // owner was removed still shows its stale architect name (`architectBadge`).
+    const ownerIsAncestor = partition.interactive;
+    const rowOf = (b: OverviewBuilder) =>
+      this.makeBuilderRow(b, now, architectBadge(b, architectCount, ownerIsAncestor));
+
+    const grouping = this.active();
+    const groups = grouping.group(partition.builders);
+    const nodeId = node.id as string;
+
+    // Lone-Uncategorized: flatten to builder rows directly under the architect
+    // (same rule as the single-architect root, one tier down). The architect
+    // node is then the builders' direct parent.
+    if (grouping.flattenLoneUncategorized && groups.length === 1 && groups[0].key === UNCATEGORIZED_AREA) {
+      const rows = groups[0].items.map(rowOf);
+      for (const b of groups[0].items) {
+        this.multiArchBuilderParent.set(b.id, node);
+      }
+      this.architectChildren.set(nodeId, rows);
+      return node;
+    }
+
+    const groupNodes = groups.map(g => {
+      const groupItem = new BuilderGroupTreeItem(
+        g.key,
+        g.items.length,
+        vscode.TreeItemCollapsibleState.Expanded,
+        rollupGroupState(g.items, now),
+        partition.name,
+      );
+      const groupId = groupItem.id as string;
+      this.multiArchGroupParent.set(groupId, node);
+      const rows = g.items.map(rowOf);
+      for (const b of g.items) {
+        this.multiArchBuilderParent.set(b.id, groupItem);
+      }
+      this.groupRows.set(groupId, rows);
+      return groupItem;
+    });
+    this.architectChildren.set(nodeId, groupNodes);
+    return node;
+  }
+
   private rowsForGroup(key: string): vscode.TreeItem[] {
     const data = this.cache.getData();
     if (!data) { return []; }
@@ -314,10 +475,19 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     return group.items.map(b => this.makeBuilderRow(b, now));
   }
 
-  private makeBuilderRow(b: OverviewBuilder, now: number): BuilderTreeItem {
+  private makeBuilderRow(b: OverviewBuilder, now: number, descriptionBadge: string = ''): BuilderTreeItem {
     const isBlocked = !!b.blocked;
     const isIdle = !isBlocked && isIdleWaiting(b, now);
     const item = new BuilderTreeItem(b.id, builderRowLabel(b, isIdle, now, this.active().rowPrefix(b)));
+    // Architect-attribution badge (Issue 1104): the dim, right-aligned
+    // `description` carries the owning architect's name only when it isn't
+    // already the row's ancestor (see `architectBadge`). Empty in the nested
+    // multi-architect tree (the architect node is the ancestor) and in
+    // single-architect workspaces (one architect, repeated badge = noise), so
+    // it stays unset there.
+    if (descriptionBadge) {
+      item.description = descriptionBadge;
+    }
     // Versioned id (#913). The base `b.id` is stable (not the churning label) so
     // VSCode preserves a row's expansion across the frequent overview-poll
     // refreshes; the `#<version>` suffix is the accordion lever (see
