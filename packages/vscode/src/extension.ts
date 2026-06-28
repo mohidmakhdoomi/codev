@@ -1200,13 +1200,15 @@ export async function activate(context: vscode.ExtensionContext) {
 		//
 		// VS Code's menu schema has NO `toggled`/pressed-state for toolbar
 		// buttons (verified against menusExtensionPoint.ts), and a toolbar
-		// action's icon comes from its command, so the only reliable way to show
-		// the *current* axis is a single button whose icon IS that axis. We do
-		// that with three show/hide "cycle" commands (one per axis, swapped by
-		// `when` in package.json): exactly one is visible, its icon names the
-		// current grouping, and clicking it advances to the next axis. The
-		// `setGroupBy` helper is declared above the push() call (a const can't
-		// live in an argument list).
+		// action's icon comes from its command. So this is a single action
+		// button: three show/hide commands (swapped by `when` on the CURRENT
+		// axis), exactly one visible, and each shows the icon + title of the
+		// NEXT axis (what clicking applies) — e.g. while grouped by architect
+		// the button reads "Group by Stage". The CURRENT grouping is read from
+		// the tree itself (group headers are stages / areas / architect names).
+		// Each `*FromX` command is the button shown while grouped by X and
+		// advances to the next axis. The `setGroupBy` helper is declared above
+		// the push() call (a const can't live in an argument list).
 		reg('codev.agentsCycleGroupFromStage', () => setGroupBy('area')),
 		reg('codev.agentsCycleGroupFromArea', () => setGroupBy('architect')),
 		reg('codev.agentsCycleGroupFromArchitect', () => setGroupBy('stage')),

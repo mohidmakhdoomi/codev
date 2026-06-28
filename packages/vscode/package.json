@@ -148,21 +148,21 @@
       },
       {
         "command": "codev.agentsCycleGroupFromStage",
-        "title": "Codev: Group by Stage",
-        "icon": "$(milestone)"
-      },
-      {
-        "command": "codev.agentsCycleGroupFromArea",
         "title": "Codev: Group by Area",
         "icon": "$(tag)"
       },
       {
-        "command": "codev.agentsCycleGroupFromArchitect",
+        "command": "codev.agentsCycleGroupFromArea",
         "title": "Codev: Group by Architect",
         "icon": {
           "light": "icons/architect-light.svg",
           "dark": "icons/architect-dark.svg"
         }
+      },
+      {
+        "command": "codev.agentsCycleGroupFromArchitect",
+        "title": "Codev: Group by Stage",
+        "icon": "$(milestone)"
       },
       {
         "command": "codev.openBacklogSearch",
