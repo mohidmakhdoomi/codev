@@ -52,3 +52,18 @@ Tightened the design into one uniform model + fixed a real gap:
   (cold) / role-inject (restart). Makes stored-UUID resume as safe as #830's
   jsonl-discovery. claude-session-discovery.ts now hosts BOTH builder discovery and
   architect resume, documented side by side.
+
+### Plan revision 2 (architect chose STATELESS approach)
+Architect asked "can we avoid DB updates?" → chose stateless derived session IDs.
+Rewrote plan: NO db column, NO migration v12, NO schema/state.ts/types changes.
+- sessionId = UUIDv5(ARCHITECT_NS, canonicalWorkspacePath + ':' + name) — pure
+  function (node:crypto sha1, no new dep). Name in the key → siblings sharing cwd
+  derive distinct IDs (solves the collision jsonl-discovery couldn't).
+- Every site recomputes + resolveArchitectLaunch: jsonl exists → --resume, else
+  --session-id (create at derived id). No store step anywhere.
+- removeArchitect prunes the derived jsonl so remove-then-readd is fresh.
+- Architect Q: "why is main recoverable but siblings not today?" → it's cwd-based,
+  not capability-based. findLatestSessionId picks newest jsonl in the cwd's project
+  dir; unique cwd (main-only, or builders) → recency disambiguates; shared cwd
+  (siblings) → it can't. In multi-arch workspaces main ALSO skips resume (safeToResume
+  guard). Fix puts NAME into the key.
