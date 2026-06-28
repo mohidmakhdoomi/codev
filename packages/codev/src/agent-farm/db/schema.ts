@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS architect (
   cmd TEXT NOT NULL,
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
   terminal_id TEXT,
+  session_id TEXT,
   PRIMARY KEY (workspace_path, id)
 );
 

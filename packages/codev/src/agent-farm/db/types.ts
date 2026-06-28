@@ -22,6 +22,7 @@ export interface DbArchitect {
   cmd: string;
   started_at: string;
   terminal_id: string | null;
+  session_id: string | null;   // Issue #832: persisted agent conversation session id (agent-neutral)
 }
 
 /**
@@ -80,6 +81,7 @@ export function dbArchitectToArchitectState(row: DbArchitect): ArchitectState {
     cmd: row.cmd,
     startedAt: row.started_at,
     terminalId: row.terminal_id ?? undefined,
+    sessionId: row.session_id ?? undefined,
   };
 }
 

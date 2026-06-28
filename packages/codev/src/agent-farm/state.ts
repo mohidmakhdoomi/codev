@@ -118,13 +118,14 @@ export function setArchitect(workspacePath: string, architect: ArchitectState | 
     db.prepare("DELETE FROM architect WHERE workspace_path = ? AND id = 'main'").run(ws);
   } else {
     db.prepare(`
-      INSERT OR REPLACE INTO architect (workspace_path, id, pid, port, cmd, started_at, terminal_id)
-      VALUES (@workspacePath, 'main', 0, 0, @cmd, @startedAt, @terminalId)
+      INSERT OR REPLACE INTO architect (workspace_path, id, pid, port, cmd, started_at, terminal_id, session_id)
+      VALUES (@workspacePath, 'main', 0, 0, @cmd, @startedAt, @terminalId, @sessionId)
     `).run({
       workspacePath: ws,
       cmd: architect.cmd,
       startedAt: architect.startedAt,
       terminalId: architect.terminalId ?? null,
+      sessionId: architect.sessionId ?? null,
     });
   }
 }
@@ -147,14 +148,15 @@ export function setArchitectByName(workspacePath: string, name: string, architec
   }
 
   db.prepare(`
-    INSERT OR REPLACE INTO architect (workspace_path, id, pid, port, cmd, started_at, terminal_id)
-    VALUES (@workspacePath, @name, 0, 0, @cmd, @startedAt, @terminalId)
+    INSERT OR REPLACE INTO architect (workspace_path, id, pid, port, cmd, started_at, terminal_id, session_id)
+    VALUES (@workspacePath, @name, 0, 0, @cmd, @startedAt, @terminalId, @sessionId)
   `).run({
     workspacePath: ws,
     name,
     cmd: architect.cmd,
     startedAt: architect.startedAt,
     terminalId: architect.terminalId ?? null,
+    sessionId: architect.sessionId ?? null,
   });
 }
 

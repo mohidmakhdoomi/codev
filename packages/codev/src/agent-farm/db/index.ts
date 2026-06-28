@@ -596,6 +596,26 @@ function ensureLocalDatabase(): Database.Database {
     db.prepare('INSERT INTO _migrations (version) VALUES (11)').run();
   }
 
+  // Migration v12: Per-architect conversation session id (Issue #832).
+  //
+  // Adds `architect.session_id` so Tower can resume each architect's prior agent
+  // conversation after a restart. The column is agent-neutral (Claude stores a
+  // UUID; other agents may use their own scheme). Additive and nullable: legacy
+  // rows read back null and fall back to a fresh spawn.
+  //
+  // Idempotent: the ALTER throws "duplicate column name" on fresh installs that
+  // already created the column via LOCAL_SCHEMA — swallowed, same idiom as v2.
+  const v12 = db.prepare('SELECT version FROM _migrations WHERE version = 12').get();
+  if (!v12) {
+    try {
+      db.exec('ALTER TABLE architect ADD COLUMN session_id TEXT');
+      console.log('[info] Migrated architect table: added session_id (Issue #832)');
+    } catch {
+      // Column already exists (fresh install ran the updated LOCAL_SCHEMA).
+    }
+    db.prepare('INSERT INTO _migrations (version) VALUES (12)').run();
+  }
+
   return db;
 }
 
