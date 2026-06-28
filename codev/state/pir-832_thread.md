@@ -107,3 +107,27 @@ in BOTH branches.
   getArchitects()<=1; addArchitect + restart-bake pass false.
 - Deliberate, architect-approved deviation from issue's "remove the guard entirely"
   letter; the guard's GOAL (main recovers in multi-arch) is still met.
+
+## Phase: implement (started)
+plan-approval gate approved by human. Implementing the stateless derived-id design
+with #830 discovery fallback for lone main.
+
+## Implement phase — done
+Implemented stateless derived-id design + #830 discovery fallback for lone main.
+- claude-session-discovery.ts: architectSessionId (UUIDv5 via node:crypto, no dep),
+  sessionFileExists, deleteArchitectSessionFile, ARCHITECT_SESSION_NAMESPACE const.
+- tower-utils.ts: resolveArchitectLaunch (derived-id resume → discovery fallback →
+  fresh; canonicalizes workspacePath via realpath so id/existence match claude's cwd).
+- tower-instances.ts: launchInstance(main, discoveryFallback=getArchitects<=1) +
+  addArchitect(sibling, no fallback) call helper; removeArchitect prunes derived jsonl.
+- tower-terminals.ts: BOTH restart-bake sites (startup reconcile + on-the-fly
+  reconnect) call helper; added isLoneMainArchitect() so a crash-restart of lone
+  legacy main keeps its v4 conversation (silent-context-loss path closed).
+- Refinement beyond literal plan: restart bake gives lone main the discovery
+  fallback too (plan said derived-only); without it an in-process crash would drop
+  main's pre-#832 conversation. Faithful to issue's "second silent path" goal.
+- Layering: resolveArchitectLaunch lives in tower-utils (server layer, needs
+  buildArchitectArgs), pure id/path helpers in claude-session-discovery (utils).
+Build: green. Tests: full suite 3390 passed / 48 skipped / 0 failed. 25 in
+tower-utils.test.ts, helper tests in claude-session-discovery.test.ts.
+Verified --session-id/--resume control empirically earlier. Pushing for dev-approval.
