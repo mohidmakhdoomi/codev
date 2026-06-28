@@ -17,7 +17,8 @@
 import { resolve, basename } from 'node:path';
 import { existsSync, writeFileSync, readdirSync } from 'node:fs';
 import type { SpawnOptions, BuilderType, Config } from '../types.js';
-import { getConfig, ensureDirectories, getResolvedCommands } from '../utils/index.js';
+import { getConfig, ensureDirectories, getResolvedCommands, getBuilderHarness } from '../utils/index.js';
+import type { HarnessProvider } from '../utils/harness.js';
 import { logger, fatal } from '../utils/logger.js';
 import { run } from '../utils/shell.js';
 import { hasUncommittedTrackedChanges } from '../utils/git.js';
@@ -37,7 +38,6 @@ const SPAWNING_ARCHITECT_NAME =
   (process.env.CODEV_ARCHITECT_NAME && process.env.CODEV_ARCHITECT_NAME.trim()) || DEFAULT_ARCHITECT_NAME;
 import { loadRolePrompt } from '../utils/roles.js';
 import { buildAgentName, stripLeadingZeros } from '../utils/agent-names.js';
-import { findLatestSessionId } from '../utils/claude-session-discovery.js';
 import { fetchIssue as fetchIssueNonFatal } from '../../lib/github.js';
 import {
   type TemplateContext,
@@ -74,20 +74,32 @@ import { executeForgeCommand, loadForgeConfig } from '../../lib/forge.js';
 // =============================================================================
 
 /**
- * On --resume, look up the prior Claude conversation jsonl for the worktree
- * so the revived builder can pick up the saved conversation via
- * `claude --resume <uuid>` instead of starting fresh with a resume-notice
- * prompt. (Issue #831.) Returns undefined when not resuming or when no
- * jsonl exists; callers fall back to the fresh-spawn path in that case.
+ * On --resume, ask the builder's harness for a resumable prior session for the
+ * worktree so the revived builder can pick up the saved conversation (e.g.
+ * `claude --resume <uuid>`) instead of starting fresh with a resume-notice
+ * prompt. (Issues #831 / #929.) Returns undefined when not resuming, when the
+ * harness has no resumable session, or when the harness doesn't support resume
+ * (codex/gemini → buildResume undefined); callers fall back to the fresh-spawn
+ * path in that case. Returning the harness's bundled resume object (with the
+ * shell-escaped `scriptFragment`) keeps the resume flag-shape owned by the
+ * provider rather than the bash-script generator.
  */
-export function discoverResumeSession(worktreePath: string, isResume: boolean | undefined): string | undefined {
+export function discoverResumeSession(
+  worktreePath: string,
+  isResume: boolean | undefined,
+  harness: HarnessProvider,
+): { sessionId: string; args: string[]; scriptFragment: string } | undefined {
   if (!isResume) return undefined;
-  const found = findLatestSessionId(worktreePath);
-  if (found) {
-    logger.kv('Claude session', `${found.slice(0, 8)}… (resuming conversation)`);
-    return found;
+  if (!harness.buildResume) {
+    logger.info('This harness does not support conversation resume; starting a fresh session.');
+    return undefined;
   }
-  logger.info('No prior Claude conversation found for this worktree; starting a fresh session.');
+  const resume = harness.buildResume(worktreePath);
+  if (resume) {
+    logger.kv('Session', `${resume.sessionId.slice(0, 8)}… (resuming conversation)`);
+    return resume;
+  }
+  logger.info('No prior conversation found for this worktree; starting a fresh session.');
   return undefined;
 }
 
@@ -456,7 +468,7 @@ async function spawnSpec(options: SpawnOptions, config: Config): Promise<void> {
     templateContext.existing_branch = options.branch;
   }
 
-  const resumeSessionId = discoverResumeSession(worktreePath, options.resume);
+  const resume = discoverResumeSession(worktreePath, options.resume, getBuilderHarness(config.workspaceRoot));
 
   const initialPrompt = buildPromptFromTemplate(config, protocol, templateContext);
   const resumeNotice = options.resume ? `\n${buildResumeNotice(projectId)}\n` : '';
@@ -470,7 +482,7 @@ async function spawnSpec(options: SpawnOptions, config: Config): Promise<void> {
   const { terminalId } = await startBuilderSession(
     config, builderId, worktreePath, commands.builder,
     builderPrompt, role?.content ?? null, role?.source ?? null,
-    resumeSessionId,
+    resume,
   );
 
   upsertBuilder({
@@ -835,13 +847,13 @@ async function spawnIssueDrivenBuilder(
     : '';
   const builderPrompt = `You are a Builder. Read codev/roles/builder.md for your full role definition.\n${resumeNotice}${branchNotice}\n${prompt}`;
 
-  const resumeSessionId = discoverResumeSession(worktreePath, options.resume);
+  const resume = discoverResumeSession(worktreePath, options.resume, getBuilderHarness(config.workspaceRoot));
   const role = options.noRole ? null : loadRolePrompt(config, 'builder');
   const commands = getResolvedCommands();
   const { terminalId } = await startBuilderSession(
     config, builderId, worktreePath, commands.builder,
     builderPrompt, role?.content ?? null, role?.source ?? null,
-    resumeSessionId,
+    resume,
   );
 
   upsertBuilder({

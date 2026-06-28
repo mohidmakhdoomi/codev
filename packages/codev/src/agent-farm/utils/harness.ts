@@ -12,6 +12,7 @@
  * @see codev/specs/591-af-workspace-failure-with-code.md
  */
 
+import { findLatestSessionId } from './claude-session-discovery.js';
 import { buildWorktreeGuardFiles } from './worktree-write-guard.js';
 
 // =============================================================================
@@ -51,6 +52,22 @@ export interface HarnessProvider {
     relativePath: string;
     content: string;
   }>;
+
+  /**
+   * Optional: discover a resumable prior session for the given working dir and
+   * return how to resume it — in BOTH forms, mirroring buildRoleInjection /
+   * buildScriptRoleInjection:
+   *   - args:           Node argv for spawn() call sites (architect launch)
+   *   - scriptFragment: shell-escaped fragment for bash script generation (builder)
+   * Returns null when no resumable session exists or this harness has no
+   * cwd-keyed session store → callers fall back to a fresh launch. Only Claude
+   * implements it (store: ~/.claude/projects/<encoded-cwd>/<uuid>.jsonl).
+   */
+  buildResume?(absolutePath: string, opts?: { homeDir?: string }): {
+    sessionId: string;
+    args: string[];
+    scriptFragment: string;
+  } | null;
 }
 
 /** Custom harness definition from .codev/config.json */
@@ -74,6 +91,15 @@ export const CLAUDE_HARNESS: HarnessProvider = {
     fragment: `--append-system-prompt "$(cat '${shellEscapeSingleQuote(filePath)}')"`,
     env: {},
   }),
+  buildResume: (absolutePath, opts) => {
+    const sessionId = findLatestSessionId(absolutePath, opts);
+    if (!sessionId) return null;
+    return {
+      sessionId,
+      args: ['--resume', sessionId],
+      scriptFragment: `--resume '${shellEscapeSingleQuote(sessionId)}'`,
+    };
+  },
   // Install the worktree write-guard PreToolUse hook (Issue #1018) so a builder
   // cannot silently write outside its worktree (e.g. into the main checkout).
   getWorktreeFiles: (_content, _filePath, worktreePath) =>

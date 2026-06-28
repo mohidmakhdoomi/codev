@@ -13,7 +13,7 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { encodeWorkspacePath } from '../lib/tower-client.js';
-import { findLatestSessionId } from '../utils/claude-session-discovery.js';
+import { getArchitectHarness } from '../utils/config.js';
 import { loadConfig } from '../../lib/config.js';
 
 const execAsync = promisify(exec);
@@ -466,10 +466,18 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         const cmdParts = architectCmd.split(/\s+/);
         const cmd = cmdParts[0];
 
-        // Issue #830 (main architect only): if a prior Claude session exists
-        // for this workspace cwd, resume it instead of starting fresh. Role
-        // injection is skipped on the resume path — the saved conversation
-        // already contains the role/system prompt.
+        // Issue #830 (main architect only): if the configured harness exposes a
+        // resumable prior session for this workspace cwd, resume it instead of
+        // starting fresh. Role injection is skipped on the resume path — the
+        // saved conversation already contains the role/system prompt.
+        //
+        // Issue #929: resume is gated on the harness (via buildResume), not the
+        // Claude session store directly. Only the Claude harness implements
+        // buildResume (its sessions live at ~/.claude/projects/<cwd>/*.jsonl);
+        // codex returns null → fresh, role-injected launch. Previously this
+        // read findLatestSessionId() unconditionally, so a codex architect with
+        // any stale Claude jsonl built `codex --resume <uuid>` and shellper
+        // restart-looped to death.
         //
         // Lookup is unconditional here (unlike builders, where spawn.ts gates
         // discovery behind `options.resume`). The asymmetry is intentional:
@@ -505,17 +513,24 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
           // an unrelated jsonl.
           safeToResume = false;
         }
-        const resumeSessionId = safeToResume ? findLatestSessionId(workspacePath) : null;
-        if (!safeToResume) {
+        const architectHarness = getArchitectHarness(workspacePath);
+        const resume = safeToResume ? (architectHarness.buildResume?.(workspacePath) ?? null) : null;
+        // Only warn about a *skipped* resume when this harness actually supports
+        // resume (buildResume defined → claude). For codex, resume was never on
+        // the table, so the sibling-collision warning is just noise.
+        if (!safeToResume && architectHarness.buildResume) {
           _deps.log('WARN', `Skipping main architect conversation resume for ${workspacePath}: persisted sibling architects detected (or state.db unreadable); cannot disambiguate jsonl by cwd. See #832.`);
         }
+
         let cmdArgs: string[];
         let harnessEnv: Record<string, string>;
-        if (resumeSessionId) {
-          cmdArgs = [...cmdParts.slice(1), '--resume', resumeSessionId];
+        if (resume) {
+          cmdArgs = [...cmdParts.slice(1), ...resume.args];
           harnessEnv = {};
-          _deps.log('INFO', `Resuming main architect Claude session ${resumeSessionId.slice(0, 8)}… for ${workspacePath}`);
+          _deps.log('INFO', `Resuming main architect session ${resume.sessionId.slice(0, 8)}… for ${workspacePath}`);
         } else {
+          // Fresh launch — buildArchitectArgs injects the architect role. The
+          // resume path above is claude-only, which needs no role injection.
           const built = buildArchitectArgs(cmdParts.slice(1), workspacePath);
           cmdArgs = built.args;
           harnessEnv = built.env;

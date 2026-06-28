@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
-  slugify, buildWorktreeLaunchScript,
+  slugify, buildWorktreeLaunchScript, startBuilderSession,
   checkDependencies, createWorktree, createWorktreeFromBranch,
   validateBranchName, validateRemoteName, detectForkRemote,
   symlinkConfigFiles,
@@ -17,6 +17,9 @@ import {
   validateResumeWorktree, initPorchInWorktree, type GitHubIssue,
 } from '../commands/spawn-worktree.js';
 import { DEFAULT_TOWER_PORT } from '../lib/tower-client.js';
+// node:fs is mocked below; import writeFileSync so resume-script assertions can
+// read its captured calls without a per-test dynamic import.
+import { writeFileSync } from 'node:fs';
 
 // Mock dependencies
 vi.mock('node:fs', async (importOriginal) => {
@@ -77,6 +80,18 @@ const globSyncMock = vi.fn(() => [] as string[]);
 vi.mock('glob', () => ({
   globSync: (...args: unknown[]) => globSyncMock(...args),
 }));
+
+// Mock the Tower REST client so startBuilderSession can run without a live
+// Tower (createPtySession → getTowerClient().createTerminal). DEFAULT_TOWER_PORT
+// is preserved from the real module (asserted elsewhere in this file).
+const createTerminalMock = vi.fn().mockResolvedValue({ id: 'term-test' });
+vi.mock('../lib/tower-client.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/tower-client.js')>();
+  return {
+    ...actual,
+    getTowerClient: () => ({ createTerminal: createTerminalMock }),
+  };
+});
 
 describe('spawn-worktree', () => {
   beforeEach(() => {
@@ -312,6 +327,64 @@ describe('spawn-worktree', () => {
       const written = vi.mocked(writeFileSync).mock.calls.map(c => String(c[0]));
       expect(written.some(p => p.endsWith('.claude/settings.local.json'))).toBe(true);
       expect(written.some(p => p.endsWith('.claude/hooks/worktree-write-guard.cjs'))).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // startBuilderSession — resume script shape (Issue #929)
+  //
+  // The crash-loop lived in the builder restart-loop script: a resumed builder
+  // baked `<cmd> --resume "<id>"` into .builder-start.sh. The fix threads a
+  // harness-provided, pre-escaped `scriptFragment` through instead of
+  // re-deriving the flag (which risked a comma-joined / word-split argv), and
+  // codex/gemini builders never reach this branch (resume === undefined → fresh
+  // role-injected script, no --resume).
+  // =========================================================================
+
+  describe('startBuilderSession resume script (Issue #929)', () => {
+    function findScript(): string | undefined {
+      const writeCalls = vi.mocked(writeFileSync).mock.calls;
+      const scriptCall = writeCalls.find(
+        call => typeof call[0] === 'string' && call[0].endsWith('.builder-start.sh'),
+      );
+      return scriptCall ? (scriptCall[1] as string) : undefined;
+    }
+
+    it('resume → script uses the escaped scriptFragment, no prompt/role injection', async () => {
+      const resume = { sessionId: 'abc-1234-uuid', scriptFragment: "--resume 'abc-1234-uuid'" };
+      await startBuilderSession(
+        { workspaceRoot: '/tmp/ws' } as any,
+        'pir-1', '/tmp/worktree', 'claude',
+        'PROMPT', 'ROLE', 'codev', resume,
+      );
+
+      const script = findScript();
+      expect(script).toBeDefined();
+      // Exact escaped fragment appended verbatim — not an unquoted or
+      // comma-joined argv form.
+      expect(script).toContain("claude --resume 'abc-1234-uuid'");
+      expect(script).not.toContain('--resume,');
+      expect(script).toContain('while true');
+      // Resume path skips role injection and the prompt file.
+      expect(script).not.toContain('--append-system-prompt');
+      const writeCalls = vi.mocked(writeFileSync).mock.calls;
+      const promptCall = writeCalls.find(
+        call => typeof call[0] === 'string' && call[0].endsWith('.builder-prompt.txt'),
+      );
+      expect(promptCall).toBeUndefined();
+    });
+
+    it('no resume + role → fresh role-injected script, no --resume', async () => {
+      await startBuilderSession(
+        { workspaceRoot: '/tmp/ws' } as any,
+        'pir-2', '/tmp/worktree', 'claude',
+        'PROMPT', 'ROLE {PORT}', 'codev',
+      );
+
+      const script = findScript();
+      expect(script).toBeDefined();
+      expect(script).not.toContain('--resume');
+      expect(script).toContain('--append-system-prompt');
     });
   });
 
