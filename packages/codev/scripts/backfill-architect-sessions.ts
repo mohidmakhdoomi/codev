@@ -14,13 +14,18 @@
  *
  * (workspacePath defaults to the current directory.)
  *
- * How it disambiguates siblings sharing one cwd: it asks the resolved harness's
- * `captureRunningSession`, which correlates each architect's process subtree to
- * the session file it holds OPEN (exact), with a newest-by-mtime fallback only
- * when the workspace has a single architect (unambiguous). Agents whose harness
- * has no session capability (Codex/Gemini/OpenCode) are skipped. It writes only
- * the `session_id` column (a targeted UPDATE), so it is safe to run while Tower
- * is live.
+ * How it disambiguates siblings sharing one cwd: `captureRunningClaudeSession`
+ * correlates each architect's process subtree to the session file it holds OPEN
+ * (exact), with a newest-by-mtime fallback only when the workspace has a single
+ * architect (unambiguous). Only architects whose harness can resume a session at
+ * all (`harness.session`) are considered; the rest are skipped — and a non-Claude
+ * agent has no `~/.claude` jsonl, so capture would return null for it anyway. It
+ * writes only the `session_id` column (a targeted UPDATE), so it is safe to run
+ * while Tower is live.
+ *
+ * Capture is Claude-specific by nature (it reads Claude's on-disk session store),
+ * so it lives here + in `claude-session-discovery.ts`, NOT in the permanent
+ * `HarnessProvider` interface — this is a transitional backfill, not steady state.
  */
 
 import { realpathSync } from 'node:fs';
@@ -28,6 +33,7 @@ import { realpathSync } from 'node:fs';
 import { getArchitects, setArchitectSessionId } from '../src/agent-farm/state.js';
 import { getGlobalDb } from '../src/agent-farm/db/index.js';
 import { getArchitectHarness } from '../src/agent-farm/utils/config.js';
+import { captureRunningClaudeSession } from '../src/agent-farm/utils/claude-session-discovery.js';
 import type { DbTerminalSession } from '../src/agent-farm/servers/tower-types.js';
 
 function canonical(p: string): string {
@@ -49,8 +55,9 @@ function main(): void {
     return;
   }
 
-  const harness = getArchitectHarness(workspacePath);
-  const capture = harness.session?.captureRunningSession;
+  // Gate on the (permanent) session capability: only architects whose agent can
+  // resume a session are worth capturing one for.
+  const resumable = !!getArchitectHarness(workspacePath).session;
 
   // Map architect name -> its recorded root pid (shellper pid for shellper-backed
   // sessions, else the agent pid). The agent process is at or below this pid.
@@ -72,7 +79,7 @@ function main(): void {
       // Already recorded (spawned under #832, or a prior backfill run).
       continue;
     }
-    if (!capture) {
+    if (!resumable) {
       skipped.push(`${a.name} (agent harness has no resumable sessions)`);
       continue;
     }
@@ -84,7 +91,7 @@ function main(): void {
 
     let liveId: string | null = null;
     try {
-      liveId = capture(workspacePath, pid, soleArchitect);
+      liveId = captureRunningClaudeSession(workspacePath, pid, { soleArchitect });
     } catch (err) {
       skipped.push(`${a.name} (capture error: ${(err as Error).message})`);
       continue;

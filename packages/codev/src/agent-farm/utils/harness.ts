@@ -13,7 +13,6 @@
  */
 
 import { buildWorktreeGuardFiles } from './worktree-write-guard.js';
-import { captureRunningClaudeSession } from './claude-session-discovery.js';
 
 // =============================================================================
 // Types
@@ -64,14 +63,6 @@ export interface HarnessProvider {
     newSessionArgs(sessionId: string): string[];
     /** Args to RESUME an existing session by id (caller skips role injection). */
     resumeArgs(sessionId: string): string[];
-    /**
-     * Capture the live session id of an already-running agent process, for the
-     * transitional `scripts/backfill-architect-sessions.ts` backfill. `pid` is the
-     * architect's recorded process; `soleArchitect` enables the unambiguous
-     * fallback when the workspace has a single architect. Returns null if it can't
-     * be resolved.
-     */
-    captureRunningSession?(workspacePath: string, pid: number, soleArchitect: boolean): string | null;
   };
 }
 
@@ -105,8 +96,6 @@ export const CLAUDE_HARNESS: HarnessProvider = {
   session: {
     newSessionArgs: (sessionId) => ['--session-id', sessionId],
     resumeArgs: (sessionId) => ['--resume', sessionId],
-    captureRunningSession: (workspacePath, pid, soleArchitect) =>
-      captureRunningClaudeSession(workspacePath, pid, { soleArchitect }),
   },
 };
 

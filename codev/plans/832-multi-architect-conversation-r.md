@@ -60,14 +60,15 @@ session?: {
   newSessionArgs(sessionId: string): string[];
   /** Args to RESUME an existing session by id (caller skips role injection). */
   resumeArgs(sessionId: string): string[];
-  /** Capture the live session id of an already-running agent process, for the
-   *  `stop --capture-sessions` backfill. `pid` is the architect's recorded process.
-   *  Agent-specific (Claude reads its on-disk session store). */
-  captureRunningSession?(workspacePath: string, pid: number): string | null;
 }
 ```
 
-- `CLAUDE_HARNESS.session = { newSessionArgs: id => ['--session-id', id], resumeArgs: id => ['--resume', id], captureRunningSession: (ws, pid) => … }` (see Backfill below).
+The interface carries only the **steady-state** pin/resume contract. Capturing a
+*live* process's id is transitional and Claude-specific (it reads Claude's on-disk
+store), so it lives in `claude-session-discovery.ts` + the backfill script, **not** in
+this permanent interface.
+
+- `CLAUDE_HARNESS.session = { newSessionArgs: id => ['--session-id', id], resumeArgs: id => ['--resume', id] }`.
 - `CODEX_HARNESS`, `GEMINI_HARNESS`, `OPENCODE_HARNESS`: **omit** `session` →
   treated as "no resumable sessions" → always fresh, nothing persisted, skipped by the
   backfill. (When/if a future agent gains resume support, it implements this capability
@@ -133,14 +134,15 @@ pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [
 
 - The script reuses **library functions only** — no new API surface. It reads the
   workspace's architects via `getArchitects(ws)`, looks up each one's recorded pid
-  from `global.db.terminal_sessions` (by `role_id` = name), resolves the live id via
-  the harness's `session.captureRunningSession`, and writes it with the targeted
-  `setArchitectSessionId(ws, name, id)` (a `session_id`-only `UPDATE`, so it can't
-  clobber other fields and is safe to run while Tower is live).
-- Architects that already have an id are skipped; agents whose harness has no
-  `session` capability (Codex/Gemini/OpenCode) are skipped.
+  from `global.db.terminal_sessions` (by `role_id` = name), resolves the live id by
+  calling `captureRunningClaudeSession(...)` **directly** (the capture is Claude-
+  specific and transitional, so it is NOT on the `HarnessProvider` interface), and
+  writes it with the targeted `setArchitectSessionId(ws, name, id)` (a `session_id`-
+  only `UPDATE`, so it can't clobber other fields and is safe to run while Tower is live).
+- Architects that already have an id are skipped; architects whose harness has no
+  `session` capability (Codex/Gemini/OpenCode → not resumable) are skipped.
 - **Disambiguation (the crux):** the script maps each architect to *its own*
-  conversation by process, not by mtime, via `captureRunningSession(ws, pid, soleArchitect)`:
+  conversation by process, not by mtime, via `captureRunningClaudeSession(ws, pid, { soleArchitect })`:
   - **Single architect** → `findLatestSessionId(ws)` (unambiguous; no `lsof`).
   - **Multiple architects** → correlate the architect's process subtree to the
     `~/.claude/projects/<encoded-cwd>/*.jsonl` it holds **open** (`lsof`; `/proc/<pid>/fd`
@@ -201,11 +203,13 @@ approach's clean win over the derived scheme, which needed an explicit file prun
 ## Files to Change
 
 - `packages/codev/src/agent-farm/utils/harness.ts` — add optional `session` capability
-  to `HarnessProvider`; implement it on `CLAUDE_HARNESS`; others omit.
+  (`newSessionArgs`/`resumeArgs` only) to `HarnessProvider`; implement on `CLAUDE_HARNESS`;
+  others omit. (No capture method on the interface — that's transitional, see the script.)
 - `packages/codev/src/agent-farm/utils/claude-session-discovery.ts` — **revert** the
   derived-id additions (`architectSessionId`, `sessionFileExists`,
   `deleteArchitectSessionFile`, `ARCHITECT_SESSION_NAMESPACE`). Keep `findLatestSessionId`
-  (used by builders + the Claude harness's `captureRunningSession` single-architect path).
+  (builders + the script's single-architect fallback); add `captureRunningClaudeSession`
+  (the script's process-correlation capture — Claude-specific, called directly).
 - `packages/codev/src/agent-farm/servers/tower-utils.ts` — rewrite
   `resolveArchitectLaunch` to the stored-id + harness-capability model above (no
   agent-specific flags here); drop the `isLoneMainArchitect`/discovery wiring.
@@ -216,8 +220,8 @@ approach's clean win over the derived scheme, which needed an explicit file prun
   read stored id + resume via the helper.
 - **Backfill script (no CLI/API)**: `packages/codev/scripts/backfill-architect-sessions.ts`
   — standalone `tsx` script reusing library functions (`getArchitects`,
-  `getArchitectHarness`, `captureRunningSession`, `setArchitectSessionId`) and reading
-  pids from `global.db.terminal_sessions`. No `afx` subcommand, no REST route, no client
+  `getArchitectHarness`, `captureRunningClaudeSession`, `setArchitectSessionId`) and
+  reading pids from `global.db.terminal_sessions`. No `afx` subcommand, no REST route, no client
   method.
 - DB layer: `db/schema.ts`, `db/index.ts` (v12), `db/types.ts`, `types.ts`, `state.ts`
   (setters write `session_id`; new targeted `setArchitectSessionId`).
