@@ -2,8 +2,9 @@
 
 > **Approach summary:** persist a generated, agent-neutral `session_id` on each
 > architect row at spawn; resume from it at every revive surface; bridge pre-#832
-> running architects across the upgrade restart with a transitional
-> `afx workspace stop --capture-sessions`. No jsonl discovery in the spawn/revive path.
+> running architects across the upgrade restart with a transitional **standalone
+> script** (`scripts/backfill-architect-sessions.ts`) kept out of the CLI/API. No
+> jsonl discovery in the spawn/revive path.
 
 > **Revision note (post-plan-approval, per dev-gate feedback).** An earlier revision
 > derived the session ID statelessly by hashing `(workspacePath, name)`. That proved
@@ -113,51 +114,49 @@ REPLACE` can't wipe it — no COALESCE needed.
 sibling, post-#832) gets a generated id stored at spawn, so it is restart-safe from
 birth, deterministically, with zero on-disk guessing.
 
-### Backfill: `afx workspace stop --capture-sessions` (transitional)
+### Backfill: standalone `scripts/backfill-architect-sessions.ts` (transitional)
 
-> **Transition-only.** This flag exists solely to bridge architects already running
-> under pre-#832 code across the *one* upgrade restart. Once an architect has been
-> spawned under the new code, its id is stored at spawn and capture is redundant. The
-> flag is documented as a one-off transition aid (its `--help` says so) and is a
-> candidate for removal in a later release — it carries no long-term role. Capture is
-> deliberately minimal: current workspace only, no `--all`, no reporting beyond a
-> per-architect captured/skipped line.
+> **Transition-only, OUT of the CLI/API.** This bridge exists solely to carry
+> architects already running under pre-#832 code across the upgrade. It is a
+> **standalone script**, deliberately NOT an `afx` subcommand, REST route, or client
+> method — it must not pollute the day-to-day CLI/API surface for a one-off need.
+> Architects spawned under #832 store their id at spawn, so this only ever does work
+> during the upgrade window and is a candidate for deletion afterward.
 
 The only architects without a stored id are those **already running under pre-#832
-code** at the moment of upgrade (their conversations exist on disk, but Tower never
-recorded the id). For those, a restart would lose context once. The backfill closes
-that gap for an *expected* restart:
+code** (their conversations exist on disk, but Tower never recorded the id). Run the
+script by hand, while they are still alive, before a planned restart/reboot:
 
 ```
-afx workspace stop --capture-sessions
+pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [workspacePath]
 ```
 
-- A `--capture-sessions` flag on the existing `workspace stop` command. `stop()` runs
-  a **capture pass before** `deactivateWorkspace` (the architects must still be alive
-  to read their live session id), via a new Tower-side `captureArchitectSessions(ws)`.
-- `captureArchitectSessions` iterates the workspace's architects. For each one that
-  has **no** stored `session_id` and whose harness exposes `session.captureRunningSession`,
-  it resolves the live id and persists it via `setArchitectByName(ws, name, { …, sessionId })`.
-  Architects that already have an id are skipped (nothing to do); agents without a
-  `session` capability are skipped (no resumable session).
-- **Disambiguation (the crux):** capture maps each architect to *its own* conversation
-  by process, not by mtime. The Claude harness's `captureRunningSession(ws, pid)`:
+- The script reuses **library functions only** — no new API surface. It reads the
+  workspace's architects via `getArchitects(ws)`, looks up each one's recorded pid
+  from `global.db.terminal_sessions` (by `role_id` = name), resolves the live id via
+  the harness's `session.captureRunningSession`, and writes it with the targeted
+  `setArchitectSessionId(ws, name, id)` (a `session_id`-only `UPDATE`, so it can't
+  clobber other fields and is safe to run while Tower is live).
+- Architects that already have an id are skipped; agents whose harness has no
+  `session` capability (Codex/Gemini/OpenCode) are skipped.
+- **Disambiguation (the crux):** the script maps each architect to *its own*
+  conversation by process, not by mtime, via `captureRunningSession(ws, pid, soleArchitect)`:
   - **Single architect** → `findLatestSessionId(ws)` (unambiguous; no `lsof`).
   - **Multiple architects** → correlate the architect's process subtree to the
     `~/.claude/projects/<encoded-cwd>/*.jsonl` it holds **open** (`lsof`; `/proc/<pid>/fd`
-    on Linux). The recorded pid is the shellper; the agent is its descendant, so capture
+    on Linux). The recorded pid is the shellper; the agent is its descendant, so it
     walks the subtree. A running process holds exactly one such jsonl open → exact match.
-  - If correlation fails / `lsof` unavailable → skip that architect with a warning
-    (it spawns fresh on restart — no worse than today). Graceful, never fatal to stop.
+  - If correlation fails / `lsof` unavailable → that architect is skipped with a note
+    (it spawns fresh on restart — no worse than today). Never fatal.
 - Spec 786's intentional-stop logic already **preserves** architect rows across
-  `stop`, so the captured `session_id` survives to the next `afx workspace start`,
-  where `resolveArchitectLaunch` branch 2 resumes every architect — lone or sibling —
-  deterministically.
+  `afx workspace stop`, so a written `session_id` survives to the next
+  `afx workspace start`, where `resolveArchitectLaunch` branch 2 resumes every
+  architect — lone or sibling — deterministically.
 
 So: **new architects are auto-deterministic** (id at spawn); **existing running
-architects** survive a planned restart by snapshotting first with `--capture-sessions`.
-`lsof` is confined to the multi-architect backfill path (a narrow, opt-in, transitional
-case) and degrades gracefully.
+architects** survive a planned restart by running the backfill script first. `lsof`
+is confined to the multi-architect script path (a narrow, opt-in, transitional case)
+and degrades gracefully.
 
 ### Spawn / revive sites
 
@@ -212,13 +211,16 @@ approach's clean win over the derived scheme, which needed an explicit file prun
   agent-specific flags here); drop the `isLoneMainArchitect`/discovery wiring.
 - `packages/codev/src/agent-farm/servers/tower-instances.ts` — read stored `sessionId`
   + persist the returned id at `launchInstance` and `addArchitect`; drop the jsonl
-  prune from `removeArchitect`; add `captureArchitectSessions(workspacePath)`.
+  prune from `removeArchitect`.
 - `packages/codev/src/agent-farm/servers/tower-terminals.ts` — both restart-bake sites
   read stored id + resume via the helper.
-- **Backfill CLI**: `cli.ts` (`workspace stop --capture-sessions` flag) → `commands/stop.ts`
-  (`stop({ captureSessions })`, run capture before `deactivateWorkspace`) →
-  `lib/tower-client.ts` + the Tower route (new `captureArchitectSessions` RPC).
-- DB layer: `db/schema.ts`, `db/index.ts` (v12), `db/types.ts`, `types.ts`, `state.ts`.
+- **Backfill script (no CLI/API)**: `packages/codev/scripts/backfill-architect-sessions.ts`
+  — standalone `tsx` script reusing library functions (`getArchitects`,
+  `getArchitectHarness`, `captureRunningSession`, `setArchitectSessionId`) and reading
+  pids from `global.db.terminal_sessions`. No `afx` subcommand, no REST route, no client
+  method.
+- DB layer: `db/schema.ts`, `db/index.ts` (v12), `db/types.ts`, `types.ts`, `state.ts`
+  (setters write `session_id`; new targeted `setArchitectSessionId`).
 - Tests — `__tests__/state.test.ts` (round-trip + removal-clears), a migration test,
   `__tests__/tower-utils.test.ts` (harness-routed decision), the harness unit test, and
   a capture test (single-architect `findLatestSessionId` path; multi-architect skip /
@@ -238,24 +240,26 @@ messaging / SSE; porch / gates.
 - **harness.ts** — additive optional capability; non-Claude providers unchanged.
 - **resolveArchitectLaunch** — agent-neutral; the only behavior change is that
   architects now resume from their stored id.
-- **`workspace stop --capture-sessions`** — opt-in flag; the default `stop` path is
-  unchanged (no capture, no `lsof`). Capture runs only when the flag is passed.
+- **Backfill script** — zero day-to-day surface: not in `afx`, not a REST route, not a
+  client method. Manually run, transitional. Writes only `session_id` (targeted UPDATE),
+  safe alongside a live Tower.
 - **Soft-fail** — no stored id (legacy row, first spawn, or no-session agent) → fresh
-  spawn. Worst case "loses context once," never "fails to start." Capture failures are
-  non-fatal to `stop`.
-- **Size** — ~200–280 LOC incl. the capture command + tests, all within
-  `packages/codev`, no new deps (`lsof` is invoked, not bundled).
+  spawn. Worst case "loses context once," never "fails to start." Script failures are
+  per-architect skips, never fatal.
+- **Size** — ~200–280 LOC incl. the script + tests, all within `packages/codev`, no new
+  deps (`lsof`/`ps` are invoked, not bundled; `tsx` is already a devDependency).
 
 ## Risks & Alternatives Considered
 
-- **One-time `main`/sibling context loss on the upgrade restart** — bridged by
-  `afx workspace stop --capture-sessions`. Architects already running under pre-#832
-  code have no stored id; capturing before a planned restart records their live ids so
-  `start` resumes them. If a developer doesn't capture (or hits an *unplanned* reboot),
-  those pre-#832 architects lose context once, then are deterministic forever after
-  (the next spawn stores an id). New architects are never affected.
-- **`lsof` dependency / portability.** Confined to the multi-architect `--capture-sessions`
-  path. Single-architect capture uses `findLatestSessionId` (no `lsof`). If `lsof`
+- **One-time `main`/sibling context loss on the upgrade restart** — bridged by the
+  `scripts/backfill-architect-sessions.ts` script. Architects already running under
+  pre-#832 code have no stored id; running the script before a planned restart records
+  their live ids so `start` resumes them. If a developer doesn't run it (or hits an
+  *unplanned* reboot), those pre-#832 architects lose context once, then are
+  deterministic forever after (the next spawn stores an id). New architects are never
+  affected.
+- **`lsof` dependency / portability.** Confined to the multi-architect script path.
+  Single-architect capture uses `findLatestSessionId` (no `lsof`). If `lsof`
   (or `/proc`) is unavailable or correlation is ambiguous, capture skips that architect
   with a warning — it spawns fresh on restart (no worse than today). Never fatal.
 - **`INSERT OR REPLACE` wiping the id.** Ruled out by the caller graph: every non-null
@@ -293,16 +297,19 @@ Unit tests (run from the worktree: `pnpm --filter @cluesmith/codev test`):
   tests): a sibling row with a stored id bakes `restartOptions.args` with `--resume
   <id>` and skips role injection; no stored id → `buildArchitectArgs`;
   `CODEV_ARCHITECT_NAME` still resolved.
-- **Capture** (`tower-instances.test.ts` or a capture-specific test): single-architect
-  workspace captures via `findLatestSessionId` and persists `session_id`; an architect
-  that already has an id is skipped; a no-`session` harness is skipped; correlation
-  failure degrades gracefully (no throw, no row mutation).
+- **Capture helper** (`claude-session-discovery.test.ts`): the sole-architect fallback
+  returns the newest jsonl when process correlation finds nothing; the multi-architect
+  path returns null (no mtime guess); no session on disk → null. (The `lsof` success
+  path is integration-tested manually below.)
+- **Backfill state helper** (`state.test.ts`): `setArchitectSessionId` updates only the
+  `session_id` column and is a no-op for a missing row.
 
 Manual (reviewer at `dev-approval`):
-- **Backfill end-to-end**: in a multi-architect workspace, `afx workspace stop
-  --capture-sessions` then `afx workspace start`; confirm main + a named sibling each
-  resume their own conversation and the sibling keeps its brief. (Exercises the `lsof`
-  subtree correlation that unit tests can't.)
+- **Backfill end-to-end**: in a multi-architect workspace, run
+  `pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts` while
+  the architects are alive, then `afx workspace stop` + `afx workspace start`; confirm
+  main + a named sibling each resume their own conversation and the sibling keeps its
+  brief. (Exercises the `lsof` subtree correlation that unit tests can't.)
 - Normal multi-architect `stop` + `start` for a workspace whose architects were spawned
-  under the new code (ids stored at spawn) — confirm resume with no capture step.
+  under the new code (ids stored at spawn) — confirm resume with no backfill step.
 - `afx workspace remove-architect reviewer` then re-add; confirm it starts fresh.
