@@ -26,10 +26,15 @@ export async function stop(options: { captureSessions?: boolean } = {}): Promise
   const client = getTowerClient();
   const towerRunning = await client.isRunning();
 
-  // Issue #832 (transitional): capture each running architect's conversation
-  // session id BEFORE the stop kills them, so the next `afx workspace start`
-  // resumes them. One-off bridge for architects spawned before #832 (those
-  // spawned after store their id automatically).
+  // Issue #832 (transitional): record each running architect's conversation
+  // session id while its process is still alive. The stop ends the architect
+  // PROCESSES but not the conversation — that persists on disk as a session
+  // jsonl regardless — so capture is not racing a loss of context. It must run
+  // before deactivation only because capture reads the LIVE process (lsof, to
+  // find which session jsonl it has open); once the process is gone it can't be
+  // correlated. With the id recorded, the next `afx workspace start` resumes the
+  // (still-on-disk) conversation. One-off bridge for architects spawned before
+  // #832 (those spawned after store their id automatically).
   if (options.captureSessions) {
     if (towerRunning) {
       logger.info('Capturing architect session ids before stop...');

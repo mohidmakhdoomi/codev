@@ -1170,8 +1170,10 @@ export async function removeArchitect(
 /**
  * Capture the live conversation session id of each running architect that does
  * not yet have one stored, and persist it. Invoked by `afx workspace stop
- * --capture-sessions` BEFORE the stop kills the architects (they must be alive to
- * read their live session id), so the next `afx workspace start` resumes them.
+ * --capture-sessions` before deactivation ends the architect processes — capture
+ * reads each live process (to find its open session jsonl), so it must run while
+ * they are still alive. The conversation itself persists on disk across the stop;
+ * recording the id lets the next `afx workspace start` resume it.
  *
  * Transitional: architects spawned under #832 already store their id at spawn, so
  * this only does work for architects still running under pre-#832 code. It is a
