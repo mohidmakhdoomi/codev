@@ -178,3 +178,10 @@ All committed. Build green, full suite 3392 passed / 48 skipped / 0 failed.
 - Tests: state round-trip + removal-clears + sibling-distinct; harness capability;
   resolveArchitectLaunch decision (resume/mint/no-session/baseArgs-order); capture fallback.
   lsof success path = manual integration test at dev-approval gate.
+
+## Follow-up filed
+#1112 (area/tower): unify builder conversation resume onto the persisted
+session_id + harness.session mechanism from #832, retiring jsonl-discovery.
+Scoped OUT of #832 (builders work today via unique-cwd jsonl-discovery — not a bug,
+just a consistency/robustness improvement). Storage location (builders.session_id vs
+shared terminal_sessions.session_id) left open in the issue.
