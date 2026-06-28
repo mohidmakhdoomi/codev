@@ -977,6 +977,11 @@ describe('tower-routes', () => {
       expect(parsed.builders).toEqual([]);
       expect(parsed.pendingPRs).toEqual([]);
       expect(parsed.backlog).toEqual([]);
+      // Issue 1104: the no-workspace branch must still honor the full
+      // OverviewData contract — `architects` is required ('never undefined'),
+      // and `recentlyClosed` likewise — so consumers don't have to branch.
+      expect(parsed.recentlyClosed).toEqual([]);
+      expect(parsed.architects).toEqual([]);
     });
 
     it('works via workspace-scoped route', async () => {

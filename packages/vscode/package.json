@@ -932,7 +932,7 @@
             "Group builders by the architect that spawned them (the ownership axis); architects with no in-flight work don't appear (the full roster lives in Workspace > Architects)."
           ],
           "default": "stage",
-          "description": "Which axis the Agents view groups by. 'stage' (default) is the action axis, 'area' is the domain axis, 'architect' is the ownership axis. Builders are grouped by exactly one axis at a time; toggle via the three Agents title-bar buttons (the active one is shown pressed)."
+          "description": "Which axis the Agents view groups by. 'stage' (default) is the action axis, 'area' is the domain axis, 'architect' is the ownership axis. Builders are grouped by exactly one axis at a time; switch via the Agents title-bar group-by button, whose icon shows the axis you'll switch to and which cycles stage → area → architect on click."
         },
         "codev.markdownPreview.fontSize": {
           "type": "number",

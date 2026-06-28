@@ -906,8 +906,11 @@ async function handleOverview(res: http.ServerResponse, url: URL, workspaceOverr
   }
 
   if (!workspaceRoot) {
+    // Honor the full OverviewData contract even on the no-workspace branch:
+    // every collection field is required ('never undefined' for `architects`,
+    // Issue 1104), so emit them all empty rather than a partial payload.
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ builders: [], pendingPRs: [], backlog: [] }));
+    res.end(JSON.stringify({ builders: [], pendingPRs: [], backlog: [], recentlyClosed: [], architects: [] }));
     return;
   }
 

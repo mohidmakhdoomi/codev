@@ -72,6 +72,16 @@ No HOT `lessons-critical.md` change — both are VS-Code-specific recipes, not h
 - **No `toggled`** (it isn't a real menu property). The group-by button is one of three show/hide cycle commands; verify the `when`-clauses cover the unset-context-key case (`!codev.buildersGroupBy` → stage).
 - **Null-owner folds into `main`** in `architectGrouping` — confirm that matches the affinity router's fallback and that there's no user-visible "Unassigned" group.
 
+## Consultation (CMAP iter-1)
+
+Single advisory pass (PIR `max_iterations: 1`): **codex = REQUEST_CHANGES**, **claude = COMMENT**. Full verdicts in `codev/projects/1104-*/1104-review-iter1-*.txt`; dispositions in `1104-review-iter1-rebuttals.md`.
+
+- **Fixed (real defects):**
+  - `handleOverview` no-workspace branch returned a payload missing the now-required `architects` (and `recentlyClosed`) — now emits all collection fields empty; regression assertion added to `tower-routes.test.ts`. (codex #5)
+  - `README.md` Agents description still described the retired nested tier — rewritten for the flat axis. (claude #1)
+  - `buildersGroupBy` setting description referenced a "pressed" button state that doesn't exist — rewritten for the single cycling button. (claude #2)
+- **Rebutted (deliberate `dev-approval`-gate decisions, not regressions):** flat axis vs nested tier; childless architects absent; view-id rename `codev.builders`→`codev.agents`; no Add-Architect `+` on the Agents title bar. All four were human-directed at the dev gate (see Summary + builder thread).
+
 ## How to Test Locally
 
 - **View diff**: VSCode sidebar → right-click builder `pir-1104` → **Review Diff**
