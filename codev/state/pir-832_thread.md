@@ -39,3 +39,16 @@ in the `architect` state.db row; pass `--session-id <uuid>` at spawn and
   spawned_by_architect COALESCE pattern).
 
 Plan written to codev/plans/832-multi-architect-conversation-r.md.
+
+### Plan revision 1 (answering architect: "consistent approach for recovering architects?")
+Tightened the design into one uniform model + fixed a real gap:
+- **Consistency rule**: UUID minted exactly once at cold-spawn; every other surface
+  only reads it. Single `resolveArchitectLaunch(...)` helper in
+  claude-session-discovery.ts, called by all three sites (no per-site branch drift).
+  `mintIfAbsent: true` for cold-spawn (launchInstance/addArchitect), false for the
+  shellper-restart bake.
+- **Gap fixed**: stored UUID whose jsonl was pruned would make `--resume` fail.
+  Added `sessionFileExists` guard → resume only when the jsonl exists, else re-mint
+  (cold) / role-inject (restart). Makes stored-UUID resume as safe as #830's
+  jsonl-discovery. claude-session-discovery.ts now hosts BOTH builder discovery and
+  architect resume, documented side by side.

@@ -60,19 +60,62 @@ Add a nullable `claude_session_id TEXT` column to the `architect` table and thre
 it through the data layer, then add a uniform UUID branch to all three spawn/revive
 sites.
 
-### Lookup contract (applied identically at all three sites)
+### Consistency model: mint once at cold-spawn, read everywhere else
 
-- **Revive** (architect row already has a stored `claudeSessionId`): pass
-  `--resume <uuid>`, **skip role injection** (the saved conversation already
-  contains the role/system prompt). Do not regenerate or rewrite the UUID.
-- **Fresh** (no stored UUID — first-ever spawn, or a legacy pre-v12 row): generate
-  `crypto.randomUUID()`, build args with `buildArchitectArgs(...)` **plus**
-  `--session-id <uuid>`, and persist the UUID on the row after the PTY is created.
+The recovery approach is uniform across all three architect surfaces, governed by
+one rule:
 
-For architects the fallback chain is **stored UUID → fresh spawn** (jsonl-discovery
-is intentionally bypassed — ambiguous for shared cwd). Builders keep their existing
-**jsonl-discovery → fresh** chain. The two coexist because the constraint differs
-(unique cwd vs shared cwd); this is documented in code at the architect sites.
+> **The Claude session UUID is minted exactly once — at the architect's first
+> cold-spawn — and persisted on its `architect` row. Every other surface only
+> *reads* that UUID to resume; none mints.**
+
+This works because by the time an architect is *reviving* (reboot cold-spawn with a
+persisted row, or an in-process shellper restart), its UUID was already minted at
+the original cold-spawn and survives in state.db. The only site that ever generates
+a UUID is a cold-spawn that finds no usable one on the row.
+
+There is exactly **one decision helper**, called by all three sites, so the
+resume-vs-fresh logic lives in one place and cannot drift (lessons-critical:
+*consolidate duplicates rather than syncing them*):
+
+```ts
+// utils/claude-session-discovery.ts (architect resume lives next to builder discovery)
+resolveArchitectLaunch(opts: {
+  workspacePath: string;
+  name: string;           // 'main' or sibling name (the architect-row id)
+  baseArgs: string[];     // cmdParts.slice(1)
+  mintIfAbsent: boolean;  // cold-spawn sites: true; shellper-restart bake: false
+}): { args: string[]; env: Record<string, string>; sessionIdToStore: string | null }
+```
+
+Decision (single source of truth):
+
+1. **Stored UUID present AND its jsonl exists on disk** → resume:
+   `{ args: [...baseArgs, '--resume', uuid], env: {}, sessionIdToStore: null }`.
+   Role injection skipped — the saved conversation already holds the role/system
+   prompt. UUID is never regenerated.
+2. **Else if `mintIfAbsent`** (cold-spawn, no usable UUID — first-ever spawn,
+   legacy pre-v12 row, or a stored UUID whose jsonl was pruned) → fresh:
+   `uuid = crypto.randomUUID()`, `{ args: [...buildArchitectArgs(...).args, '--session-id', uuid], env, sessionIdToStore: uuid }`.
+   The caller persists `sessionIdToStore` on the row after PTY creation (overwriting
+   any stale UUID).
+3. **Else** (shellper-restart bake, no usable UUID) → role-injection fallback:
+   `{ args, env } = buildArchitectArgs(...)`, `sessionIdToStore: null`. Nothing to
+   store — the restart bake doesn't create the session. The next cold respawn mints.
+
+**jsonl-existence guard (the safety the bare UUID lacked).** A stored UUID whose
+jsonl has been pruned (e.g. user cleared `~/.claude/projects`) would make
+`--resume <uuid>` fail. So resume is gated on
+`sessionFileExists(workspacePath, uuid)` — a new tiny export in
+`claude-session-discovery.ts` reusing its existing `getClaudeProjectDir()` path
+encoding. This makes stored-UUID resume **as safe as #830's jsonl-discovery** (which
+only ever picked files that exist) while keeping per-architect disambiguation.
+
+**Architects vs builders.** Architect fallback chain: **stored-UUID (if jsonl
+exists) → fresh**. Builders keep their existing **jsonl-discovery → fresh** chain
+(`spawn.ts`, #831). The two coexist because the constraint differs — unique cwd for
+builders, shared cwd for architects — and both now live in
+`claude-session-discovery.ts`, documented side by side.
 
 ### Data layer
 
@@ -92,35 +135,43 @@ is intentionally bypassed — ambiguous for shared cwd). Builders keep their exi
   (`getArchitects`, `getArchitectByName`) already `SELECT *`, so they surface the
   new field through the converter with no query change.
 
-### Spawn / revive sites
+### The single helper
 
-- `tower-instances.ts launchInstance` (main): delete the `safeToResume` /
-  `findLatestSessionId` / `getArchitects().length <= 1` block (and drop the now-unused
-  `findLatestSessionId` import). Replace with the lookup contract above against the
-  `'main'` row (`getArchitectByName(resolvedPath, 'main')?.claudeSessionId`). On the
-  fresh path, generate the UUID, append `--session-id <uuid>`, and pass it into the
-  existing `setArchitect(...)` calls (both shellper and fallback branches).
-- `tower-instances.ts addArchitect`: look up
-  `getArchitectByName(resolvedPath, name)?.claudeSessionId`. Present → revive branch;
-  absent → fresh branch (generate + `--session-id` + store via the existing
-  `setArchitectByName(...)` calls). This single branch covers both the user-driven
-  `add-architect` (no row yet → fresh) and the launchInstance reconcile loop
-  (row persisted with UUID → revive).
-- `tower-terminals.ts reconcileTerminalSessions` (~L636-679): before calling
-  `buildArchitectArgs`, look up
-  `getArchitectByName(dbSession.workspace_path, dbSession.role_id || 'main')?.claudeSessionId`.
-  Present → `restartOptions.args = [...cmdParts.slice(1), '--resume', uuid]`, skip
-  `buildArchitectArgs`; keep the existing `CODEV_ARCHITECT_NAME` env injection
-  (identity must survive regardless). Absent → current behavior. Add the
-  `getArchitectByName` import.
+`resolveArchitectLaunch(...)` (in `utils/claude-session-discovery.ts`) encapsulates
+the decision above. It reads the row via `getArchitectByName(workspacePath, name)`,
+applies the jsonl-existence guard, and returns `{ args, env, sessionIdToStore }`.
+All three sites call it; none re-implements the branch.
+
+### Spawn / revive sites (all call the one helper)
+
+- `tower-instances.ts launchInstance` (main): **delete** the `safeToResume` /
+  `findLatestSessionId` / `getArchitects().length <= 1` block (and drop the
+  `findLatestSessionId` import — it's now unused here). Call
+  `resolveArchitectLaunch({ workspacePath, name: 'main', baseArgs: cmdParts.slice(1), mintIfAbsent: true })`.
+  Use the returned `args`/`env` for the PTY; after creation, if `sessionIdToStore`
+  is non-null, pass it into the existing `setArchitect(...)` calls (both shellper and
+  fallback branches) as `claudeSessionId`.
+- `tower-instances.ts addArchitect`: call
+  `resolveArchitectLaunch({ workspacePath, name, baseArgs: cmdParts.slice(1), mintIfAbsent: true })`.
+  Same store-after-PTY pattern via the existing `setArchitectByName(...)` calls.
+  This one call covers **both** the user-driven `add-architect` (no row → mint) and
+  the `launchInstance` reconcile loop (persisted row with UUID → resume) — the row's
+  presence/absence drives the branch inside the helper, no extra signalling.
+- `tower-terminals.ts reconcileTerminalSessions` (~L636-679): call
+  `resolveArchitectLaunch({ workspacePath: dbSession.workspace_path, name: dbSession.role_id || 'main', baseArgs: cmdParts.slice(1), mintIfAbsent: false })`
+  and use its `args`/`env` for `restartOptions`. Keep the existing
+  `CODEV_ARCHITECT_NAME` env injection merged on top (identity must survive
+  regardless of resume-vs-fresh). `mintIfAbsent: false` because this site only
+  pre-bakes restart options; a missing UUID here means a legacy row → role-injection
+  fallback (the next cold respawn mints).
 
 ### Why `addArchitect`'s branch is keyed on row-existence
 
 When a user runs `afx workspace add-architect --name foo`, no architect row exists
 yet → no stored UUID → fresh spawn (generates + stores). When `launchInstance`'s
 reconcile loop calls `addArchitect` for a persisted sibling, the row already exists
-with its UUID → revive. The same `getArchitectByName(...)` check distinguishes the
-two with no extra signalling.
+with its UUID → revive. The same `getArchitectByName(...)` check (inside the helper)
+distinguishes the two with no extra signalling.
 
 ## Files to Change
 
@@ -129,13 +180,15 @@ two with no extra signalling.
 - `packages/codev/src/agent-farm/db/types.ts` — `DbArchitect.claude_session_id`; map in converter.
 - `packages/codev/src/agent-farm/types.ts` — `ArchitectState.claudeSessionId?`.
 - `packages/codev/src/agent-farm/state.ts` — write + COALESCE-preserve `claude_session_id` in both setters.
-- `packages/codev/src/agent-farm/servers/tower-instances.ts` — main + sibling UUID branches; remove `safeToResume`/`findLatestSessionId`.
-- `packages/codev/src/agent-farm/servers/tower-terminals.ts` — shellper-restart UUID branch; import `getArchitectByName`.
-- Tests (see Test Plan) — `__tests__/state.test.ts`, `__tests__/tower-instances.test.ts`, `__tests__/tower-terminals.test.ts`, and a migration test (extend `bugfix-826-migration.test.ts` or a new `pir-832-session-id.test.ts`).
+- `packages/codev/src/agent-farm/utils/claude-session-discovery.ts` — add `sessionFileExists(workspacePath, sessionId)` and the `resolveArchitectLaunch(...)` helper (the single resume-vs-fresh decision, reusing `getClaudeProjectDir`).
+- `packages/codev/src/agent-farm/servers/tower-instances.ts` — main + sibling sites call `resolveArchitectLaunch`; remove `safeToResume`/`findLatestSessionId` block + import.
+- `packages/codev/src/agent-farm/servers/tower-terminals.ts` — shellper-restart bake calls `resolveArchitectLaunch({ mintIfAbsent: false })`.
+- Tests (see Test Plan) — `__tests__/claude-session-discovery.test.ts` (helper unit tests), `__tests__/state.test.ts`, `__tests__/tower-instances.test.ts`, `__tests__/tower-terminals.test.ts`, and a migration test (extend `bugfix-826-migration.test.ts` or a new `pir-832-session-id.test.ts`).
 
 **Not touched**: `codev-skeleton/` (this is Tower implementation code, not a
-framework doc/template — no skeleton mirror needed). `utils/claude-session-discovery.ts`
-(still used by builders). `global.db` schema (the UUID lives in local state.db).
+framework doc/template — no skeleton mirror needed). `findLatestSessionId` itself
+(still used by builders via `spawn.ts`). `global.db` schema (the UUID lives in local
+state.db).
 
 ## Risks & Alternatives Considered
 
@@ -158,11 +211,21 @@ framework doc/template — no skeleton mirror needed). `utils/claude-session-dis
 - **`--session-id` collision.** UUIDs come from `crypto.randomUUID()`; collision
   probability is negligible and a fresh UUID is only generated when no row UUID
   exists.
+- **Stored UUID whose jsonl was pruned.** Resolved by the `sessionFileExists` guard
+  in `resolveArchitectLaunch` — a UUID with no on-disk jsonl is treated as absent, so
+  cold-spawn re-mints and the restart-bake falls back to role injection. No
+  `--resume` is ever issued against a missing session.
 
 ## Test Plan
 
 Unit tests (run from the worktree: `pnpm --filter @cluesmith/codev test`):
 
+- **Helper** (`claude-session-discovery.test.ts`): `resolveArchitectLaunch` returns
+  resume args (`--resume <uuid>`, empty env, `sessionIdToStore: null`) when the row
+  has a UUID **and** its jsonl exists; mints (`--session-id`, `sessionIdToStore` set,
+  role injection present) when absent and `mintIfAbsent: true`; falls back to plain
+  role injection when absent and `mintIfAbsent: false`; treats a stored UUID with a
+  **missing** jsonl as absent (existence-guard). `sessionFileExists` true/false cases.
 - **Data layer** (`state.test.ts`): set an architect with `claudeSessionId`, read it
   back via `getArchitectByName` / `getArchitects`; a later setter call omitting the
   UUID preserves it (COALESCE); `setArchitectByName(..., null)` clears the whole row
