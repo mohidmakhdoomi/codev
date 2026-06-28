@@ -61,6 +61,7 @@ import {
   stopInstance,
   addArchitect,
   removeArchitect,
+  captureArchitectSessions,
 } from './tower-instances.js';
 import { OverviewCache } from './overview.js';
 import {
@@ -245,8 +246,8 @@ export async function handleRequest(
       return await handleCommandRoute(req, res, url, ctx);
     }
 
-    // Workspace API: /api/workspaces/:encodedPath/activate|deactivate|status (Spec 0090 Phase 1)
-    const workspaceApiMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/(activate|deactivate|status)$/);
+    // Workspace API: /api/workspaces/:encodedPath/activate|deactivate|status|capture-sessions (Spec 0090 Phase 1; #832)
+    const workspaceApiMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/(activate|deactivate|status|capture-sessions)$/);
     if (workspaceApiMatch) {
       return await handleWorkspaceAction(req, res, ctx, workspaceApiMatch);
     }
@@ -542,6 +543,14 @@ async function handleWorkspaceAction(
     }
 
     const result = await stopInstance(workspacePath);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+    return;
+  }
+
+  // POST /api/workspaces/:path/capture-sessions (Issue #832, transitional)
+  if (req.method === 'POST' && action === 'capture-sessions') {
+    const result = await captureArchitectSessions(workspacePath);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(result));
     return;

@@ -94,9 +94,10 @@ export async function runAgentFarm(args: string[]): Promise<void> {
   workspaceCmd
     .command('stop')
     .description('Stop all agent farm processes for this project')
-    .action(async () => {
+    .option('--capture-sessions', 'One-off (transitional, #832): record each running architect\'s conversation session id before stopping, so they resume on the next start. Only needed for architects spawned before #832 shipped.')
+    .action(async (options: { captureSessions?: boolean }) => {
       try {
-        await stop();
+        await stop({ captureSessions: options.captureSessions });
       } catch (error) {
         logger.error(error instanceof Error ? error.message : String(error));
         process.exit(1);

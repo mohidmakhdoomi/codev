@@ -16,7 +16,7 @@ import { getTowerClient } from '../lib/tower-client.js';
  * Phase 3 (Spec 0090): Uses tower API to deactivate workspace.
  * Does NOT stop the tower daemon - other workspaces may be using it.
  */
-export async function stop(): Promise<void> {
+export async function stop(options: { captureSessions?: boolean } = {}): Promise<void> {
   const config = getConfig();
   const workspacePath = config.workspaceRoot;
 
@@ -25,6 +25,26 @@ export async function stop(): Promise<void> {
   // Try tower API first (Phase 3 - Spec 0090)
   const client = getTowerClient();
   const towerRunning = await client.isRunning();
+
+  // Issue #832 (transitional): capture each running architect's conversation
+  // session id BEFORE the stop kills them, so the next `afx workspace start`
+  // resumes them. One-off bridge for architects spawned before #832 (those
+  // spawned after store their id automatically).
+  if (options.captureSessions) {
+    if (towerRunning) {
+      logger.info('Capturing architect session ids before stop...');
+      const cap = await client.captureArchitectSessions(workspacePath);
+      if (cap.ok) {
+        if (cap.captured?.length) logger.success(`Captured session ids: ${cap.captured.join(', ')}`);
+        if (cap.skipped?.length) logger.info(`Skipped (already known or unresolvable): ${cap.skipped.join(', ')}`);
+        if (!cap.captured?.length && !cap.skipped?.length) logger.info('No architects needed capture.');
+      } else {
+        logger.warn(`Session capture failed (continuing with stop): ${cap.error ?? 'unknown error'}`);
+      }
+    } else {
+      logger.warn('--capture-sessions ignored: tower is not running, so no architects are alive to capture.');
+    }
+  }
 
   if (towerRunning) {
     logger.info('Deactivating workspace via tower...');
