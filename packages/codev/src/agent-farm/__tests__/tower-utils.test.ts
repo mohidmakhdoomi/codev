@@ -18,7 +18,12 @@ import {
   normalizeWorkspacePath,
   isTempDirectory,
   serveStaticFile,
+  resolveArchitectLaunch,
 } from '../servers/tower-utils.js';
+import {
+  architectSessionId,
+  encodeClaudeProjectDir,
+} from '../utils/claude-session-discovery.js';
 
 describe('tower-utils', () => {
   describe('isRateLimited', () => {
@@ -196,5 +201,103 @@ describe('tower-utils', () => {
         fs.unlinkSync(tmpFile);
       }
     });
+  });
+});
+
+describe('resolveArchitectLaunch (Issue #832)', () => {
+  let fakeHome: string;
+  let workspace: string;
+  let canonical: string;
+  const originalHome = process.env.HOME;
+
+  beforeEach(() => {
+    fakeHome = fs.mkdtempSync(path.join(tmpdir(), 'ral-home-'));
+    workspace = fs.mkdtempSync(path.join(tmpdir(), 'ral-ws-'));
+    // resolveArchitectLaunch canonicalises via realpath; mirror that so we seed
+    // jsonls under the same encoded-cwd it will look in.
+    canonical = fs.realpathSync(workspace);
+    process.env.HOME = fakeHome;
+    fs.mkdirSync(path.join(fakeHome, '.claude', 'projects'), { recursive: true });
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+    fs.rmSync(workspace, { recursive: true, force: true });
+  });
+
+  function seedSession(uuid: string): void {
+    const dir = path.join(fakeHome, '.claude', 'projects', encodeClaudeProjectDir(canonical));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${uuid}.jsonl`), `{"sessionId":"${uuid}"}\n`);
+  }
+
+  it('resumes the derived id (no role injection) when its jsonl exists', () => {
+    const id = architectSessionId(canonical, 'reviewer');
+    seedSession(id);
+    const { args, env } = resolveArchitectLaunch({ workspacePath: workspace, name: 'reviewer', baseArgs: [] });
+    expect(args).toEqual(['--resume', id]);
+    expect(env).toEqual({});
+  });
+
+  it('spawns fresh with --session-id at the derived id when no jsonl exists', () => {
+    const id = architectSessionId(canonical, 'reviewer');
+    const { args } = resolveArchitectLaunch({ workspacePath: workspace, name: 'reviewer', baseArgs: [] });
+    expect(args).not.toContain('--resume');
+    expect(args).toContain('--session-id');
+    expect(args[args.indexOf('--session-id') + 1]).toBe(id);
+  });
+
+  it('does NOT consult discovery without discoveryFallback (sibling-safe)', () => {
+    // A legacy random-id session exists in the shared cwd, but a sibling must not
+    // attach to it — only its own derived id (which has no jsonl) → fresh.
+    seedSession('legacy-random-id');
+    const id = architectSessionId(canonical, 'reviewer');
+    const { args } = resolveArchitectLaunch({ workspacePath: workspace, name: 'reviewer', baseArgs: [] });
+    expect(args).not.toContain('--resume');
+    expect(args[args.indexOf('--session-id') + 1]).toBe(id);
+  });
+
+  it('with discoveryFallback, resumes a legacy session when no derived jsonl exists (lone main)', () => {
+    seedSession('legacy-random-id');
+    const { args, env } = resolveArchitectLaunch({
+      workspacePath: workspace, name: 'main', baseArgs: [], discoveryFallback: true,
+    });
+    expect(args).toEqual(['--resume', 'legacy-random-id']);
+    expect(env).toEqual({});
+  });
+
+  it('prefers the derived id over the discovery fallback when both exist', () => {
+    const id = architectSessionId(canonical, 'main');
+    seedSession('legacy-random-id');
+    seedSession(id);
+    const { args } = resolveArchitectLaunch({
+      workspacePath: workspace, name: 'main', baseArgs: [], discoveryFallback: true,
+    });
+    expect(args).toEqual(['--resume', id]);
+  });
+
+  it('main resumes its OWN derived id in a multi-architect workspace (discoveryFallback off)', () => {
+    // With siblings present, launchInstance calls the helper WITHOUT
+    // discoveryFallback; main must resume its derived id (the recovery the old
+    // safeToResume guard had to skip), never a sibling's session.
+    const mainId = architectSessionId(canonical, 'main');
+    seedSession(mainId);
+    seedSession(architectSessionId(canonical, 'reviewer'));
+    const { args } = resolveArchitectLaunch({ workspacePath: workspace, name: 'main', baseArgs: [] });
+    expect(args).toEqual(['--resume', mainId]);
+  });
+
+  it('two siblings in the same cwd resolve to distinct derived ids (no cross-attachment)', () => {
+    const reviewerId = architectSessionId(canonical, 'reviewer');
+    const casaId = architectSessionId(canonical, 'casa');
+    seedSession(reviewerId);
+    seedSession(casaId);
+    const reviewer = resolveArchitectLaunch({ workspacePath: workspace, name: 'reviewer', baseArgs: [] });
+    const casa = resolveArchitectLaunch({ workspacePath: workspace, name: 'casa', baseArgs: [] });
+    expect(reviewer.args).toEqual(['--resume', reviewerId]);
+    expect(casa.args).toEqual(['--resume', casaId]);
+    expect(reviewerId).not.toBe(casaId);
   });
 });
