@@ -51,9 +51,10 @@ across the three sites (lessons-critical: *consolidate duplicates*):
 ```ts
 // utils/claude-session-discovery.ts
 resolveArchitectLaunch(opts: {
-  workspacePath: string;     // the SAME string passed as claude's cwd at spawn
-  name: string;              // 'main' or sibling name
-  baseArgs: string[];        // cmdParts.slice(1)
+  workspacePath: string;        // the SAME string passed as claude's cwd at spawn
+  name: string;                 // 'main' or sibling name
+  baseArgs: string[];           // cmdParts.slice(1)
+  discoveryFallback?: boolean;  // main + single-architect only (see below)
 }): { args: string[]; env: Record<string, string> }
 ```
 
@@ -63,14 +64,37 @@ Decision (single source of truth):
 2. `sessionFileExists(workspacePath, id)` → **resume**:
    `{ args: [...baseArgs, '--resume', id], env: {} }`. Role injection skipped — the
    saved conversation already holds the role/system prompt.
-3. Else → **fresh**: `{ args: [...buildArchitectArgs(...).args, '--session-id', id], env }`.
+3. `discoveryFallback` set **and** `findLatestSessionId(workspacePath)` finds a prior
+   session → **resume that** (`--resume <legacyId>`, role injection skipped). This is
+   the #830 newest-by-mtime path, applied *only* where it is unambiguous (see below).
+4. Else → **fresh**: `{ args: [...buildArchitectArgs(...).args, '--session-id', id], env }`.
    Role injection included; the new session is created **at the derived ID**, so the
    next revival finds it and resumes.
 
-No `mintIfAbsent` flag, no store-after-PTY step, no per-row state — every site is
-identical. The shellper-restart bake uses the same helper; if claude crashes
-in-process the shellper relaunches with `--resume <id>` (the jsonl exists from the
-original spawn) and the conversation survives silently.
+No store-after-PTY step, no per-row state. The shellper-restart bake and sibling
+spawns call the helper with `discoveryFallback: false`; if claude crashes in-process
+the shellper relaunches with `--resume <id>` (the jsonl exists from the original
+spawn) and the conversation survives silently.
+
+### Preserve #830 for single-architect main (the discovery fallback)
+
+`main` in a **single-architect** workspace keeps #830's behavior verbatim: the helper
+is called with `discoveryFallback: true` only when `getArchitects(ws).length <= 1`, so
+an existing main conversation (a legacy random-**v4** jsonl, or a v5 one from a prior
+fresh spawn) is resumed via newest-by-mtime exactly as today. **Existing single-
+architect main users see zero change and zero context loss.**
+
+This intentionally **retains the `getArchitects().length <= 1` check that the issue
+proposed removing** — but repurposed: #830 used it to *disable* main's resume when
+siblings exist (the bug); here it *selects the recovery mechanism* (discovery vs
+derived-ID), and main recovers in **both** branches. The bug the issue targeted
+(main not recovering in multi-architect workspaces) is still fixed — main just uses
+the derived-ID path there instead of the ambiguous discovery path. A deliberate,
+architect-approved deviation from the literal acceptance criterion, in service of the
+same goal with no upgrade-boundary loss for the common case.
+
+Siblings never get `discoveryFallback` (discovery is ambiguous for shared-cwd
+siblings by construction) — they always use the derived ID.
 
 ### New helpers in `utils/claude-session-discovery.ts`
 
@@ -87,23 +111,25 @@ original spawn) and the conversation survives silently.
 - `deleteArchitectSessionFile(workspacePath, name)` — removes the derived jsonl
   (used by `removeArchitect`; see below).
 
-`findLatestSessionId` is **unchanged** — builders still use it via `spawn.ts`. The
-two mechanisms coexist (jsonl-discovery for unique-cwd builders, derived-ID for
-shared-cwd architects), documented side by side in the same file.
+`findLatestSessionId` is **unchanged** and now has two callers: builders (via
+`spawn.ts`) and the single-architect-main discovery fallback above. The two
+mechanisms coexist (jsonl-discovery where the cwd is unambiguous — builders, lone
+main; derived-ID where it isn't — siblings, multi-architect main), documented side
+by side in the same file.
 
 ### Spawn / revive sites (all call the one helper)
 
-- `tower-instances.ts launchInstance` (main): **delete** the `safeToResume` /
-  `findLatestSessionId` / `getArchitects().length <= 1` block (and the
-  `findLatestSessionId` import). Call
-  `resolveArchitectLaunch({ workspacePath, name: 'main', baseArgs: cmdParts.slice(1) })`
-  and use its `args`/`env` for the PTY. The existing `setArchitect(...)` persistence
-  is **unchanged** (it records the architect row as today; no session field added).
+- `tower-instances.ts launchInstance` (main): replace the `safeToResume` block with a
+  single `resolveArchitectLaunch` call, passing
+  `discoveryFallback: getArchitects(resolvedPath).length <= 1`. So lone main keeps
+  #830's discovery resume; multi-architect main uses the derived ID. The
+  `findLatestSessionId` import stays (now reached via the helper). Existing
+  `setArchitect(...)` persistence is **unchanged** (no session field added).
 - `tower-instances.ts addArchitect`: call
-  `resolveArchitectLaunch({ workspacePath, name, baseArgs: cmdParts.slice(1) })`.
-  Covers both the user-driven `add-architect` (no jsonl yet → fresh) and the
-  `launchInstance` reconcile loop (jsonl exists → resume) — `sessionFileExists`
-  drives the branch, no signalling needed.
+  `resolveArchitectLaunch({ workspacePath, name, baseArgs: cmdParts.slice(1) })` (no
+  `discoveryFallback`). Covers both the user-driven `add-architect` (no jsonl yet →
+  fresh) and the `launchInstance` reconcile loop (jsonl exists → resume) —
+  `sessionFileExists` drives the branch, no signalling needed.
 - `tower-terminals.ts reconcileTerminalSessions` (~L636-679): call
   `resolveArchitectLaunch({ workspacePath: dbSession.workspace_path, name: dbSession.role_id || 'main', baseArgs: cmdParts.slice(1) })`
   for `restartOptions.args`/`env`. Keep the existing `CODEV_ARCHITECT_NAME` env
@@ -132,9 +158,10 @@ matching existing behavior.
   `ARCHITECT_NS`, `architectSessionId`, `sessionFileExists`,
   `deleteArchitectSessionFile`, and `resolveArchitectLaunch`. No new dependency.
 - `packages/codev/src/agent-farm/servers/tower-instances.ts` — `launchInstance`
-  (main) + `addArchitect` (siblings) call `resolveArchitectLaunch`; remove the
-  `safeToResume`/`findLatestSessionId` block + import; `removeArchitect` prunes the
-  derived jsonl.
+  (main, with `discoveryFallback` gated on `getArchitects().length <= 1`) +
+  `addArchitect` (siblings) call `resolveArchitectLaunch`; the `safeToResume` block is
+  replaced (the count-check survives as the `discoveryFallback` selector; the
+  `findLatestSessionId` import stays); `removeArchitect` prunes the derived jsonl.
 - `packages/codev/src/agent-farm/servers/tower-terminals.ts` — shellper-restart bake
   calls `resolveArchitectLaunch`.
 - Tests — `__tests__/claude-session-discovery.test.ts`,
@@ -181,22 +208,16 @@ Tower routing / messaging / SSE; porch / gates; `codev-skeleton/`.
 
 ## Risks & Alternatives Considered
 
-- **One-time context loss for `main`/siblings on the first reboot after this lands.**
-  Today main is spawned without `--session-id`, so its live conversation sits under a
-  random **v4** jsonl. The first post-upgrade spawn computes main's derived **v5** id,
-  finds no v5 jsonl → fresh, then resumes deterministically forever after. Identical
-  one-time loss to what the DB-column approach would have had. Cannot be papered over
-  by renaming the v4 file into the v5 name: **the session id is embedded in the jsonl
-  content** (verified — every line carries `sessionId` == filename), so a rename would
-  desync content from filename. Accepted as the upgrade-boundary cost.
-  - *Net for main after the one restart*: **more robust than today** — newest-by-mtime
-    can currently resume a stray *manual* `claude` session run in the same workspace
-    dir; the derived v5 id is immune to that and to sibling count — and main newly
-    recovers in multi-architect workspaces (impossible today under the `safeToResume`
-    guard).
-  - *Zero-loss alternative (hybrid)*: keep jsonl-discovery for main, derived ids for
-    siblings. Rejected unless required — retains two mechanisms + the `safeToResume`
-    count-guard the issue asks to remove, and keeps main on a non-deterministic v4 id.
+- **Context loss at the upgrade boundary — now scoped to the unavoidable case only.**
+  Because lone main keeps #830's discovery fallback (above), **single-architect main
+  loses nothing**: its existing random-**v4** conversation keeps resuming via
+  newest-by-mtime exactly as today. The only fresh-spawn happens for *siblings* on
+  first revival (they never recovered before — no regression) and for main at the
+  instant a workspace **crosses single→multi architect** (discovery becomes ambiguous
+  there, so fresh is the only *safe* option regardless). The v4→v5 history cannot be
+  adopted by renaming the file — **the session id is embedded in the jsonl content**
+  (verified — every line carries `sessionId` == filename) — but with the fallback in
+  place this no longer bites the common path.
 - **Remove-then-re-add resurrection.** A recomputable ID would resume a removed
   sibling's old conversation on re-add. Mitigated by `deleteArchitectSessionFile` in
   `removeArchitect`.
@@ -232,12 +253,20 @@ Unit tests (run from the worktree: `pnpm --filter @cluesmith/codev test`):
     name-sensitive (different names same cwd → different IDs), and cwd-sensitive.
   - `sessionFileExists` true/false against a tmp `~/.claude/projects` (pin `homeDir`).
   - `resolveArchitectLaunch` → resume args (`--resume <id>`, empty env) when the jsonl
-    exists; fresh args (`--session-id <id>`, role injection present) when it doesn't.
+    exists; fresh args (`--session-id <id>`, role injection present) when it doesn't;
+    with `discoveryFallback: true` and no derived jsonl, resumes the
+    `findLatestSessionId` result (`--resume <legacyId>`); with `discoveryFallback`
+    unset, never consults discovery.
   - `deleteArchitectSessionFile` removes the derived jsonl; no-op when absent.
-- **Cold-spawn — main** (`tower-instances.test.ts`): with a pre-seeded jsonl at the
-  derived `main` ID, `launchInstance` passes `--resume <id>` and no role injection;
-  with none, passes `--session-id <id>`. A multi-architect workspace resumes main
-  (no `safeToResume` skip).
+- **Cold-spawn — main, single-architect** (`tower-instances.test.ts`): with a legacy
+  jsonl present (any id) and `getArchitects().length <= 1`, `launchInstance` resumes
+  it via the discovery fallback (`--resume <legacyId>`) — #830 behavior preserved,
+  no context loss. With a derived-id jsonl present, `--resume <derivedId>`. With
+  neither, fresh `--session-id <derivedId>`.
+- **Cold-spawn — main, multi-architect** (`tower-instances.test.ts`): with siblings
+  present (`length > 1`), main uses the **derived** id (discovery fallback off);
+  resumes `<derivedId>` if its jsonl exists, else fresh. Confirms main recovers in a
+  multi-architect workspace (the regression the `safeToResume` guard caused).
 - **Cold-spawn — siblings** (`tower-instances.test.ts`): two siblings derive **distinct**
   IDs and each resumes its own jsonl (no cross-attachment); `removeArchitect` deletes
   the sibling's jsonl so a re-add is fresh.

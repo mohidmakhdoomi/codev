@@ -92,3 +92,18 @@ Load-bearing assumption confirmed. Promoted from risk → fact in plan.
   (keep jsonl-discovery for main → zero loss but keeps safeToResume + 2 mechanisms).
 - Recalled original DB proposal: architect.claude_session_id col + migration v12 +
   db/types + types + state.ts setters; spawn stored a random v4 uuid, revive read it.
+
+### Plan revision 3 (architect: keep #830 discovery as a fallback for main)
+Adopted. Reframed the count-check: #830 used getArchitects()<=1 to DISABLE main's
+resume when siblings exist (the bug); we reuse it to SELECT mechanism — main recovers
+in BOTH branches.
+- Lone main (single-arch): discoveryFallback ON → #830 newest-by-mtime resume. ZERO
+  loss for existing main users (keeps resuming its v4 conversation as today).
+- Multi-arch main + all siblings: derived v5 id (discovery ambiguous there).
+- Only fresh-spawn for main now is the single→multi crossing instant (discovery
+  ambiguous → fresh is the only safe option anyway). Siblings fresh only on first-ever
+  revival (no regression — never recovered before).
+- Helper gains discoveryFallback?:boolean; launchInstance(main) passes
+  getArchitects()<=1; addArchitect + restart-bake pass false.
+- Deliberate, architect-approved deviation from issue's "remove the guard entirely"
+  letter; the guard's GOAL (main recovers in multi-arch) is still met.
