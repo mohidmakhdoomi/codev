@@ -320,15 +320,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		const data = overviewCache.getData();
 		const withCount = (base: string, n: number | undefined) =>
 			typeof n === 'number' ? `${base} (${n})` : base;
-		// Agents title names the active grouping axis (Issue 1104) so the selected
-		// mode is unambiguous at a glance — the `toggled` title-bar buttons only
-		// render a faint pressed-highlight (washed out in light themes), which
-		// isn't a reliable "which axis am I in" signal on its own. The workbench
-		// uppercases view titles, so this reads e.g. `AGENTS (2) · ARCHITECT`.
-		if (buildersView) {
-			const axis = vscode.workspace.getConfiguration('codev').get<string>('buildersGroupBy', 'stage');
-			buildersView.title = `${withCount('Agents', data?.builders.length)} · ${axis}`;
-		}
+		if (buildersView) { buildersView.title = withCount('Agents', data?.builders.length); }
 		if (pullRequestsView) { pullRequestsView.title = withCount('Pull Requests', data?.pendingPRs.length); }
 		if (backlogView) {
 			// Backlog title reflects the *visible* row count (mine-only vs show-all),
@@ -635,8 +627,6 @@ export async function activate(context: vscode.ExtensionContext) {
 			if (!e.affectsConfiguration('codev.buildersGroupBy')) { return; }
 			vscode.commands.executeCommand('setContext', 'codev.buildersGroupBy', readBuildersGroupBy());
 			buildersProvider.refresh();
-			// Keep the "· <axis>" suffix in the Agents title in sync with the toggle.
-			updateListViewTitles();
 		}),
 	);
 
@@ -744,6 +734,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	const regCli = <A extends unknown[]>(id: string, handler: (...args: A) => unknown) =>
 		// eslint-disable-next-line no-restricted-syntax -- this IS the regCli helper (#791)
 		vscode.commands.registerCommand(id, guard(handler));
+
+	// Issue 1104: write the Agents group-by axis. Shared by the three direct
+	// `groupBuildersBy*` commands (palette / keybindings) and the three
+	// `agentsCycleGroupFrom*` toolbar buttons.
+	const setGroupBy = (axis: 'stage' | 'area' | 'architect') =>
+		vscode.workspace.getConfiguration('codev').update('buildersGroupBy', axis, vscode.ConfigurationTarget.Global);
 
 	// Commands
 	context.subscriptions.push(
@@ -1201,16 +1197,25 @@ export async function activate(context: vscode.ExtensionContext) {
 			vscode.workspace.getConfiguration('codev').update('backlogShowAll', true, vscode.ConfigurationTarget.Global)),
 		reg('codev.showBacklogMineOnly', () =>
 			vscode.workspace.getConfiguration('codev').update('backlogShowAll', false, vscode.ConfigurationTarget.Global)),
-		// Issue 1104: three mutually-exclusive group-by-axis commands, one per
-		// Agents title-bar button. Each writes its axis; the buttons render the
-		// active one pressed via the `toggled` menu clause keyed off the
-		// `codev.buildersGroupBy` context key.
-		reg('codev.groupBuildersByStage', () =>
-			vscode.workspace.getConfiguration('codev').update('buildersGroupBy', 'stage', vscode.ConfigurationTarget.Global)),
-		reg('codev.groupBuildersByArea', () =>
-			vscode.workspace.getConfiguration('codev').update('buildersGroupBy', 'area', vscode.ConfigurationTarget.Global)),
-		reg('codev.groupBuildersByArchitect', () =>
-			vscode.workspace.getConfiguration('codev').update('buildersGroupBy', 'architect', vscode.ConfigurationTarget.Global)),
+		// Issue 1104: Agents group-by axis (stage | area | architect).
+		//
+		// VS Code's menu schema has NO `toggled`/pressed-state for toolbar
+		// buttons (verified against menusExtensionPoint.ts), and a toolbar
+		// action's icon comes from its command, so the only reliable way to show
+		// the *current* axis is a single button whose icon IS that axis. We do
+		// that with three show/hide "cycle" commands (one per axis, swapped by
+		// `when` in package.json): exactly one is visible, its icon names the
+		// current grouping, and clicking it advances to the next axis. The three
+		// direct `groupBuildersBy*` commands remain for the palette / keybindings
+		// (jump straight to an axis). The `setGroupBy` helper is declared above the
+		// push() call (a const can't live in an argument list).
+		reg('codev.groupBuildersByStage', () => setGroupBy('stage')),
+		reg('codev.groupBuildersByArea', () => setGroupBy('area')),
+		reg('codev.groupBuildersByArchitect', () => setGroupBy('architect')),
+		// Cycle buttons: shown only when their axis is active; click → next axis.
+		reg('codev.agentsCycleGroupFromStage', () => setGroupBy('area')),
+		reg('codev.agentsCycleGroupFromArea', () => setGroupBy('architect')),
+		reg('codev.agentsCycleGroupFromArchitect', () => setGroupBy('stage')),
 		reg('codev.reconnect', () => connectionManager?.reconnect()),
 		regCli('codev.connectTunnel', () => connectTunnel(connectionManager!)),
 		regCli('codev.disconnectTunnel', () => disconnectTunnel(connectionManager!)),

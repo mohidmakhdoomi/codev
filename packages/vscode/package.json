@@ -165,6 +165,24 @@
         }
       },
       {
+        "command": "codev.agentsCycleGroupFromStage",
+        "title": "Codev: Agents Grouped by Stage (click to change)",
+        "icon": "$(milestone)"
+      },
+      {
+        "command": "codev.agentsCycleGroupFromArea",
+        "title": "Codev: Agents Grouped by Area (click to change)",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "codev.agentsCycleGroupFromArchitect",
+        "title": "Codev: Agents Grouped by Architect (click to change)",
+        "icon": {
+          "light": "icons/architect-light.svg",
+          "dark": "icons/architect-dark.svg"
+        }
+      },
+      {
         "command": "codev.openBacklogSearch",
         "title": "Codev: Search Backlog",
         "icon": "$(search)"
@@ -371,6 +389,18 @@
         {
           "command": "codev.openMarkdownPreview",
           "when": "resourceLangId == markdown && resourcePath =~ /\\/codev\\/(plans|specs|reviews)\\//"
+        },
+        {
+          "command": "codev.agentsCycleGroupFromStage",
+          "when": "false"
+        },
+        {
+          "command": "codev.agentsCycleGroupFromArea",
+          "when": "false"
+        },
+        {
+          "command": "codev.agentsCycleGroupFromArchitect",
+          "when": "false"
         },
         {
           "command": "codev.forwardSelectionToBuilder",
@@ -624,22 +654,19 @@
           "group": "navigation"
         },
         {
-          "command": "codev.groupBuildersByStage",
-          "when": "view == codev.agents",
-          "toggled": "!codev.buildersGroupBy || codev.buildersGroupBy == 'stage'",
+          "command": "codev.agentsCycleGroupFromStage",
+          "when": "view == codev.agents && (!codev.buildersGroupBy || codev.buildersGroupBy == 'stage')",
           "group": "navigation@1"
         },
         {
-          "command": "codev.groupBuildersByArea",
-          "when": "view == codev.agents",
-          "toggled": "codev.buildersGroupBy == 'area'",
-          "group": "navigation@2"
+          "command": "codev.agentsCycleGroupFromArea",
+          "when": "view == codev.agents && codev.buildersGroupBy == 'area'",
+          "group": "navigation@1"
         },
         {
-          "command": "codev.groupBuildersByArchitect",
-          "when": "view == codev.agents",
-          "toggled": "codev.buildersGroupBy == 'architect'",
-          "group": "navigation@3"
+          "command": "codev.agentsCycleGroupFromArchitect",
+          "when": "view == codev.agents && codev.buildersGroupBy == 'architect'",
+          "group": "navigation@1"
         },
         {
           "command": "codev.refreshOverview",
