@@ -127,11 +127,13 @@ builders, shared cwd for architects — and both now live in
 - `db/types.ts` — add `claude_session_id: string | null` to `DbArchitect`; map it to
   `claudeSessionId` in `dbArchitectToArchitectState`.
 - `types.ts` — add optional `claudeSessionId?: string` to `ArchitectState`.
-- `state.ts` — `setArchitect` / `setArchitectByName` write `claude_session_id`.
-  Switch both upserts from `INSERT OR REPLACE` to `INSERT … ON CONFLICT(...) DO
-  UPDATE` so an update that omits the UUID **preserves** the existing value via
-  `claude_session_id = COALESCE(excluded.claude_session_id, architect.claude_session_id)`
-  (mirrors the `spawned_by_architect` COALESCE in `upsertBuilder`). The getters
+- `state.ts` — `setArchitect` / `setArchitectByName` add `claude_session_id` to the
+  existing `INSERT OR REPLACE` column list (additive — **no upsert-semantics change**).
+  Verified safe by the caller graph: every non-null write is a spawn site (4 total,
+  all in `tower-instances.ts`) that passes the UUID; all other calls pass `null`
+  (row delete). There is no mid-life update that rewrites a row while omitting the
+  UUID, so an `INSERT OR REPLACE` can't wipe it — the COALESCE upsert I'd first
+  proposed is unnecessary and is dropped to keep blast radius minimal. The getters
   (`getArchitects`, `getArchitectByName`) already `SELECT *`, so they surface the
   new field through the converter with no query change.
 
@@ -190,6 +192,40 @@ framework doc/template — no skeleton mirror needed). `findLatestSessionId` its
 (still used by builders via `spawn.ts`). `global.db` schema (the UUID lives in local
 state.db).
 
+## Blast Radius & Rollout Control
+
+Scoped to the architect spawn/revive machinery; additive everywhere it can be.
+
+**Surfaces touched** (who hits them / consequence if wrong):
+- *Migration v12* — every Tower DB open. Single idempotent `ALTER … ADD COLUMN` in
+  try/catch (identical idiom to v2/v9). Additive; old binaries ignore the column.
+- *state.ts setters* — every architect spawn (4 sites). **Additive column only**, no
+  upsert-semantics change (see caller-graph note above).
+- *`launchInstance` main path* — every `afx workspace start` / main revive. This is
+  the **one genuine behavior change**: remove the `safeToResume` guard, swap
+  jsonl-discovery for stored-UUID. Intentional — it's the regression-fix the issue
+  asks for (main resumes in multi-architect workspaces).
+- *`addArchitect` + shellper-restart bake* — sibling spawn and architect crash-restart.
+  New resume branch via the shared helper.
+- *new helper* — isolated, additive; `findLatestSessionId` untouched.
+
+**Explicitly NOT touched** (blast-radius boundaries): builders / `spawn.ts` /
+builder jsonl-discovery; `global.db` schema; non-architect terminals (shells, utils,
+annotations); Tower routing / messaging / SSE; porch / gates; `codev-skeleton/`.
+
+**Why it's a controlled update:**
+- **Soft-fail by design** — every revive site degrades to *fresh spawn* on any
+  absent/missing-jsonl/legacy-row condition. Worst case is "loses context once," never
+  "fails to start."
+- **Self-healing migration path** — legacy rows (no UUID) fall back to fresh on first
+  revival and store a UUID for next time; no data backfill, no manual step.
+- **Forward/backward DB compat** — the column is nullable and additive; an older Tower
+  reading the newer DB ignores it (its `SELECT *` converter drops unknown fields).
+- **Gated** — the behavior change lands behind the PIR `dev-approval` gate, where you
+  exercise the running worktree (stop/start a multi-architect workspace) before any PR.
+- **Size** — ~150–250 LOC impl + tests; no new dependencies, no new infra, no
+  cross-package changes (all within `packages/codev`).
+
 ## Risks & Alternatives Considered
 
 - **One-time context loss for `main` on the first reboot after this lands.** A
@@ -202,9 +238,10 @@ state.db).
     when `getArchitects().length <= 1`. **Rejected** — reintroduces the very guard
     the issue asks to remove and forks the architect path into two heuristics;
     the issue explicitly wants the uniform stored-UUID path.
-- **`INSERT OR REPLACE` wiping the UUID.** A full-row replace that omits the UUID
-  would null it. Mitigated by switching to `ON CONFLICT DO UPDATE` with COALESCE
-  so partial updates preserve the stored value.
+- **`INSERT OR REPLACE` wiping the UUID.** Considered, then ruled out by the caller
+  graph: the only non-null writes are the 4 spawn sites (all pass the UUID); every
+  other call deletes the row. No partial-update path exists, so the column stays
+  additive and no upsert-semantics change is needed.
 - **Migration ordering.** v12 runs after v11's table rebuild, so the column lands
   on the final architect shape. The try/catch makes it idempotent for fresh
   installs (column already present via LOCAL_SCHEMA) and upgrade installs alike.
