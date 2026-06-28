@@ -4,14 +4,14 @@ Bring Codev's Agent Farm into VS Code — monitor builders, open terminals, appr
 
 ## Features
 
-- **Unified sidebar** — Workspace, Builders, Pull Requests, Backlog, Recently Closed, Team, and Status in a single pane. Blocked builders are flagged inline in Builders; live item counts appear in view titles.
+- **Unified sidebar** — Workspace, Agents, Pull Requests, Backlog, Recently Closed, Team, and Status in a single pane. Blocked builders are flagged inline in Agents; live item counts appear in view titles.
 - **Native terminals** — Architect / builder / shell terminals in the editor area; dev servers in the bottom panel.
 - **One-click dev servers** — Start / Stop the dev server for the current workspace or any builder worktree from the sidebar (`Cmd/Ctrl+Alt+R` / `Cmd/Ctrl+Alt+S`). One runs at a time and swaps on demand. Configurable via `worktree.devCommand` in `.codev/config.json` — see the **Dev servers and runnable worktrees** section below.
 - **Open Dev URL rows** — surface staging / preview / tunnel links as one-click rows in the Workspace view via `worktree.devUrls`.
 - **Per-engineer config overrides** — `.codev/config.local.json` layers your personal settings (local devCommand, tunnel hostnames, staging URLs) over the shared project config without committing them.
 - **Per-builder changed files** — expand any builder row to see its diff vs main inline with native SCM-style status badges. Toggle between folder tree and flat list.
 - **Gate review** — toast with one-click **Approve** when a builder reaches a human-approval gate, plus inline `REVIEW(@architect):` comment threads on plan / spec files.
-- **"Waiting on input" indicator** — a builder whose terminal has been idle for ≥5 minutes outside a gate gets a chat-bubble icon in Builders and is counted in the status bar.
+- **"Waiting on input" indicator** — a builder whose terminal has been idle for ≥5 minutes outside a gate gets a chat-bubble icon in Agents and is counted in the status bar.
 - **Image paste** — `Cmd+Alt+V` / `Ctrl+Alt+V` in a focused Codev terminal uploads the clipboard image to Tower and injects the saved file path into the terminal.
 
 ## Requirements
@@ -33,7 +33,7 @@ Bring Codev's Agent Farm into VS Code — monitor builders, open terminals, appr
 The Codev sidebar contains seven collapsible views:
 
 - **Workspace** — Open Architect, Open Web Interface, Spawn Builder, New Shell, and Start / Stop Dev Server rows. Any `worktree.devUrls` you've configured appear here as **Open Dev URL** rows.
-- **Builders** — every active builder, with status (active / blocked / waiting on input / awaiting). Click a row to open its terminal *and* expand its changed-files list. Right-click for the full builder action menu (see the **Builder actions (right-click)** section below). The title bar carries buttons to toggle accordion mode and tree-vs-list file view.
+- **Agents** — every active builder, with status (active / blocked / waiting on input / awaiting). Builders are grouped by one of three axes, switched with the title-bar group-by button (its icon shows the axis you'll switch *to*): lifecycle **stage** (the default action axis), **area** label, or the **architect** that spawned them. In architect mode only architects that own in-flight builders appear as group headers (the full architect roster lives in Workspace > Architects). Click a row to open its terminal *and* expand its changed-files list. Right-click for the full builder action menu (see the **Builder actions (right-click)** section below). The title bar also carries buttons to toggle accordion mode and tree-vs-list file view.
 - **Pull Requests** — open PRs in the repo, with a live count in the title.
 - **Backlog** — open issues without a builder. Inline row actions drop the issue's `#<id>` into the architect input, preview the issue, spawn a builder for it, open it in the browser, or copy the issue number.
 - **Recently Closed** — recently closed PRs; manual refresh from the title bar.
@@ -42,7 +42,7 @@ The Codev sidebar contains seven collapsible views:
 
 ## Builder actions (right-click)
 
-Right-click any builder in the Builders view for three grouped action menus:
+Right-click any builder in the Agents view for three grouped action menus:
 
 **Primary**
 
@@ -140,7 +140,7 @@ The pnpm example above adapts directly to npm / yarn / bun / cargo / poetry / go
 | (sidebar)  | (terminal)     | Builder 42     |
 |            |                | (terminal)     |
 | - Workspace|                |                |
-| - Builders | Left editor    | Right editor   |
+| - Agents   | Left editor    | Right editor   |
 | - PRs      | group          | group          |
 | - Backlog  |                |                |
 | - Recent   |                |                |
@@ -211,9 +211,9 @@ When a builder reaches a human-approval gate, a toast surfaces it with the issue
 | `codev.autoConnect` | `true` | Connect to Tower on activation |
 | `codev.autoStartTower` | `true` | Auto-start Tower if not running |
 | `codev.autoOpenBuilderTerminal` | `notify` | Behavior on builder-spawn events (`off` / `notify` / `auto`) |
-| `codev.overviewRefreshSeconds` | `60` | Auto-refresh Builders / PRs / Backlog / Recently Closed every N seconds while the sidebar is visible (`0` = event-only) |
+| `codev.overviewRefreshSeconds` | `60` | Auto-refresh Agents / PRs / Backlog / Recently Closed every N seconds while the sidebar is visible (`0` = event-only) |
 | `codev.gateToasts.enabled` | `true` | Show a toast when a builder reaches a human-approval gate |
-| `codev.buildersAutoCollapse` | `true` | Builders view accordion — expanding one builder auto-collapses the others |
+| `codev.buildersAutoCollapse` | `true` | Agents view accordion — expanding one builder auto-collapses the others |
 | `codev.buildersFileViewAsTree` | `true` | Render a builder's changed-files list as a folder tree (`false` for a flat list) |
 | `codev.markdownPreview.fontSize` | `0` | Prose font size (px) for the Codev Markdown Preview. `0` = built-in default (16px). Edit in Settings (Cmd+,) → the open preview reflows live |
 | `codev.markdownPreview.lineHeight` | `0` | Prose line-height (unitless) for the Codev Markdown Preview. `0` = built-in default (1.5). Reflows the open preview live |

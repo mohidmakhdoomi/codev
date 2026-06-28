@@ -957,7 +957,11 @@ export class OverviewCache {
       });
     }
 
-    const result: OverviewData = { builders, pendingPRs, backlog, recentlyClosed };
+    // `architects` defaults to `[]` here — the filesystem/git-derived overview
+    // has no view of the live terminal sessions. `handleOverview` (tower-routes.ts)
+    // injects the real architect list via `liveArchitects` before serialization,
+    // mirroring how it enriches `lastDataAt`.
+    const result: OverviewData = { builders, pendingPRs, backlog, recentlyClosed, architects: [] };
     if (currentUser) {
       result.currentUser = currentUser;
     }

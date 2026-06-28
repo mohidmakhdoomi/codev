@@ -17,6 +17,7 @@ import {
   type BuildersGroupBy,
   stageGrouping,
   areaGrouping,
+  architectGrouping,
 } from './builder-grouping.js';
 import {
   builderRowLabel,
@@ -105,6 +106,7 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     this.groupings = {
       stage: stageGrouping(),
       area: areaGrouping(),
+      architect: architectGrouping(),
     };
     cache.onDidChange(() => this.changeEmitter.fire());
   }
@@ -123,17 +125,20 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
 
   /**
    * The grouping strategy for the active axis, read from the
-   * `codev.buildersGroupBy` setting (#952). Defaults to `stage` — the action
-   * axis. Toggled via the Builders title-bar button (`codev.groupBuildersByArea`
-   * / `codev.groupBuildersByPhase`). All per-axis behavior (bucketing, row
-   * prefix, flatten rule) lives on the returned strategy, so callers never
-   * branch on the mode themselves.
+   * `codev.buildersGroupBy` setting (#952, extended to a third `architect` axis
+   * in #1104). Defaults to `stage` — the action axis. Changed via the single
+   * Agents title-bar group-by button: one of three `agentsCycleGroupFrom*`
+   * commands is shown at a time (keyed off the current axis) and displays the
+   * NEXT axis's icon/title, so clicking it advances the grouping. All per-axis
+   * behavior (bucketing, row prefix,
+   * flatten rule) lives on the returned strategy, so callers never branch on the
+   * mode themselves. An unknown value falls back to `stage`.
    */
   private active(): BuilderGrouping {
     const mode = vscode.workspace
       .getConfiguration('codev')
       .get<BuildersGroupBy>('buildersGroupBy', 'stage');
-    return this.groupings[mode === 'area' ? 'area' : 'stage'];
+    return this.groupings[mode] ?? this.groupings.stage;
   }
 
   /**
@@ -160,11 +165,14 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
   //  - Group rows themselves are roots.
   getParent(element: vscode.TreeItem): vscode.ProviderResult<vscode.TreeItem> {
     if (element instanceof BuilderTreeItem) {
+      // Builder → its group node (or undefined in the lone-Uncategorized flatten
+      // case — VSCode treats those builders as roots).
       return this.groupParentByBuilderId.get(element.builderId);
     }
     if (element instanceof BuilderFileTreeItem || element instanceof BuilderFolderTreeItem) {
       return this.parentForFileNode(element);
     }
+    // Group rows are roots.
     return undefined;
   }
 
@@ -259,35 +267,34 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     if (element instanceof BuilderGroupTreeItem) {
       return this.rowsForGroup(element.groupName);
     }
-    // Root: group headers, or the single-Uncategorized flatten case (area mode).
+    // Root: group headers (one per active-axis group), or the lone-Uncategorized
+    // flatten case (area mode, unlabeled repos).
     return this.rootChildren();
   }
 
   private rootChildren(): vscode.TreeItem[] {
+    this.groupParentByBuilderId.clear();
+
     const data = this.cache.getData();
     if (!data) {
-      this.groupParentByBuilderId.clear();
       return [];
     }
 
     const now = Date.now();
     const grouping = this.active();
-    const ordered = orderForDisplay(data.builders, now);
-    const groups = grouping.group(ordered);
+    const groups = grouping.group(orderForDisplay(data.builders, now));
 
     // A repo that doesn't use `area/*` labels yields a single `Uncategorized`
     // group; in area mode its header adds no information, so flatten to root rows
-    // — zero visual regression for unlabeled repos. Stage mode opts out of this
-    // (the stage axis always applies; every builder has a stage).
+    // — zero visual regression for unlabeled repos. Stage and architect modes
+    // opt out of this (their lone group always carries information).
     if (grouping.flattenLoneUncategorized && groups.length === 1 && groups[0].key === UNCATEGORIZED_AREA) {
-      this.groupParentByBuilderId.clear();
       return groups[0].items.map(b => this.makeBuilderRow(b, now));
     }
 
     // Groups always render Expanded (#913) — no persisted state. VSCode's
     // native per-id memory keeps a user-collapsed group collapsed for the
     // rest of the session; on a fresh session this default applies again.
-    this.groupParentByBuilderId.clear();
     return groups.map(g => {
       const groupItem = new BuilderGroupTreeItem(
         g.key,

@@ -50,6 +50,7 @@ const MOCK_OVERVIEW: OverviewData = {
   pendingPRs: [],
   backlog: [],
   recentlyClosed: [],
+  architects: [],
 };
 
 function simulateSSEMessage(data: Record<string, unknown> = { type: 'connected' }): void {

@@ -128,12 +128,12 @@
       },
       {
         "command": "codev.enableBuildersAutoCollapse",
-        "title": "Codev: Turn On Builders Auto-Collapse",
+        "title": "Codev: Turn On Auto-Collapse",
         "icon": "$(unfold)"
       },
       {
         "command": "codev.disableBuildersAutoCollapse",
-        "title": "Codev: Turn Off Builders Auto-Collapse",
+        "title": "Codev: Turn Off Auto-Collapse",
         "icon": "$(fold)"
       },
       {
@@ -147,13 +147,21 @@
         "icon": "$(list-flat)"
       },
       {
-        "command": "codev.groupBuildersByArea",
-        "title": "Codev: Group Builders by Area",
+        "command": "codev.agentsCycleGroupFromStage",
+        "title": "Codev: Group by Area",
         "icon": "$(tag)"
       },
       {
-        "command": "codev.groupBuildersByPhase",
-        "title": "Codev: Group Builders by Phase",
+        "command": "codev.agentsCycleGroupFromArea",
+        "title": "Codev: Group by Architect",
+        "icon": {
+          "light": "icons/architect-light.svg",
+          "dark": "icons/architect-dark.svg"
+        }
+      },
+      {
+        "command": "codev.agentsCycleGroupFromArchitect",
+        "title": "Codev: Group by Stage",
         "icon": "$(milestone)"
       },
       {
@@ -365,6 +373,18 @@
           "when": "resourceLangId == markdown && resourcePath =~ /\\/codev\\/(plans|specs|reviews)\\//"
         },
         {
+          "command": "codev.agentsCycleGroupFromStage",
+          "when": "false"
+        },
+        {
+          "command": "codev.agentsCycleGroupFromArea",
+          "when": "false"
+        },
+        {
+          "command": "codev.agentsCycleGroupFromArchitect",
+          "when": "false"
+        },
+        {
           "command": "codev.forwardSelectionToBuilder",
           "when": "false"
         },
@@ -490,62 +510,62 @@
         },
         {
           "command": "codev.approveGate",
-          "when": "view == codev.builders && viewItem =~ /^blocked-builder-/",
+          "when": "view == codev.agents && viewItem =~ /^blocked-builder-/",
           "group": "inline@1"
         },
         {
           "command": "codev.openBuilderById",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
           "group": "1_primary@1"
         },
         {
           "command": "codev.approveGate",
-          "when": "view == codev.builders && viewItem =~ /^blocked-builder-/",
+          "when": "view == codev.agents && viewItem =~ /^blocked-builder-/",
           "group": "1_primary@2"
         },
         {
           "command": "codev.viewSpecFile",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-(spir|aspir)(-review)?$/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-(spir|aspir)(-review)?$/",
           "group": "1_primary@3"
         },
         {
           "command": "codev.viewPlanFile",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-(spir|aspir|pir)(-review)?$/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-(spir|aspir|pir)(-review)?$/",
           "group": "1_primary@4"
         },
         {
           "command": "codev.viewReviewFile",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-((spir|aspir|air)(-review)?|pir-review)$/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-((spir|aspir|air)(-review)?|pir-review)$/",
           "group": "1_primary@5"
         },
         {
           "command": "codev.viewDiff",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
           "group": "2_worktree@0"
         },
         {
           "command": "codev.openWorktreeWindow",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
           "group": "2_worktree@1"
         },
         {
           "command": "codev.openWorktreeFolder",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
           "group": "2_worktree@2"
         },
         {
           "command": "codev.runWorktreeSetup",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/",
           "group": "3_dev@1"
         },
         {
           "command": "codev.runWorktreeDev",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/ && codev.hasDevCommand",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/ && codev.hasDevCommand",
           "group": "3_dev@2"
         },
         {
           "command": "codev.stopWorktreeDev",
-          "when": "view == codev.builders && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/ && codev.hasDevCommand",
+          "when": "view == codev.agents && viewItem =~ /^(builder|blocked-builder|awaiting-builder)-/ && codev.hasDevCommand",
           "group": "3_dev@3"
         },
         {
@@ -592,38 +612,43 @@
       "view/title": [
         {
           "command": "codev.refreshOverview",
-          "when": "view == codev.builders",
-          "group": "navigation"
+          "when": "view == codev.agents",
+          "group": "navigation@2"
         },
         {
           "command": "codev.disableBuildersAutoCollapse",
-          "when": "view == codev.builders && codev.buildersAutoCollapse",
-          "group": "navigation"
+          "when": "view == codev.agents && codev.buildersAutoCollapse",
+          "group": "navigation@3"
         },
         {
           "command": "codev.enableBuildersAutoCollapse",
-          "when": "view == codev.builders && !codev.buildersAutoCollapse",
-          "group": "navigation"
+          "when": "view == codev.agents && !codev.buildersAutoCollapse",
+          "group": "navigation@3"
         },
         {
           "command": "codev.disableBuildersFileTreeMode",
-          "when": "view == codev.builders && codev.buildersFileViewAsTree",
-          "group": "navigation"
+          "when": "view == codev.agents && codev.buildersFileViewAsTree",
+          "group": "navigation@4"
         },
         {
           "command": "codev.enableBuildersFileTreeMode",
-          "when": "view == codev.builders && !codev.buildersFileViewAsTree",
-          "group": "navigation"
+          "when": "view == codev.agents && !codev.buildersFileViewAsTree",
+          "group": "navigation@4"
         },
         {
-          "command": "codev.groupBuildersByArea",
-          "when": "view == codev.builders && codev.buildersGroupBy != 'area'",
-          "group": "navigation"
+          "command": "codev.agentsCycleGroupFromStage",
+          "when": "view == codev.agents && (!codev.buildersGroupBy || codev.buildersGroupBy == 'stage')",
+          "group": "navigation@1"
         },
         {
-          "command": "codev.groupBuildersByPhase",
-          "when": "view == codev.builders && codev.buildersGroupBy == 'area'",
-          "group": "navigation"
+          "command": "codev.agentsCycleGroupFromArea",
+          "when": "view == codev.agents && codev.buildersGroupBy == 'area'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codev.agentsCycleGroupFromArchitect",
+          "when": "view == codev.agents && codev.buildersGroupBy == 'architect'",
+          "group": "navigation@1"
         },
         {
           "command": "codev.refreshOverview",
@@ -794,7 +819,7 @@
     "views": {
       "codev": [
         { "id": "codev.workspace", "name": "Workspace" },
-        { "id": "codev.builders", "name": "Builders" },
+        { "id": "codev.agents", "name": "Agents" },
         { "id": "codev.backlog", "name": "Backlog" },
         { "id": "codev.pullRequests", "name": "Pull Requests" },
         { "id": "codev.recentlyClosed", "name": "Recently Closed" },
@@ -872,22 +897,22 @@
           "type": "number",
           "default": 60,
           "minimum": 0,
-          "markdownDescription": "Auto-refresh the Builders / Pull Requests / Backlog / Recently Closed views every N seconds while the Codev sidebar is visible. `0` disables periodic refresh (event-only, the previous behavior). A shared Tower-side 30s cache throttles GitHub calls across all windows."
+          "markdownDescription": "Auto-refresh the Agents / Pull Requests / Backlog / Recently Closed views every N seconds while the Codev sidebar is visible. `0` disables periodic refresh (event-only, the previous behavior). A shared Tower-side 30s cache throttles GitHub calls across all windows."
         },
         "codev.buildersAutoCollapse": {
           "type": "boolean",
           "default": true,
-          "description": "Builders view accordion: expanding one builder auto-collapses the others, so only one builder's changed-files diff is open at a time."
+          "description": "Agents view accordion: expanding one builder auto-collapses the others, so only one builder's changed-files diff is open at a time."
         },
         "codev.buildersFileViewAsTree": {
           "type": "boolean",
           "default": true,
-          "description": "Render a builder's changed-files list as a folder tree (with single-child folder chains compacted, like VSCode's Source Control panel) instead of a flat list. Toggleable via the Builders title-bar button."
+          "description": "Render a builder's changed-files list as a folder tree (with single-child folder chains compacted, like VSCode's Source Control panel) instead of a flat list. Toggleable via the Agents title-bar button."
         },
         "codev.buildersAutoReveal": {
           "type": "boolean",
           "default": true,
-          "description": "Builders view: when the active builder-diff editor changes (keyboard navigation, a click inside the multi-file View Diff, or a per-file diff), reveal and select the matching file's row in the tree. The Builders-view equivalent of the Explorer's auto-reveal. When off, the sidebar selection only follows an explicit click."
+          "description": "Agents view: when the active builder-diff editor changes (keyboard navigation, a click inside the multi-file View Diff, or a per-file diff), reveal and select the matching file's row in the tree. The Agents-view equivalent of the Explorer's auto-reveal. When off, the sidebar selection only follows an explicit click."
         },
         "codev.backlogShowAll": {
           "type": "boolean",
@@ -898,14 +923,16 @@
           "type": "string",
           "enum": [
             "stage",
-            "area"
+            "area",
+            "architect"
           ],
           "enumDescriptions": [
             "Group builders by lifecycle stage (the action axis: SPECIFY → PLAN → IMPLEMENT → REVIEW → PR → VERIFIED) — answers \"where do I need to act?\"",
-            "Group builders by their area/* label (the domain axis), matching the Backlog view."
+            "Group builders by their area/* label (the domain axis), matching the Backlog view.",
+            "Group builders by the architect that spawned them (the ownership axis); architects with no in-flight work don't appear (the full roster lives in Workspace > Architects)."
           ],
           "default": "stage",
-          "description": "Which axis the Builders view groups by. 'stage' (default) is the action axis; 'area' is the domain axis. Toggleable via the Builders title-bar button."
+          "description": "Which axis the Agents view groups by. 'stage' (default) is the action axis, 'area' is the domain axis, 'architect' is the ownership axis. Builders are grouped by exactly one axis at a time; switch via the Agents title-bar group-by button, whose icon shows the axis you'll switch to and which cycles stage → area → architect on click."
         },
         "codev.markdownPreview.fontSize": {
           "type": "number",

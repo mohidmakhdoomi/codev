@@ -62,19 +62,46 @@ describe('Spec 786 Phase 6 — extension.ts architect commands', () => {
   });
 
   it('codev.addArchitect is registered and validates with the shared rule', () => {
-    // Gap 1: the new UI command. Validates via the codev-core validator (same
-    // rule Tower enforces) and refreshes the tree on success.
+    // Issue 1104: the command is now CONVERSATIONAL — it still validates the
+    // name via the codev-core validator (parity with the CLI) but no longer
+    // creates the architect directly.
     expect(EXT_SRC).toMatch(/(?:registerCommand|regCli)\(['"]codev\.addArchitect['"]/);
     const addBlock = EXT_SRC.split("regCli('codev.addArchitect'")[1] ?? '';
     expect(addBlock).toMatch(/showInputBox/);
     expect(addBlock).toMatch(/validateInput:.*validateArchitectName/);
-    expect(addBlock).toMatch(/client\.addArchitect\(/);
-    expect(addBlock).toMatch(/workspaceProvider\.refresh\(\)/);
   });
 
-  it('codev.addArchitect imports validateArchitectName from codev-core (single source)', () => {
+  it('codev.addArchitect routes the request to main instead of creating directly (Issue 1104)', () => {
+    // The handler resolves main from the live roster and dispatches the request
+    // via sendMessage to the `architect:main` recipient — NOT a direct
+    // client.addArchitect / REST creation from the sidebar.
+    const addBlock = EXT_SRC.split("regCli('codev.addArchitect'")[1] ?? '';
+    expect(addBlock).toMatch(/resolveMainArchitect\(/);
+    expect(addBlock).toMatch(/client\.sendMessage\(/);
+    expect(addBlock).toMatch(/ADD_ARCHITECT_RECIPIENT|architect:main/);
+    expect(addBlock).toMatch(/addArchitectRequestMessage\(/);
+    // It must NOT fall back to direct creation from the sidebar `+`.
+    const beforeRemove = addBlock.split("regCli('codev.removeArchitect'")[0] ?? '';
+    expect(beforeRemove).not.toMatch(/client\.addArchitect\(/);
+  });
+
+  it('codev.addArchitect refuses when no main architect is active, with a modal CLI fallback', () => {
+    // Main is the workspace orchestrator; if no main session is running there is
+    // nothing to ask, so the action refuses (modal) rather than silently
+    // creating an unbriefed architect. The modal points at the CLI fallback.
+    const addBlock = (EXT_SRC.split("regCli('codev.addArchitect'")[1] ?? '')
+      .split("regCli('codev.removeArchitect'")[0] ?? '';
+    expect(addBlock).toMatch(/if \(!main\)/);
+    expect(addBlock).toMatch(/modal: true/);
+    expect(addBlock).toMatch(/add-architect/);
+  });
+
+  it('codev.addArchitect imports its helpers from the pure module (single source)', () => {
     expect(EXT_SRC).toMatch(
       /import \{ validateArchitectName \} from ['"]@cluesmith\/codev-core\/architect-name['"]/
+    );
+    expect(EXT_SRC).toMatch(
+      /import \{ resolveMainArchitect, addArchitectRequestMessage, ADD_ARCHITECT_RECIPIENT \} from ['"]\.\/commands\/add-architect\.js['"]/
     );
   });
 
