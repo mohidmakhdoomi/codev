@@ -182,8 +182,21 @@ Tower routing / messaging / SSE; porch / gates; `codev-skeleton/`.
 ## Risks & Alternatives Considered
 
 - **One-time context loss for `main`/siblings on the first reboot after this lands.**
-  Pre-existing conversations used random IDs; the first derived-ID spawn is fresh, then
-  self-heals. Matches the issue's Backwards-compatibility section.
+  Today main is spawned without `--session-id`, so its live conversation sits under a
+  random **v4** jsonl. The first post-upgrade spawn computes main's derived **v5** id,
+  finds no v5 jsonl → fresh, then resumes deterministically forever after. Identical
+  one-time loss to what the DB-column approach would have had. Cannot be papered over
+  by renaming the v4 file into the v5 name: **the session id is embedded in the jsonl
+  content** (verified — every line carries `sessionId` == filename), so a rename would
+  desync content from filename. Accepted as the upgrade-boundary cost.
+  - *Net for main after the one restart*: **more robust than today** — newest-by-mtime
+    can currently resume a stray *manual* `claude` session run in the same workspace
+    dir; the derived v5 id is immune to that and to sibling count — and main newly
+    recovers in multi-architect workspaces (impossible today under the `safeToResume`
+    guard).
+  - *Zero-loss alternative (hybrid)*: keep jsonl-discovery for main, derived ids for
+    siblings. Rejected unless required — retains two mechanisms + the `safeToResume`
+    count-guard the issue asks to remove, and keeps main on a non-deterministic v4 id.
 - **Remove-then-re-add resurrection.** A recomputable ID would resume a removed
   sibling's old conversation on re-add. Mitigated by `deleteArchitectSessionFile` in
   `removeArchitect`.

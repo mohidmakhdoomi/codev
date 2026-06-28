@@ -75,3 +75,20 @@ Ran headless claude in a temp dir:
   (10977→13505 B), no fork. Resume-by-chosen-id works.
 - v5 uuid derived with node:crypto sha1 only → no new dependency needed.
 Load-bearing assumption confirmed. Promoted from risk → fact in plan.
+
+### Backward-compat / main-recovery analysis (architect Qs)
+- Backward compatible: yes. No migration/state/schema. v4 (existing, claude-random)
+  and v5 (our derived) jsonls coexist (different uuid version space). Rollback-safe:
+  old Tower can --resume any id incl v5; new Tower ignores old v4 files.
+- Main impact: today main runs WITHOUT --session-id → history is a random v4 jsonl.
+  First post-upgrade restart: derived v5 id has no jsonl → fresh (one-time loss),
+  then deterministic forever. Same one-time loss the DB-column approach would've had.
+- Verified sessionId is EMBEDDED in jsonl content (== filename) → can't adopt main's
+  v4 history by renaming to <v5>.jsonl. So one-time loss is unavoidable w/o a hybrid.
+- After the one restart main recovery is MORE robust than today (newest-by-mtime can
+  grab a stray manual `claude` session in the same dir; derived id can't) + main newly
+  recovers in multi-arch workspaces.
+- Open decision for architect: accept one-time main loss (clean unified) vs hybrid
+  (keep jsonl-discovery for main → zero loss but keeps safeToResume + 2 mechanisms).
+- Recalled original DB proposal: architect.claude_session_id col + migration v12 +
+  db/types + types + state.ts setters; spawn stored a random v4 uuid, revive read it.
