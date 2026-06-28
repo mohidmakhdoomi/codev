@@ -14,10 +14,18 @@
 import type { OverviewBuilder } from '@cluesmith/codev-types';
 import { UNCATEGORIZED_AREA } from '@cluesmith/codev-core/constants';
 import { groupByArea } from '@cluesmith/codev-core/area-grouping';
-import { groupByStage } from '@cluesmith/codev-core/phase-grouping';
+import { groupByStage, stageForPhase } from '@cluesmith/codev-core/phase-grouping';
 
-/** The grouping axes the Builders view offers. Persisted as `codev.buildersGroupBy`. */
-export type BuildersGroupBy = 'stage' | 'area';
+/** The grouping axes the Agents view offers. Persisted as `codev.buildersGroupBy`. */
+export type BuildersGroupBy = 'stage' | 'area' | 'architect';
+
+/**
+ * Group key for builders with no resolvable owner (`spawnedByArchitect` null —
+ * legacy / pre-#755 rows) under the `architect` axis (Issue 1104). A flat group
+ * only exists when it has builders, so a childless architect never appears; this
+ * bucket only collects genuinely unowned builders, sorted last.
+ */
+export const UNASSIGNED_ARCHITECT = 'Unassigned';
 
 /** A display group: a header key (an area name or a stage name) and its builders. */
 export interface BuilderGroup {
@@ -74,5 +82,42 @@ export function areaGrouping(): BuilderGrouping {
       groupByArea(ordered, b => b.area).map(g => ({ key: g.area, items: g.items })),
     rowPrefix: b => (b.protocolPhase ? `[${b.protocolPhase}] ` : ''),
     flattenLoneUncategorized: true,
+  };
+}
+
+/**
+ * Architect axis (Issue 1104): groups are the architects that own in-flight work
+ * (`spawnedByArchitect`), `main` first, then the rest alphabetically, with the
+ * `Unassigned` bucket (unowned builders) last. Because a flat group only exists
+ * when it holds builders, a *childless* architect produces no group and simply
+ * doesn't appear — the work view shows owners of work, not the full roster (the
+ * full roster lives in Workspace > Architects). The row prefix carries the
+ * complementary lifecycle stage (`[implement]`, etc.) so a row still reads
+ * "where in the lifecycle" under its owner. A lone group is never flattened —
+ * the architect name is information worth a header even when there's only one.
+ */
+export function architectGrouping(): BuilderGrouping {
+  return {
+    id: 'architect',
+    group: ordered => {
+      const buckets = new Map<string, OverviewBuilder[]>();
+      for (const b of ordered) {
+        const key = b.spawnedByArchitect || UNASSIGNED_ARCHITECT;
+        const bucket = buckets.get(key);
+        if (bucket) { bucket.push(b); } else { buckets.set(key, [b]); }
+      }
+      const keys = [...buckets.keys()];
+      const ordering = [
+        ...(buckets.has('main') ? ['main'] : []),
+        ...keys.filter(k => k !== 'main' && k !== UNASSIGNED_ARCHITECT).sort(),
+        ...(buckets.has(UNASSIGNED_ARCHITECT) ? [UNASSIGNED_ARCHITECT] : []),
+      ];
+      return ordering.map(k => ({ key: k, items: buckets.get(k)! }));
+    },
+    rowPrefix: b => {
+      const stage = stageForPhase(b.protocolPhase);
+      return stage && stage !== 'unknown' ? `[${stage}] ` : '';
+    },
+    flattenLoneUncategorized: false,
   };
 }

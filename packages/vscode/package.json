@@ -147,14 +147,22 @@
         "icon": "$(list-flat)"
       },
       {
+        "command": "codev.groupBuildersByStage",
+        "title": "Codev: Group by Stage",
+        "icon": "$(milestone)"
+      },
+      {
         "command": "codev.groupBuildersByArea",
         "title": "Codev: Group by Area",
         "icon": "$(tag)"
       },
       {
-        "command": "codev.groupBuildersByPhase",
-        "title": "Codev: Group by Phase",
-        "icon": "$(milestone)"
+        "command": "codev.groupBuildersByArchitect",
+        "title": "Codev: Group by Architect",
+        "icon": {
+          "light": "icons/architect-light.svg",
+          "dark": "icons/architect-dark.svg"
+        }
       },
       {
         "command": "codev.openBacklogSearch",
@@ -616,14 +624,22 @@
           "group": "navigation"
         },
         {
-          "command": "codev.groupBuildersByArea",
-          "when": "view == codev.agents && codev.buildersGroupBy != 'area'",
-          "group": "navigation"
+          "command": "codev.groupBuildersByStage",
+          "when": "view == codev.agents",
+          "toggled": "!codev.buildersGroupBy || codev.buildersGroupBy == 'stage'",
+          "group": "navigation@1"
         },
         {
-          "command": "codev.groupBuildersByPhase",
-          "when": "view == codev.agents && codev.buildersGroupBy == 'area'",
-          "group": "navigation"
+          "command": "codev.groupBuildersByArea",
+          "when": "view == codev.agents",
+          "toggled": "codev.buildersGroupBy == 'area'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codev.groupBuildersByArchitect",
+          "when": "view == codev.agents",
+          "toggled": "codev.buildersGroupBy == 'architect'",
+          "group": "navigation@3"
         },
         {
           "command": "codev.refreshOverview",
@@ -898,14 +914,16 @@
           "type": "string",
           "enum": [
             "stage",
-            "area"
+            "area",
+            "architect"
           ],
           "enumDescriptions": [
             "Group builders by lifecycle stage (the action axis: SPECIFY → PLAN → IMPLEMENT → REVIEW → PR → VERIFIED) — answers \"where do I need to act?\"",
-            "Group builders by their area/* label (the domain axis), matching the Backlog view."
+            "Group builders by their area/* label (the domain axis), matching the Backlog view.",
+            "Group builders by the architect that spawned them (the ownership axis); architects with no in-flight work don't appear (the full roster lives in Workspace > Architects)."
           ],
           "default": "stage",
-          "description": "Which axis the Agents view groups by. 'stage' (default) is the action axis; 'area' is the domain axis. Toggleable via the Agents title-bar button."
+          "description": "Which axis the Agents view groups by. 'stage' (default) is the action axis, 'area' is the domain axis, 'architect' is the ownership axis. Builders are grouped by exactly one axis at a time; toggle via the three Agents title-bar buttons (the active one is shown pressed)."
         },
         "codev.markdownPreview.fontSize": {
           "type": "number",

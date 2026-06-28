@@ -1191,10 +1191,16 @@ export async function activate(context: vscode.ExtensionContext) {
 			vscode.workspace.getConfiguration('codev').update('backlogShowAll', true, vscode.ConfigurationTarget.Global)),
 		reg('codev.showBacklogMineOnly', () =>
 			vscode.workspace.getConfiguration('codev').update('backlogShowAll', false, vscode.ConfigurationTarget.Global)),
+		// Issue 1104: three mutually-exclusive group-by-axis commands, one per
+		// Agents title-bar button. Each writes its axis; the buttons render the
+		// active one pressed via the `toggled` menu clause keyed off the
+		// `codev.buildersGroupBy` context key.
+		reg('codev.groupBuildersByStage', () =>
+			vscode.workspace.getConfiguration('codev').update('buildersGroupBy', 'stage', vscode.ConfigurationTarget.Global)),
 		reg('codev.groupBuildersByArea', () =>
 			vscode.workspace.getConfiguration('codev').update('buildersGroupBy', 'area', vscode.ConfigurationTarget.Global)),
-		reg('codev.groupBuildersByPhase', () =>
-			vscode.workspace.getConfiguration('codev').update('buildersGroupBy', 'stage', vscode.ConfigurationTarget.Global)),
+		reg('codev.groupBuildersByArchitect', () =>
+			vscode.workspace.getConfiguration('codev').update('buildersGroupBy', 'architect', vscode.ConfigurationTarget.Global)),
 		reg('codev.reconnect', () => connectionManager?.reconnect()),
 		regCli('codev.connectTunnel', () => connectTunnel(connectionManager!)),
 		regCli('codev.disconnectTunnel', () => disconnectTunnel(connectionManager!)),

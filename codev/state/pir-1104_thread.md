@@ -68,3 +68,35 @@ Note: the architect-attribution `description` badge is dormant in the nested tre
 the ancestor) — it only surfaces for stale-owner builders under Unassigned. Working as designed.
 Dashboard Agents view is NOT built here (out of scope) — the enrichment just makes the roster
 available for future reuse.
+
+## DEV-GATE PIVOT: nested architect tier → flat 3-way group-by toggle
+
+At the dev-approval gate the architect (reviewer) reviewed the running nested-tier tree and
+redirected the design. Sequence of decisions:
+1. Childless architects in the nested tree duplicated Workspace > Architects → first asked to hide them.
+2. Explored alternatives; landed on: builders grouped by EXACTLY ONE axis at a time (stage | area |
+   architect), a natural extension of the existing binary stage/area toggle. RETIRE the nested
+   architect tier entirely.
+3. Custom octopus icon for the architect axis (metaphor: one body, many arms = orchestrating builders).
+   Iterated via Playwright-rendered previews (couldn't judge SVG blind). Final: radial 8-arm, no eyes,
+   body r3.2, stroke 2.7, MONOCHROME light/dark pair (#1f1f1f / #cccccc) matching codev-light/dark
+   convention (reviewer rejected hardcoded purple — must theme-adapt). Files: icons/architect{,-light,-dark}.svg.
+
+Refactor done:
+- REMOVED: views/architect-grouping.ts (partitionByArchitect/architectBadge), ArchitectGroupTreeItem,
+  multiArchRoot/makeArchitectNode + all tier maps in builders.ts, the adaptive architectCount gate,
+  the description badge, the architectName param on BuilderGroupTreeItem. Tests agents-tree.test.ts +
+  architect-grouping.test.ts deleted.
+- ADDED: architectGrouping() strategy in builder-grouping.ts (group by spawnedByArchitect, main-first,
+  Unassigned last; childless architects produce no group = vanish for free; rowPrefix = lifecycle
+  stage via stageForPhase). buildersGroupBy enum +'architect'. Three toolbar commands
+  (groupBuildersByStage/ByArea/ByArchitect), three view/title buttons with `toggled` clauses keyed off
+  the codev.buildersGroupBy context key (active one renders pressed). Octopus is the ByArchitect button
+  icon. Architect grouping cases added to builder-grouping.test.ts.
+
+Kept: /api/overview liveArchitects enrichment (still used by conversational Add Architect's
+resolveMainArchitect). Workspace > Architects unchanged (the full-roster launch/config home).
+Group headers keep the state-rollup glyph in all 3 modes (architect names distinguish architect mode;
+octopus lives on the toggle button).
+
+vscode check-types + lint + 512 unit ✓ after refactor.
