@@ -185,3 +185,15 @@ session_id + harness.session mechanism from #832, retiring jsonl-discovery.
 Scoped OUT of #832 (builders work today via unique-cwd jsonl-discovery — not a bug,
 just a consistency/robustness improvement). Storage location (builders.session_id vs
 shared terminal_sessions.session_id) left open in the issue.
+
+## Backfill restructured: script instead of CLI flag/API (architect feedback)
+Architect objected to --capture-sessions polluting CLI/API namespace for a one-off.
+Removed: cli.ts flag, stop.ts capture block, tower-routes /capture-sessions route,
+core tower-client.captureArchitectSessions method, tower-instances
+captureArchitectSessions fn (+ its getArchitectHarness import).
+Added: packages/codev/scripts/backfill-architect-sessions.ts (run via tsx) —
+library-only, reads architect pids from global.db terminal_sessions, resolves live id
+via harness.session.captureRunningSession, writes via new targeted
+state.setArchitectSessionId (session_id-only UPDATE, race-safe vs live Tower).
+captureRunningClaudeSession helper unchanged. Build green, suite 3394 passed.
+Script type-checked via one-off tsconfig (scripts/ is outside the tsc build include).
