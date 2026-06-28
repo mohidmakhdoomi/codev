@@ -187,10 +187,14 @@ Tower routing / messaging / SSE; porch / gates; `codev-skeleton/`.
 - **Remove-then-re-add resurrection.** A recomputable ID would resume a removed
   sibling's old conversation on re-add. Mitigated by `deleteArchitectSessionFile` in
   `removeArchitect`.
-- **claude must accept a v5 UUID for `--session-id`.** `--session-id <uuid>` is
-  documented generically; a v5 UUID is a valid canonical UUID. Verify empirically at
-  implement time (spawn once with a derived ID, confirm the jsonl is written at that
-  name) before wiring all three sites — consistent with the verify-CLI-behavior lesson.
+- **claude must accept a chosen (v5) UUID for `--session-id` and resume by it.**
+  **Verified empirically during planning** (not just from `--help`): passing a
+  node:crypto-derived v5 UUID to `claude --print --session-id <id>` wrote the jsonl
+  at exactly that name; `claude --print --resume <id>` from the same cwd recalled the
+  prior turn, appended to the **same** jsonl (10977→13505 bytes), and did **not** fork
+  a new session. So we control creation and resume; claude only auto-generates an ID
+  when `--session-id` is omitted. This is the load-bearing assumption of the whole
+  approach and it holds.
 - **Workspace path instability.** The derived ID depends on the cwd string. A renamed
   workspace path changes the ID (loses resume) — but it also changes the
   `~/.claude/projects/<encoded-cwd>/` directory, so jsonl-discovery would break

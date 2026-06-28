@@ -67,3 +67,11 @@ Rewrote plan: NO db column, NO migration v12, NO schema/state.ts/types changes.
   dir; unique cwd (main-only, or builders) → recency disambiguates; shared cwd
   (siblings) → it can't. In multi-arch workspaces main ALSO skips resume (safeToResume
   guard). Fix puts NAME into the key.
+
+### Empirical verification (architect Q: "do we control the IDs?")
+Ran headless claude in a temp dir:
+- `claude --print --session-id <v5-uuid>` → jsonl written at OUR exact id. We control it.
+- `claude --print --resume <same-id>` → recalled prior turn, SAME jsonl grew
+  (10977→13505 B), no fork. Resume-by-chosen-id works.
+- v5 uuid derived with node:crypto sha1 only → no new dependency needed.
+Load-bearing assumption confirmed. Promoted from risk → fact in plan.
