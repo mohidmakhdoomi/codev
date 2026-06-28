@@ -73,7 +73,7 @@ export function findLatestSessionId(
 // ============================================================================
 // Issue #832 — capture a running architect's live Claude session id
 //
-// Used by the transitional `afx workspace stop --capture-sessions` backfill to
+// Used by the transitional `scripts/backfill-architect-sessions.ts` backfill to
 // record the session id of an architect that is already running under pre-#832
 // code (its conversation exists on disk but Tower never stored the id). Going
 // forward, ids are generated and stored at spawn, so this is a one-off bridge.

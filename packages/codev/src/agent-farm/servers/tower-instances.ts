@@ -13,7 +13,6 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { encodeWorkspacePath } from '../lib/tower-client.js';
-import { getArchitectHarness } from '../utils/config.js';
 import { loadConfig } from '../../lib/config.js';
 
 const execAsync = promisify(exec);
@@ -1163,84 +1162,3 @@ export async function removeArchitect(
   return { success: true };
 }
 
-// ============================================================================
-// captureArchitectSessions (Issue #832) — transitional backfill
-// ============================================================================
-
-/**
- * Capture the live conversation session id of each running architect that does
- * not yet have one stored, and persist it. Invoked by `afx workspace stop
- * --capture-sessions` before deactivation ends the architect processes — capture
- * reads each live process (to find its open session jsonl), so it must run while
- * they are still alive. The conversation itself persists on disk across the stop;
- * recording the id lets the next `afx workspace start` resume it.
- *
- * Transitional: architects spawned under #832 already store their id at spawn, so
- * this only does work for architects still running under pre-#832 code. It is a
- * one-off upgrade bridge, not a long-term operation.
- *
- * Disambiguation is delegated to the harness's `captureRunningSession` (Claude
- * correlates each architect's process subtree to the jsonl it holds open; a sole
- * architect falls back to the unambiguous newest-by-mtime). Agents without a
- * `session` capability are skipped. Best-effort and never fatal.
- */
-export async function captureArchitectSessions(
-  workspacePath: string,
-): Promise<{ success: boolean; captured: string[]; skipped: string[]; error?: string }> {
-  if (!_deps) return { success: false, captured: [], skipped: [], error: 'Tower is still starting up. Try again shortly.' };
-
-  let resolvedPath = workspacePath;
-  try {
-    if (fs.existsSync(workspacePath)) resolvedPath = fs.realpathSync(workspacePath);
-  } catch { /* use original path */ }
-
-  const manager = _deps.getTerminalManager();
-  const harness = getArchitectHarness(workspacePath);
-  const capture = harness.session?.captureRunningSession;
-
-  const captured: string[] = [];
-  const skipped: string[] = [];
-
-  let architects: ReturnType<typeof getArchitects>;
-  try {
-    architects = getArchitects(resolvedPath);
-  } catch (err) {
-    return { success: false, captured, skipped, error: `Failed to read architects: ${(err as Error).message}` };
-  }
-
-  // A sole architect owns the cwd unambiguously → the harness may use a no-lsof fallback.
-  const soleArchitect = architects.length <= 1;
-
-  for (const a of architects) {
-    if (a.sessionId) continue;              // already known — nothing to capture
-    if (!capture) { skipped.push(a.name); continue; }   // agent has no resumable sessions
-
-    const pid = a.terminalId ? manager.getSession(a.terminalId)?.pid : undefined;
-    if (!pid) { skipped.push(a.name); continue; }
-
-    let liveId: string | null = null;
-    try {
-      liveId = capture(workspacePath, pid, soleArchitect);
-    } catch (err) {
-      _deps.log('WARN', `capture-sessions: failed to read session for architect '${a.name}': ${(err as Error).message}`);
-    }
-    if (!liveId) { skipped.push(a.name); continue; }
-
-    try {
-      setArchitectByName(resolvedPath, a.name, {
-        name: a.name,
-        cmd: a.cmd,
-        startedAt: a.startedAt,
-        terminalId: a.terminalId,
-        sessionId: liveId,
-      });
-      captured.push(a.name);
-    } catch (err) {
-      _deps.log('WARN', `capture-sessions: failed to persist session for architect '${a.name}': ${(err as Error).message}`);
-      skipped.push(a.name);
-    }
-  }
-
-  _deps.log('INFO', `capture-sessions for ${workspacePath}: captured ${captured.length}, skipped ${skipped.length}`);
-  return { success: true, captured, skipped };
-}

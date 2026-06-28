@@ -66,9 +66,10 @@ export interface HarnessProvider {
     resumeArgs(sessionId: string): string[];
     /**
      * Capture the live session id of an already-running agent process, for the
-     * transitional `stop --capture-sessions` backfill. `pid` is the architect's
-     * recorded process; `soleArchitect` enables the unambiguous fallback when the
-     * workspace has a single architect. Returns null if it can't be resolved.
+     * transitional `scripts/backfill-architect-sessions.ts` backfill. `pid` is the
+     * architect's recorded process; `soleArchitect` enables the unambiguous
+     * fallback when the workspace has a single architect. Returns null if it can't
+     * be resolved.
      */
     captureRunningSession?(workspacePath: string, pid: number, soleArchitect: boolean): string | null;
   };

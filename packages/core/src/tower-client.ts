@@ -307,32 +307,6 @@ export class TowerClient {
     };
   }
 
-  /**
-   * Issue #832: capture the live conversation session id of each running
-   * architect that lacks a stored one, so they resume after a restart. Backs the
-   * transitional `afx workspace stop --capture-sessions` flag.
-   */
-  async captureArchitectSessions(
-    workspacePath: string,
-  ): Promise<{ ok: boolean; captured?: string[]; skipped?: string[]; error?: string }> {
-    const encoded = encodeWorkspacePath(workspacePath);
-    const result = await this.request<{ success: boolean; captured?: string[]; skipped?: string[]; error?: string }>(
-      `/api/workspaces/${encoded}/capture-sessions`,
-      { method: 'POST' },
-    );
-
-    if (!result.ok) {
-      return { ok: false, error: result.error };
-    }
-
-    return {
-      ok: result.data?.success ?? false,
-      captured: result.data?.captured,
-      skipped: result.data?.skipped,
-      error: result.data?.error,
-    };
-  }
-
   async deactivateWorkspace(
     workspacePath: string
   ): Promise<{ ok: boolean; stopped?: number[]; error?: string }> {

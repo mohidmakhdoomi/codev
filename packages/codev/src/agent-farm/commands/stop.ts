@@ -16,7 +16,7 @@ import { getTowerClient } from '../lib/tower-client.js';
  * Phase 3 (Spec 0090): Uses tower API to deactivate workspace.
  * Does NOT stop the tower daemon - other workspaces may be using it.
  */
-export async function stop(options: { captureSessions?: boolean } = {}): Promise<void> {
+export async function stop(): Promise<void> {
   const config = getConfig();
   const workspacePath = config.workspaceRoot;
 
@@ -25,31 +25,6 @@ export async function stop(options: { captureSessions?: boolean } = {}): Promise
   // Try tower API first (Phase 3 - Spec 0090)
   const client = getTowerClient();
   const towerRunning = await client.isRunning();
-
-  // Issue #832 (transitional): record each running architect's conversation
-  // session id while its process is still alive. The stop ends the architect
-  // PROCESSES but not the conversation — that persists on disk as a session
-  // jsonl regardless — so capture is not racing a loss of context. It must run
-  // before deactivation only because capture reads the LIVE process (lsof, to
-  // find which session jsonl it has open); once the process is gone it can't be
-  // correlated. With the id recorded, the next `afx workspace start` resumes the
-  // (still-on-disk) conversation. One-off bridge for architects spawned before
-  // #832 (those spawned after store their id automatically).
-  if (options.captureSessions) {
-    if (towerRunning) {
-      logger.info('Capturing architect session ids before stop...');
-      const cap = await client.captureArchitectSessions(workspacePath);
-      if (cap.ok) {
-        if (cap.captured?.length) logger.success(`Captured session ids: ${cap.captured.join(', ')}`);
-        if (cap.skipped?.length) logger.info(`Skipped (already known or unresolvable): ${cap.skipped.join(', ')}`);
-        if (!cap.captured?.length && !cap.skipped?.length) logger.info('No architects needed capture.');
-      } else {
-        logger.warn(`Session capture failed (continuing with stop): ${cap.error ?? 'unknown error'}`);
-      }
-    } else {
-      logger.warn('--capture-sessions ignored: tower is not running, so no architects are alive to capture.');
-    }
-  }
 
   if (towerRunning) {
     logger.info('Deactivating workspace via tower...');
