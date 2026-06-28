@@ -161,7 +161,7 @@ describe('ArtifactCanvas (Phase 3)', () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(() => render(<ArtifactCanvas uri="x" {...host} onAddComment={vi.fn()} onError={onError} />)).not.toThrow();
     await waitFor(() => expect(onError).toHaveBeenCalled());
-    expect(document.querySelector('p[data-line]')).not.toBeNull(); // read succeeded → content still renders
+    await waitFor(() => expect(document.querySelector('p[data-line]')).not.toBeNull()); // read succeeded → content still renders
     err.mockRestore();
   });
 
