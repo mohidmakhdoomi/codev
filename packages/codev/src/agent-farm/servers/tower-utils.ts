@@ -11,13 +11,9 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import type { ServerResponse } from 'node:http';
 import type { RateLimitEntry } from './tower-types.js';
+import crypto from 'node:crypto';
 import { loadRolePrompt, type RoleConfig } from '../utils/roles.js';
 import { getArchitectHarness } from '../utils/config.js';
-import {
-  architectSessionId,
-  sessionFileExists,
-  findLatestSessionId,
-} from '../utils/claude-session-discovery.js';
 
 // ============================================================================
 // Rate Limiting
@@ -200,59 +196,48 @@ export function buildArchitectArgs(baseArgs: string[], workspacePath: string): {
 
 /**
  * Issue #832: resolve the args/env to launch (or revive) an architect, choosing
- * between resuming a prior Claude conversation and starting fresh.
+ * between resuming its persisted conversation and starting a fresh one. The
+ * session mechanics are agent-neutral — they come from the resolved harness's
+ * `session` capability, so no agent-specific flags appear here.
  *
  * Decision order:
- *   1. The architect's DERIVED session id (a pure function of `(workspacePath,
- *      name)`) already has a jsonl on disk → `--resume <derivedId>`, skip role
- *      injection (the saved conversation already holds the role/system prompt).
- *   2. `discoveryFallback` set (lone `main` only — see callers) and #830's
- *      newest-by-mtime discovery finds a prior session → `--resume <legacyId>`.
- *      This preserves recovery of `main`'s existing (pre-#832, random-id)
- *      conversation in single-architect workspaces with no context loss.
- *   3. Otherwise → fresh: create the session AT the derived id via
- *      `--session-id <derivedId>`, with role injection, so the next revival finds
- *      it and resumes.
+ *   1. Harness has no `session` capability (e.g. Codex/Gemini today) → plain fresh
+ *      spawn, `sessionId: null` (nothing to resume next time).
+ *   2. `storedSessionId` present → resume it (no role injection — the saved
+ *      conversation already holds the role/system prompt); echo the same id back.
+ *   3. Else fresh → generate a new id, pin the session to it (with role injection),
+ *      and return it for the caller to persist.
  *
- * `discoveryFallback` is only safe where the cwd unambiguously belongs to one
- * architect (a lone `main`). Siblings share the workspace cwd, so discovery
- * cannot attribute a jsonl to them — they always use the derived id.
- *
- * `workspacePath` is canonicalised (realpath) so the derived id and the
- * existence check key off the same physical path Claude uses as its cwd,
- * regardless of whether the caller passed a symlinked path.
+ * The returned `sessionId` is the value the caller writes onto the architect row,
+ * so the column is populated correctly on every spawn.
  */
 export function resolveArchitectLaunch(opts: {
   workspacePath: string;
   name: string;
   baseArgs: string[];
-  discoveryFallback?: boolean;
-}): { args: string[]; env: Record<string, string> } {
-  const { workspacePath, name, baseArgs, discoveryFallback } = opts;
+  storedSessionId?: string | null;
+}): { args: string[]; env: Record<string, string>; sessionId: string | null } {
+  const { workspacePath, baseArgs, storedSessionId } = opts;
+  const harness = getArchitectHarness(workspacePath);
 
-  let canonical = workspacePath;
-  try {
-    canonical = fs.realpathSync(workspacePath);
-  } catch {
-    // Path may not exist yet (fresh) — fall back to the raw value.
+  // 1. No resumable-session support → plain fresh, nothing to persist.
+  if (!harness.session) {
+    return { ...buildArchitectArgs(baseArgs, workspacePath), sessionId: null };
   }
 
-  const derivedId = architectSessionId(canonical, name);
-  if (sessionFileExists(canonical, derivedId)) {
-    return { args: [...baseArgs, '--resume', derivedId], env: {} };
+  // 2. Resume the persisted conversation (role injection skipped).
+  if (storedSessionId) {
+    return {
+      args: [...baseArgs, ...harness.session.resumeArgs(storedSessionId)],
+      env: {},
+      sessionId: storedSessionId,
+    };
   }
 
-  if (discoveryFallback) {
-    const legacyId = findLatestSessionId(canonical);
-    if (legacyId) {
-      return { args: [...baseArgs, '--resume', legacyId], env: {} };
-    }
-  }
-
-  // Fresh: build the role-injected args, then pin the new session to the derived
-  // id so subsequent revivals resume it. `--session-id` precedes the injection
-  // flags by being part of baseArgs.
-  return buildArchitectArgs([...baseArgs, '--session-id', derivedId], workspacePath);
+  // 3. Fresh: mint an id, pin the session to it, persist it via the returned id.
+  const sessionId = crypto.randomUUID();
+  const built = buildArchitectArgs([...baseArgs, ...harness.session.newSessionArgs(sessionId)], workspacePath);
+  return { ...built, sessionId };
 }
 
 /**
