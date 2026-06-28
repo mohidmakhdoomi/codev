@@ -295,6 +295,16 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
     // Groups always render Expanded (#913) — no persisted state. VSCode's
     // native per-id memory keeps a user-collapsed group collapsed for the
     // rest of the session; on a fresh session this default applies again.
+    //
+    // Architect-axis headers get a click-to-open-terminal `command` (#1108):
+    // the architect is first-class in this mode, so its header should match the
+    // builder-row affordance (row click opens the terminal; the chevron still
+    // toggles expand/collapse — VSCode routes the two gestures independently).
+    // Stage/area headers stay pure containers — they name no launchable entity.
+    // The `g.key` (architect name; null owners folded into `main` by
+    // architectGrouping) is the optional name arg `codev.openArchitectTerminal`
+    // already accepts; it warns gracefully on a stale owner not in the roster.
+    const isArchitectAxis = grouping.id === 'architect';
     return groups.map(g => {
       const groupItem = new BuilderGroupTreeItem(
         g.key,
@@ -302,6 +312,13 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
         vscode.TreeItemCollapsibleState.Expanded,
         rollupGroupState(g.items, now),
       );
+      if (isArchitectAxis) {
+        groupItem.command = {
+          command: 'codev.openArchitectTerminal',
+          title: 'Open Architect Terminal',
+          arguments: [g.key],
+        };
+      }
       for (const b of g.items) {
         this.groupParentByBuilderId.set(b.id, groupItem);
       }
