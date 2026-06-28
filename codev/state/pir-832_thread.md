@@ -1,0 +1,41 @@
+# PIR #832 — Multi-architect conversation resume via per-architect session UUID
+
+## Phase: plan (in progress)
+
+### What this is
+Follow-up to #830. Main-architect conversation resume shipped via jsonl-discovery
+(newest `*.jsonl` by mtime). That heuristic can't disambiguate named sibling
+architects (Spec 755) because they share `cwd = workspacePath` — all their jsonls
+land in the same encoded-cwd dir. Fix: persist a per-architect Claude session UUID
+in the `architect` state.db row; pass `--session-id <uuid>` at spawn and
+`--resume <uuid>` at every revive surface.
+
+### Investigation findings
+- claude CLI confirmed to support both `--session-id <uuid>` and `-r/--resume [value]`
+  (verified via `claude --help`). Resume WITHOUT `--fork-session` keeps the same
+  session id, so a stored UUID stays valid across unlimited revivals.
+- Three revive surfaces, all need the same lookup branch:
+  1. `tower-instances.ts launchInstance` (main cold-spawn) — currently uses
+     `findLatestSessionId` + `safeToResume = getArchitects().length <= 1` guard
+     (the guard this issue removes).
+  2. `tower-instances.ts addArchitect` (sibling cold-spawn + sibling reconcile loop) —
+     currently NO resume (deliberate in #830).
+  3. `tower-terminals.ts reconcileTerminalSessions` ~L636-679 (shellper auto-restart
+     options bake) — currently `buildArchitectArgs` only, no resume. This is the
+     silent-context-loss path (claude crash inside a live shellper).
+- `removeArchitect` calls `setArchitectByName(..., null)` which DELETEs the whole
+  row → UUID cleared automatically (satisfies "removal-clears-UUID").
+- DB migrations are at v11; add v12 `ALTER TABLE architect ADD COLUMN claude_session_id TEXT`.
+- `findLatestSessionId` stays (builders/#831 still use it via spawn.ts); only main
+  stops using it.
+
+### Design decisions to flag at plan gate
+- Main loses jsonl-discovery fallback → one-time context loss on the FIRST reboot
+  after this lands (legacy row has no stored UUID). Accepted per issue's
+  Backwards-compat section. Hybrid alternative (keep jsonl fallback for main when
+  count<=1) considered + rejected to keep the path uniform.
+- setArchitect/setArchitectByName switched to COALESCE-preserving upsert so a
+  later row update that omits the UUID can't wipe it (mirrors upsertBuilder's
+  spawned_by_architect COALESCE pattern).
+
+Plan written to codev/plans/832-multi-architect-conversation-r.md.
