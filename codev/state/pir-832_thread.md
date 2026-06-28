@@ -158,3 +158,23 @@ Decisions locked:
 
 NEXT: revert the stateless implementation commits, implement DB+capture approach.
 Plan rewritten + committed. Code still holds stateless impl pending revert.
+
+## DB approach implemented (replaces stateless impl)
+All committed. Build green, full suite 3392 passed / 48 skipped / 0 failed.
+- DB: types.ts ArchitectState.sessionId; db/types DbArchitect.session_id + converter;
+  schema.ts column; migration v12 (idempotent ALTER); state.ts setters write it.
+- harness.ts: HarnessProvider.session {newSessionArgs, resumeArgs, captureRunningSession};
+  CLAUDE_HARNESS implements; codex/gemini/opencode omit → graceful fresh.
+- claude-session-discovery.ts: removed derived helpers; added captureRunningClaudeSession
+  (process-subtree lsof correlation → open jsonl; sole-architect → findLatestSessionId).
+- tower-utils resolveArchitectLaunch: stored id → resume; else mint uuid + --session-id;
+  returns sessionId to persist; no-session harness → plain fresh, null.
+- tower-instances: launchInstance(main) + addArchitect read stored id (defensive try/catch
+  so state.db read failure → fresh), persist returned id; removeArchitect row-delete clears;
+  captureArchitectSessions(workspacePath) added (skips already-known + no-session agents).
+- tower-terminals: both restart-bake sites read stored id → resume (inside existing try).
+- CLI: workspace stop --capture-sessions → stop({captureSessions}) → client.captureArchitectSessions
+  → POST /api/workspaces/:p/capture-sessions → captureArchitectSessions. Marked transitional.
+- Tests: state round-trip + removal-clears + sibling-distinct; harness capability;
+  resolveArchitectLaunch decision (resume/mint/no-session/baseArgs-order); capture fallback.
+  lsof success path = manual integration test at dev-approval gate.
