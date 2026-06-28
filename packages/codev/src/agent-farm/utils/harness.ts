@@ -13,6 +13,7 @@
  */
 
 import { buildWorktreeGuardFiles } from './worktree-write-guard.js';
+import { captureRunningClaudeSession } from './claude-session-discovery.js';
 
 // =============================================================================
 // Types
@@ -51,6 +52,26 @@ export interface HarnessProvider {
     relativePath: string;
     content: string;
   }>;
+
+  /**
+   * Optional: conversation-session support, for agents whose CLI can pin and
+   * resume a session by id (Issue #832). Harnesses that omit this are treated as
+   * having no resumable sessions — architects on those agents always spawn fresh
+   * and nothing is persisted. Keeps agent-specific session flags out of Tower.
+   */
+  session?: {
+    /** Args to START a new session pinned to `sessionId` (caller merges role injection). */
+    newSessionArgs(sessionId: string): string[];
+    /** Args to RESUME an existing session by id (caller skips role injection). */
+    resumeArgs(sessionId: string): string[];
+    /**
+     * Capture the live session id of an already-running agent process, for the
+     * transitional `stop --capture-sessions` backfill. `pid` is the architect's
+     * recorded process; `soleArchitect` enables the unambiguous fallback when the
+     * workspace has a single architect. Returns null if it can't be resolved.
+     */
+    captureRunningSession?(workspacePath: string, pid: number, soleArchitect: boolean): string | null;
+  };
 }
 
 /** Custom harness definition from .codev/config.json */
@@ -78,6 +99,14 @@ export const CLAUDE_HARNESS: HarnessProvider = {
   // cannot silently write outside its worktree (e.g. into the main checkout).
   getWorktreeFiles: (_content, _filePath, worktreePath) =>
     buildWorktreeGuardFiles(worktreePath),
+  // Issue #832: Claude pins/resumes a conversation by UUID and stores each session
+  // as ~/.claude/projects/<encoded-cwd>/<id>.jsonl.
+  session: {
+    newSessionArgs: (sessionId) => ['--session-id', sessionId],
+    resumeArgs: (sessionId) => ['--resume', sessionId],
+    captureRunningSession: (workspacePath, pid, soleArchitect) =>
+      captureRunningClaudeSession(workspacePath, pid, { soleArchitect }),
+  },
 };
 
 export const CODEX_HARNESS: HarnessProvider = {
