@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { OverviewBuilder } from '@cluesmith/codev-types';
-import { stageGrouping, areaGrouping, architectGrouping, UNASSIGNED_ARCHITECT } from '../views/builder-grouping.js';
+import { stageGrouping, areaGrouping, architectGrouping } from '../views/builder-grouping.js';
 
 function builder(overrides: Partial<OverviewBuilder>): OverviewBuilder {
   return {
@@ -83,14 +83,13 @@ describe('architectGrouping (#1104)', () => {
     expect(g.id).toBe('architect');
   });
 
-  it('buckets by spawnedByArchitect: main first, others alphabetical, Unassigned last', () => {
+  it('buckets by spawnedByArchitect: main first, others alphabetical', () => {
     const builders = [
       builder({ id: 'a', spawnedByArchitect: 'vscode' }),
       builder({ id: 'b', spawnedByArchitect: 'main' }),
-      builder({ id: 'c', spawnedByArchitect: null }),
       builder({ id: 'd', spawnedByArchitect: 'security' }),
     ];
-    expect(g.group(builders).map(x => x.key)).toEqual(['main', 'security', 'vscode', UNASSIGNED_ARCHITECT]);
+    expect(g.group(builders).map(x => x.key)).toEqual(['main', 'security', 'vscode']);
   });
 
   it('only produces a group for an architect that owns builders (childless never appears)', () => {
@@ -100,9 +99,16 @@ describe('architectGrouping (#1104)', () => {
     expect(g.group(builders).map(x => x.key)).toEqual(['main']);
   });
 
-  it('collects unowned builders under the Unassigned bucket only when present', () => {
-    expect(g.group([builder({ id: 'a', spawnedByArchitect: 'main' })]).some(x => x.key === UNASSIGNED_ARCHITECT)).toBe(false);
-    expect(g.group([builder({ id: 'b', spawnedByArchitect: null })]).map(x => x.key)).toEqual([UNASSIGNED_ARCHITECT]);
+  it('folds a null-owner builder (data-integrity edge) into the main group', () => {
+    // Every spawn records an owner (default main); a null owner is only a
+    // missing/legacy state.db row, so it folds into main, never an "unassigned"
+    // group.
+    const groups = g.group([
+      builder({ id: 'a', spawnedByArchitect: 'main' }),
+      builder({ id: 'b', spawnedByArchitect: null }),
+    ]);
+    expect(groups.map(x => x.key)).toEqual(['main']);
+    expect(groups[0].items.map(b => b.id)).toEqual(['a', 'b']);
   });
 
   it('rowPrefix carries the complementary lifecycle stage; unknown omitted', () => {

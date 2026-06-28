@@ -19,14 +19,6 @@ import { groupByStage, stageForPhase } from '@cluesmith/codev-core/phase-groupin
 /** The grouping axes the Agents view offers. Persisted as `codev.buildersGroupBy`. */
 export type BuildersGroupBy = 'stage' | 'area' | 'architect';
 
-/**
- * Group key for builders with no resolvable owner (`spawnedByArchitect` null —
- * legacy / pre-#755 rows) under the `architect` axis (Issue 1104). A flat group
- * only exists when it has builders, so a childless architect never appears; this
- * bucket only collects genuinely unowned builders, sorted last.
- */
-export const UNASSIGNED_ARCHITECT = 'Unassigned';
-
 /** A display group: a header key (an area name or a stage name) and its builders. */
 export interface BuilderGroup {
   key: string;
@@ -87,14 +79,20 @@ export function areaGrouping(): BuilderGrouping {
 
 /**
  * Architect axis (Issue 1104): groups are the architects that own in-flight work
- * (`spawnedByArchitect`), `main` first, then the rest alphabetically, with the
- * `Unassigned` bucket (unowned builders) last. Because a flat group only exists
- * when it holds builders, a *childless* architect produces no group and simply
- * doesn't appear — the work view shows owners of work, not the full roster (the
- * full roster lives in Workspace > Architects). The row prefix carries the
- * complementary lifecycle stage (`[implement]`, etc.) so a row still reads
- * "where in the lifecycle" under its owner. A lone group is never flattened —
- * the architect name is information worth a header even when there's only one.
+ * (`spawnedByArchitect`), `main` first, then the rest alphabetically. Because a
+ * flat group only exists when it holds builders, a *childless* architect
+ * produces no group and simply doesn't appear — the work view shows owners of
+ * work, not the full roster (the full roster lives in Workspace > Architects).
+ *
+ * Every builder has an owner: `afx spawn` always records one, defaulting to
+ * `main` (spawn.ts). A null `spawnedByArchitect` is only a data-integrity edge
+ * (a discovered worktree with no `state.db` row, or a pre-#755 legacy row), so
+ * there is no "unassigned" group — a null owner folds into `main`, matching the
+ * affinity router's same fallback (`lookupBuilderSpawningArchitect`).
+ *
+ * The row prefix carries the complementary lifecycle stage (`[implement]`, etc.)
+ * so a row still reads "where in the lifecycle" under its owner. A lone group is
+ * never flattened — the architect name is information worth a header.
  */
 export function architectGrouping(): BuilderGrouping {
   return {
@@ -102,15 +100,14 @@ export function architectGrouping(): BuilderGrouping {
     group: ordered => {
       const buckets = new Map<string, OverviewBuilder[]>();
       for (const b of ordered) {
-        const key = b.spawnedByArchitect || UNASSIGNED_ARCHITECT;
+        const key = b.spawnedByArchitect || 'main';
         const bucket = buckets.get(key);
         if (bucket) { bucket.push(b); } else { buckets.set(key, [b]); }
       }
       const keys = [...buckets.keys()];
       const ordering = [
         ...(buckets.has('main') ? ['main'] : []),
-        ...keys.filter(k => k !== 'main' && k !== UNASSIGNED_ARCHITECT).sort(),
-        ...(buckets.has(UNASSIGNED_ARCHITECT) ? [UNASSIGNED_ARCHITECT] : []),
+        ...keys.filter(k => k !== 'main').sort(),
       ];
       return ordering.map(k => ({ key: k, items: buckets.get(k)! }));
     },
