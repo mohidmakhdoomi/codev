@@ -100,3 +100,11 @@ Group headers keep the state-rollup glyph in all 3 modes (architect names distin
 octopus lives on the toggle button).
 
 vscode check-types + lint + 512 unit ✓ after refactor.
+
+## Review phase
+
+dev-approval approved. Wrote review (codev/reviews/1104-*). Routed 2 COLD lessons (UI/UX:
+no-toggled toolbar selection; 16px custom-SVG legibility) + 1 COLD arch.md bullet (Agents view
++ group-by axes + /api/overview architects). No HOT-tier changes (VS-Code-specific, not
+always-inject-worthy). Full suites green: build, codev 3375, vscode 512, dashboard 322.
+Opening PR; porch runs single-pass 3-way CMAP next.
