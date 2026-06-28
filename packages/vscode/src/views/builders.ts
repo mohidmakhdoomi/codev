@@ -126,12 +126,12 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
   /**
    * The grouping strategy for the active axis, read from the
    * `codev.buildersGroupBy` setting (#952, extended to a third `architect` axis
-   * in #1104). Defaults to `stage` — the action axis. Toggled via the three
-   * Agents title-bar buttons (`codev.groupBuildersByStage` / `…ByArea` /
-   * `…ByArchitect`), the active one rendered pressed. All per-axis behavior
-   * (bucketing, row prefix, flatten rule) lives on the returned strategy, so
-   * callers never branch on the mode themselves. An unknown value falls back to
-   * `stage`.
+   * in #1104). Defaults to `stage` — the action axis. Changed via the single
+   * Agents title-bar group-by button: one of three `agentsCycleGroupFrom*`
+   * commands is shown at a time (its icon = the current axis), and clicking it
+   * advances to the next axis. All per-axis behavior (bucketing, row prefix,
+   * flatten rule) lives on the returned strategy, so callers never branch on the
+   * mode themselves. An unknown value falls back to `stage`.
    */
   private active(): BuilderGrouping {
     const mode = vscode.workspace

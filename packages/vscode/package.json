@@ -147,36 +147,18 @@
         "icon": "$(list-flat)"
       },
       {
-        "command": "codev.groupBuildersByStage",
+        "command": "codev.agentsCycleGroupFromStage",
         "title": "Codev: Group by Stage",
         "icon": "$(milestone)"
       },
       {
-        "command": "codev.groupBuildersByArea",
+        "command": "codev.agentsCycleGroupFromArea",
         "title": "Codev: Group by Area",
         "icon": "$(tag)"
       },
       {
-        "command": "codev.groupBuildersByArchitect",
-        "title": "Codev: Group by Architect",
-        "icon": {
-          "light": "icons/architect-light.svg",
-          "dark": "icons/architect-dark.svg"
-        }
-      },
-      {
-        "command": "codev.agentsCycleGroupFromStage",
-        "title": "Codev: Agents Grouped by Stage (click to change)",
-        "icon": "$(milestone)"
-      },
-      {
-        "command": "codev.agentsCycleGroupFromArea",
-        "title": "Codev: Agents Grouped by Area (click to change)",
-        "icon": "$(tag)"
-      },
-      {
         "command": "codev.agentsCycleGroupFromArchitect",
-        "title": "Codev: Agents Grouped by Architect (click to change)",
+        "title": "Codev: Group by Architect",
         "icon": {
           "light": "icons/architect-light.svg",
           "dark": "icons/architect-dark.svg"
@@ -631,27 +613,27 @@
         {
           "command": "codev.refreshOverview",
           "when": "view == codev.agents",
-          "group": "navigation"
+          "group": "navigation@2"
         },
         {
           "command": "codev.disableBuildersAutoCollapse",
           "when": "view == codev.agents && codev.buildersAutoCollapse",
-          "group": "navigation"
+          "group": "navigation@3"
         },
         {
           "command": "codev.enableBuildersAutoCollapse",
           "when": "view == codev.agents && !codev.buildersAutoCollapse",
-          "group": "navigation"
+          "group": "navigation@3"
         },
         {
           "command": "codev.disableBuildersFileTreeMode",
           "when": "view == codev.agents && codev.buildersFileViewAsTree",
-          "group": "navigation"
+          "group": "navigation@4"
         },
         {
           "command": "codev.enableBuildersFileTreeMode",
           "when": "view == codev.agents && !codev.buildersFileViewAsTree",
-          "group": "navigation"
+          "group": "navigation@4"
         },
         {
           "command": "codev.agentsCycleGroupFromStage",

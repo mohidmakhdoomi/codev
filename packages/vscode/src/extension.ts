@@ -735,9 +735,8 @@ export async function activate(context: vscode.ExtensionContext) {
 		// eslint-disable-next-line no-restricted-syntax -- this IS the regCli helper (#791)
 		vscode.commands.registerCommand(id, guard(handler));
 
-	// Issue 1104: write the Agents group-by axis. Shared by the three direct
-	// `groupBuildersBy*` commands (palette / keybindings) and the three
-	// `agentsCycleGroupFrom*` toolbar buttons.
+	// Issue 1104: write the Agents group-by axis, used by the three
+	// `agentsCycleGroupFrom*` toolbar buttons (one visible at a time).
 	const setGroupBy = (axis: 'stage' | 'area' | 'architect') =>
 		vscode.workspace.getConfiguration('codev').update('buildersGroupBy', axis, vscode.ConfigurationTarget.Global);
 
@@ -1205,14 +1204,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		// the *current* axis is a single button whose icon IS that axis. We do
 		// that with three show/hide "cycle" commands (one per axis, swapped by
 		// `when` in package.json): exactly one is visible, its icon names the
-		// current grouping, and clicking it advances to the next axis. The three
-		// direct `groupBuildersBy*` commands remain for the palette / keybindings
-		// (jump straight to an axis). The `setGroupBy` helper is declared above the
-		// push() call (a const can't live in an argument list).
-		reg('codev.groupBuildersByStage', () => setGroupBy('stage')),
-		reg('codev.groupBuildersByArea', () => setGroupBy('area')),
-		reg('codev.groupBuildersByArchitect', () => setGroupBy('architect')),
-		// Cycle buttons: shown only when their axis is active; click → next axis.
+		// current grouping, and clicking it advances to the next axis. The
+		// `setGroupBy` helper is declared above the push() call (a const can't
+		// live in an argument list).
 		reg('codev.agentsCycleGroupFromStage', () => setGroupBy('area')),
 		reg('codev.agentsCycleGroupFromArea', () => setGroupBy('architect')),
 		reg('codev.agentsCycleGroupFromArchitect', () => setGroupBy('stage')),
