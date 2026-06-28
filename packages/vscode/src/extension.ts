@@ -320,7 +320,15 @@ export async function activate(context: vscode.ExtensionContext) {
 		const data = overviewCache.getData();
 		const withCount = (base: string, n: number | undefined) =>
 			typeof n === 'number' ? `${base} (${n})` : base;
-		if (buildersView) { buildersView.title = withCount('Agents', data?.builders.length); }
+		// Agents title names the active grouping axis (Issue 1104) so the selected
+		// mode is unambiguous at a glance — the `toggled` title-bar buttons only
+		// render a faint pressed-highlight (washed out in light themes), which
+		// isn't a reliable "which axis am I in" signal on its own. The workbench
+		// uppercases view titles, so this reads e.g. `AGENTS (2) · ARCHITECT`.
+		if (buildersView) {
+			const axis = vscode.workspace.getConfiguration('codev').get<string>('buildersGroupBy', 'stage');
+			buildersView.title = `${withCount('Agents', data?.builders.length)} · ${axis}`;
+		}
 		if (pullRequestsView) { pullRequestsView.title = withCount('Pull Requests', data?.pendingPRs.length); }
 		if (backlogView) {
 			// Backlog title reflects the *visible* row count (mine-only vs show-all),
@@ -627,6 +635,8 @@ export async function activate(context: vscode.ExtensionContext) {
 			if (!e.affectsConfiguration('codev.buildersGroupBy')) { return; }
 			vscode.commands.executeCommand('setContext', 'codev.buildersGroupBy', readBuildersGroupBy());
 			buildersProvider.refresh();
+			// Keep the "· <axis>" suffix in the Agents title in sync with the toggle.
+			updateListViewTitles();
 		}),
 	);
 
