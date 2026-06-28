@@ -20,10 +20,6 @@ import {
   serveStaticFile,
   resolveArchitectLaunch,
 } from '../servers/tower-utils.js';
-import {
-  architectSessionId,
-  encodeClaudeProjectDir,
-} from '../utils/claude-session-discovery.js';
 
 describe('tower-utils', () => {
   describe('isRateLimited', () => {
@@ -205,99 +201,72 @@ describe('tower-utils', () => {
 });
 
 describe('resolveArchitectLaunch (Issue #832)', () => {
-  let fakeHome: string;
   let workspace: string;
-  let canonical: string;
-  const originalHome = process.env.HOME;
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
   beforeEach(() => {
-    fakeHome = fs.mkdtempSync(path.join(tmpdir(), 'ral-home-'));
+    // A bare temp dir: no codev/roles, so buildArchitectArgs returns baseArgs
+    // unchanged (loadRolePrompt → null). Default harness resolves to Claude
+    // (which has the session capability).
     workspace = fs.mkdtempSync(path.join(tmpdir(), 'ral-ws-'));
-    // resolveArchitectLaunch canonicalises via realpath; mirror that so we seed
-    // jsonls under the same encoded-cwd it will look in.
-    canonical = fs.realpathSync(workspace);
-    process.env.HOME = fakeHome;
-    fs.mkdirSync(path.join(fakeHome, '.claude', 'projects'), { recursive: true });
   });
 
   afterEach(() => {
-    if (originalHome === undefined) delete process.env.HOME;
-    else process.env.HOME = originalHome;
-    fs.rmSync(fakeHome, { recursive: true, force: true });
     fs.rmSync(workspace, { recursive: true, force: true });
   });
 
-  function seedSession(uuid: string): void {
-    const dir = path.join(fakeHome, '.claude', 'projects', encodeClaudeProjectDir(canonical));
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `${uuid}.jsonl`), `{"sessionId":"${uuid}"}\n`);
-  }
-
-  it('resumes the derived id (no role injection) when its jsonl exists', () => {
-    const id = architectSessionId(canonical, 'reviewer');
-    seedSession(id);
-    const { args, env } = resolveArchitectLaunch({ workspacePath: workspace, name: 'reviewer', baseArgs: [] });
-    expect(args).toEqual(['--resume', id]);
+  it('resumes the stored id (no role injection) and echoes it back', () => {
+    const { args, env, sessionId } = resolveArchitectLaunch({
+      workspacePath: workspace, name: 'reviewer', baseArgs: [], storedSessionId: 'stored-abc',
+    });
+    expect(args).toEqual(['--resume', 'stored-abc']);
     expect(env).toEqual({});
+    expect(sessionId).toBe('stored-abc');
   });
 
-  it('spawns fresh with --session-id at the derived id when no jsonl exists', () => {
-    const id = architectSessionId(canonical, 'reviewer');
-    const { args } = resolveArchitectLaunch({ workspacePath: workspace, name: 'reviewer', baseArgs: [] });
+  it('mints a fresh --session-id when there is no stored id, and returns it', () => {
+    const { args, sessionId } = resolveArchitectLaunch({
+      workspacePath: workspace, name: 'reviewer', baseArgs: [], storedSessionId: null,
+    });
     expect(args).not.toContain('--resume');
     expect(args).toContain('--session-id');
-    expect(args[args.indexOf('--session-id') + 1]).toBe(id);
+    // The id passed to --session-id is exactly the one returned for persistence.
+    expect(args[args.indexOf('--session-id') + 1]).toBe(sessionId);
+    expect(sessionId).toMatch(UUID_RE);
   });
 
-  it('does NOT consult discovery without discoveryFallback (sibling-safe)', () => {
-    // A legacy random-id session exists in the shared cwd, but a sibling must not
-    // attach to it — only its own derived id (which has no jsonl) → fresh.
-    seedSession('legacy-random-id');
-    const id = architectSessionId(canonical, 'reviewer');
-    const { args } = resolveArchitectLaunch({ workspacePath: workspace, name: 'reviewer', baseArgs: [] });
-    expect(args).not.toContain('--resume');
-    expect(args[args.indexOf('--session-id') + 1]).toBe(id);
+  it('mints distinct ids across fresh spawns', () => {
+    const a = resolveArchitectLaunch({ workspacePath: workspace, name: 'a', baseArgs: [] }).sessionId;
+    const b = resolveArchitectLaunch({ workspacePath: workspace, name: 'b', baseArgs: [] }).sessionId;
+    expect(a).not.toBe(b);
   });
 
-  it('with discoveryFallback, resumes a legacy session when no derived jsonl exists (lone main)', () => {
-    seedSession('legacy-random-id');
-    const { args, env } = resolveArchitectLaunch({
-      workspacePath: workspace, name: 'main', baseArgs: [], discoveryFallback: true,
-    });
-    expect(args).toEqual(['--resume', 'legacy-random-id']);
-    expect(env).toEqual({});
-  });
-
-  it('prefers the derived id over the discovery fallback when both exist', () => {
-    const id = architectSessionId(canonical, 'main');
-    seedSession('legacy-random-id');
-    seedSession(id);
+  it('preserves baseArgs ahead of the session flags', () => {
     const { args } = resolveArchitectLaunch({
-      workspacePath: workspace, name: 'main', baseArgs: [], discoveryFallback: true,
+      workspacePath: workspace, name: 'main', baseArgs: ['--foo'], storedSessionId: 'x',
     });
-    expect(args).toEqual(['--resume', id]);
+    expect(args).toEqual(['--foo', '--resume', 'x']);
   });
 
-  it('main resumes its OWN derived id in a multi-architect workspace (discoveryFallback off)', () => {
-    // With siblings present, launchInstance calls the helper WITHOUT
-    // discoveryFallback; main must resume its derived id (the recovery the old
-    // safeToResume guard had to skip), never a sibling's session.
-    const mainId = architectSessionId(canonical, 'main');
-    seedSession(mainId);
-    seedSession(architectSessionId(canonical, 'reviewer'));
-    const { args } = resolveArchitectLaunch({ workspacePath: workspace, name: 'main', baseArgs: [] });
-    expect(args).toEqual(['--resume', mainId]);
+  it('two siblings with distinct stored ids resume independently (no cross-attachment)', () => {
+    const reviewer = resolveArchitectLaunch({ workspacePath: workspace, name: 'reviewer', baseArgs: [], storedSessionId: 'rev-1' });
+    const casa = resolveArchitectLaunch({ workspacePath: workspace, name: 'casa', baseArgs: [], storedSessionId: 'casa-1' });
+    expect(reviewer.args).toEqual(['--resume', 'rev-1']);
+    expect(casa.args).toEqual(['--resume', 'casa-1']);
   });
 
-  it('two siblings in the same cwd resolve to distinct derived ids (no cross-attachment)', () => {
-    const reviewerId = architectSessionId(canonical, 'reviewer');
-    const casaId = architectSessionId(canonical, 'casa');
-    seedSession(reviewerId);
-    seedSession(casaId);
-    const reviewer = resolveArchitectLaunch({ workspacePath: workspace, name: 'reviewer', baseArgs: [] });
-    const casa = resolveArchitectLaunch({ workspacePath: workspace, name: 'casa', baseArgs: [] });
-    expect(reviewer.args).toEqual(['--resume', reviewerId]);
-    expect(casa.args).toEqual(['--resume', casaId]);
-    expect(reviewerId).not.toBe(casaId);
+  it('no-session harness → plain fresh, returns null sessionId', () => {
+    // Force a Codex architect harness (no `session` capability) via config.
+    fs.mkdirSync(path.join(workspace, '.codev'), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, '.codev', 'config.json'),
+      JSON.stringify({ shell: { architect: 'codex' } }),
+    );
+    const { args, sessionId } = resolveArchitectLaunch({
+      workspacePath: workspace, name: 'main', baseArgs: ['--base'], storedSessionId: null,
+    });
+    expect(args).not.toContain('--session-id');
+    expect(args).not.toContain('--resume');
+    expect(sessionId).toBeNull();
   });
 });

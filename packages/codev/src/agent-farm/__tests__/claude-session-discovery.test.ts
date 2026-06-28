@@ -9,14 +9,10 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, utimesSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { existsSync } from 'node:fs';
-
 import {
   encodeClaudeProjectDir,
   findLatestSessionId,
-  architectSessionId,
-  sessionFileExists,
-  deleteArchitectSessionFile,
+  captureRunningClaudeSession,
 } from '../utils/claude-session-discovery.js';
 
 describe('encodeClaudeProjectDir', () => {
@@ -101,40 +97,12 @@ describe('findLatestSessionId', () => {
   });
 });
 
-describe('architectSessionId (Issue #832)', () => {
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-
-  it('produces a canonical-format UUIDv5 (version 5, RFC-4122 variant)', () => {
-    const id = architectSessionId('/Users/x/repo', 'main');
-    expect(id).toMatch(UUID_RE);
-  });
-
-  it('is deterministic — same (workspace, name) → same id', () => {
-    const a = architectSessionId('/Users/x/repo', 'reviewer');
-    const b = architectSessionId('/Users/x/repo', 'reviewer');
-    expect(a).toBe(b);
-  });
-
-  it('is name-sensitive — different names in the SAME cwd derive different ids', () => {
-    // This is the core disambiguation: siblings share a cwd but must not collide.
-    const main = architectSessionId('/Users/x/repo', 'main');
-    const reviewer = architectSessionId('/Users/x/repo', 'reviewer');
-    const casa = architectSessionId('/Users/x/repo', 'casa');
-    expect(new Set([main, reviewer, casa]).size).toBe(3);
-  });
-
-  it('is cwd-sensitive — same name in different workspaces derive different ids', () => {
-    const a = architectSessionId('/Users/x/repo-a', 'main');
-    const b = architectSessionId('/Users/x/repo-b', 'main');
-    expect(a).not.toBe(b);
-  });
-});
-
-describe('sessionFileExists / deleteArchitectSessionFile (Issue #832)', () => {
+describe('captureRunningClaudeSession (Issue #832)', () => {
   let fakeHome: string;
+  const ws = '/Users/x/repo';
 
   beforeEach(() => {
-    fakeHome = mkdtempSync(join(tmpdir(), 'csd-arch-'));
+    fakeHome = mkdtempSync(join(tmpdir(), 'csd-cap-'));
     mkdirSync(join(fakeHome, '.claude', 'projects'), { recursive: true });
   });
 
@@ -142,45 +110,32 @@ describe('sessionFileExists / deleteArchitectSessionFile (Issue #832)', () => {
     rmSync(fakeHome, { recursive: true, force: true });
   });
 
-  function seedSession(absPath: string, uuid: string): string {
-    const dir = join(fakeHome, '.claude', 'projects', encodeClaudeProjectDir(absPath));
+  function seedSession(uuid: string): void {
+    const dir = join(fakeHome, '.claude', 'projects', encodeClaudeProjectDir(ws));
     mkdirSync(dir, { recursive: true });
-    const file = join(dir, `${uuid}.jsonl`);
-    writeFileSync(file, `{"sessionId":"${uuid}"}\n`, 'utf-8');
-    return file;
+    writeFileSync(join(dir, `${uuid}.jsonl`), `{"sessionId":"${uuid}"}\n`, 'utf-8');
   }
 
-  it('sessionFileExists is true only when the jsonl is present', () => {
-    const ws = '/Users/x/repo';
-    const id = architectSessionId(ws, 'reviewer');
-    expect(sessionFileExists(ws, id, { homeDir: fakeHome })).toBe(false);
-    seedSession(ws, id);
-    expect(sessionFileExists(ws, id, { homeDir: fakeHome })).toBe(true);
+  // The current process holds no jsonl under the FAKE home open, so lsof
+  // correlation finds nothing — exercising the sole-architect fallback and the
+  // multi-architect "no match" path deterministically. (The lsof success path is
+  // integration-tested manually at the dev-approval gate.)
+
+  it('sole architect: falls back to newest-by-mtime when process correlation finds nothing', () => {
+    seedSession('only-session');
+    const id = captureRunningClaudeSession(ws, process.pid, { soleArchitect: true, homeDir: fakeHome });
+    expect(id).toBe('only-session');
   });
 
-  it('deleteArchitectSessionFile removes the derived jsonl', () => {
-    const ws = '/Users/x/repo';
-    const id = architectSessionId(ws, 'reviewer');
-    const file = seedSession(ws, id);
-    expect(existsSync(file)).toBe(true);
-    deleteArchitectSessionFile(ws, 'reviewer', { homeDir: fakeHome });
-    expect(existsSync(file)).toBe(false);
+  it('multiple architects: returns null when process correlation finds nothing (no mtime guess)', () => {
+    seedSession('ambiguous-a');
+    seedSession('ambiguous-b');
+    const id = captureRunningClaudeSession(ws, process.pid, { soleArchitect: false, homeDir: fakeHome });
+    expect(id).toBeNull();
   });
 
-  it('deleteArchitectSessionFile is a no-op when the jsonl is absent', () => {
-    expect(() =>
-      deleteArchitectSessionFile('/Users/x/repo', 'reviewer', { homeDir: fakeHome }),
-    ).not.toThrow();
-  });
-
-  it('deleteArchitectSessionFile only removes the named architect’s session', () => {
-    const ws = '/Users/x/repo';
-    const reviewerId = architectSessionId(ws, 'reviewer');
-    const mainId = architectSessionId(ws, 'main');
-    const reviewerFile = seedSession(ws, reviewerId);
-    const mainFile = seedSession(ws, mainId);
-    deleteArchitectSessionFile(ws, 'reviewer', { homeDir: fakeHome });
-    expect(existsSync(reviewerFile)).toBe(false);
-    expect(existsSync(mainFile)).toBe(true);
+  it('returns null for a sole architect with no session on disk', () => {
+    const id = captureRunningClaudeSession(ws, process.pid, { soleArchitect: true, homeDir: fakeHome });
+    expect(id).toBeNull();
   });
 });
