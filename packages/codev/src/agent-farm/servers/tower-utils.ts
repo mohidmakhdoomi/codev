@@ -13,6 +13,11 @@ import type { ServerResponse } from 'node:http';
 import type { RateLimitEntry } from './tower-types.js';
 import { loadRolePrompt, type RoleConfig } from '../utils/roles.js';
 import { getArchitectHarness } from '../utils/config.js';
+import {
+  architectSessionId,
+  sessionFileExists,
+  findLatestSessionId,
+} from '../utils/claude-session-discovery.js';
 
 // ============================================================================
 // Rate Limiting
@@ -191,6 +196,63 @@ export function buildArchitectArgs(baseArgs: string[], workspacePath: string): {
     args: [...baseArgs, ...injection.args],
     env: injection.env,
   };
+}
+
+/**
+ * Issue #832: resolve the args/env to launch (or revive) an architect, choosing
+ * between resuming a prior Claude conversation and starting fresh.
+ *
+ * Decision order:
+ *   1. The architect's DERIVED session id (a pure function of `(workspacePath,
+ *      name)`) already has a jsonl on disk → `--resume <derivedId>`, skip role
+ *      injection (the saved conversation already holds the role/system prompt).
+ *   2. `discoveryFallback` set (lone `main` only — see callers) and #830's
+ *      newest-by-mtime discovery finds a prior session → `--resume <legacyId>`.
+ *      This preserves recovery of `main`'s existing (pre-#832, random-id)
+ *      conversation in single-architect workspaces with no context loss.
+ *   3. Otherwise → fresh: create the session AT the derived id via
+ *      `--session-id <derivedId>`, with role injection, so the next revival finds
+ *      it and resumes.
+ *
+ * `discoveryFallback` is only safe where the cwd unambiguously belongs to one
+ * architect (a lone `main`). Siblings share the workspace cwd, so discovery
+ * cannot attribute a jsonl to them — they always use the derived id.
+ *
+ * `workspacePath` is canonicalised (realpath) so the derived id and the
+ * existence check key off the same physical path Claude uses as its cwd,
+ * regardless of whether the caller passed a symlinked path.
+ */
+export function resolveArchitectLaunch(opts: {
+  workspacePath: string;
+  name: string;
+  baseArgs: string[];
+  discoveryFallback?: boolean;
+}): { args: string[]; env: Record<string, string> } {
+  const { workspacePath, name, baseArgs, discoveryFallback } = opts;
+
+  let canonical = workspacePath;
+  try {
+    canonical = fs.realpathSync(workspacePath);
+  } catch {
+    // Path may not exist yet (fresh) — fall back to the raw value.
+  }
+
+  const derivedId = architectSessionId(canonical, name);
+  if (sessionFileExists(canonical, derivedId)) {
+    return { args: [...baseArgs, '--resume', derivedId], env: {} };
+  }
+
+  if (discoveryFallback) {
+    const legacyId = findLatestSessionId(canonical);
+    if (legacyId) {
+      return { args: [...baseArgs, '--resume', legacyId], env: {} };
+    }
+  }
+
+  // Fresh: build the role-injected args, then pin the new session to the derived
+  // id so subsequent revivals resume it. `--session-id` precedes the injection
+  // flags by being part of baseArgs.
+  return buildArchitectArgs([...baseArgs, '--session-id', derivedId], workspacePath);
 }
 
 /**
