@@ -131,3 +131,30 @@ Implemented stateless derived-id design + #830 discovery fallback for lone main.
 Build: green. Tests: full suite 3390 passed / 48 skipped / 0 failed. 25 in
 tower-utils.test.ts, helper tests in claude-session-discovery.test.ts.
 Verified --session-id/--resume control empirically earlier. Pushing for dev-approval.
+
+## Implement phase — PIVOT to DB approach (architect feedback at dev-approval gate)
+Architect reviewed the stateless derived-id impl and called it fragile. Empirically
+confirmed claude REQUIRES a valid UUID for --session-id ("Invalid session ID. Must be
+a valid UUID." for a plain string), which is why derivation had to fabricate one.
+Pivoting to: persist the REAL session id in the architect DB row.
+
+Decisions locked:
+- Column is AGENT-NEUTRAL `session_id` (NOT claude_session_id) — codex-as-architect
+  is a live path (#1059). Resume mechanics route through HarnessProvider.session
+  (newSessionArgs/resumeArgs/captureRunningSession); claude implements, others omit
+  → graceful fresh spawn. No claude flags in Tower code.
+- Spawn: generate crypto.randomUUID() → --session-id → store in session_id. New
+  architects restart-safe from birth. Revive: read stored id → --resume.
+- DROP discoverLatestSession / all jsonl discovery from spawn/revive path.
+- removeArchitect: row delete clears id (no jsonl prune). Simpler than derived.
+- Backfill: `afx workspace stop --capture-sessions` (TRANSITIONAL, one-off, removable
+  later — architect confirmed no long-term role). Captures live ids of pre-#832
+  running architects before kill so start resumes them. Tower-side
+  captureArchitectSessions before deactivateWorkspace. Disambiguation: single-arch →
+  findLatestSessionId (no lsof); multi-arch → lsof process-subtree → open jsonl.
+  shannon workspace has 5 live architects → multi-arch capture genuinely needed.
+- DB: session_id column + migration v12 (additive ALTER, idempotent). No COALESCE
+  (no partial updates — caller graph verified earlier).
+
+NEXT: revert the stateless implementation commits, implement DB+capture approach.
+Plan rewritten + committed. Code still holds stateless impl pending revert.
