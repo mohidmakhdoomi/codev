@@ -48,8 +48,13 @@ Net: 16 source/test files, **+976 / -65**. (The plan/thread/status files are pro
 ## Test Results
 
 - `pnpm build` (core + codev): ✓ pass
-- `pnpm test` (from the worktree): ✓ **3389 passed | 48 skipped**
-- New tests cover: `session_id` round-trip + removal-clears-id + two-siblings-distinct (`state.test.ts`); migration v12 adds the column with legacy rows reading back null; `resolveArchitectLaunch` resume / fresh / no-session / sibling-isolation (`tower-utils.test.ts`); `CLAUDE_HARNESS.session` produces `--session-id` / `--resume` while Codex/Gemini omit it (`harness.test.ts`); `findLatestSessionId` discovery (`claude-session-discovery.test.ts`).
+- `pnpm test` (from the worktree): ✓ **3397 passed | 48 skipped** (+8 tests added during the review-phase consult fix below)
+- New tests cover:
+  - `state.test.ts` — `session_id` round-trip (main + sibling), legacy row reads back null, removal-clears-id, two-siblings-distinct.
+  - `pir-832-migration.test.ts` (**added at review**) — migration **v12** adds `session_id` to a real post-v11 architect table; a pre-v12 row reads back null; idempotent re-run; duplicate-column swallowed on fresh-install schema.
+  - `tower-utils.test.ts` — `resolveArchitectLaunch` resume / fresh / no-session / sibling-isolation; **`resolveArchitectRestart`** (added at review) — the shellper restart-bake wiring: stored id → `--resume` (no role injection), legacy/no-row → fresh, per-name lookup with no cross-attachment.
+  - `harness.test.ts` — `CLAUDE_HARNESS.session` produces `--session-id` / `--resume` while Codex/Gemini omit it.
+  - `claude-session-discovery.test.ts` — `findLatestSessionId` discovery.
 - Manual verification (human, at `dev-approval`): reviewed the running worktree; the live `--all --dry-run` backfill run (before that path was removed) empirically confirmed the root-cause finding that drove the final design (Claude holds no jsonl fd open).
 
 ## Architecture Updates
@@ -62,6 +67,7 @@ Routed one lesson to **COLD** `codev/resources/lessons-learned.md` → Architect
 
 ## Things to Look At During PR Review
 
+- **3-way consultation disposition (single advisory pass).** Codex returned `REQUEST_CHANGES` (HIGH): the plan promised migration-v12 and `tower-terminals` restart tests that hadn't landed, and the review overstated migration coverage. Claude returned `APPROVE` (HIGH), flagging the same migration gap as "acceptable." **Disposition — addressed, not rebutted:** added `pir-832-migration.test.ts` (real post-v11 table → v12 ALTER, legacy-null, idempotent, duplicate-column-swallow) and extracted the duplicated restart-bake glue at both `tower-terminals.ts` sites into `resolveArchitectRestart` (one tested helper) with `resolveArchitectRestart` unit tests (stored-id resume, legacy/no-row fresh, per-name no-cross-attachment). The review's Test Results were corrected. PIR is single-pass — these additions were **not** independently re-reviewed, so the `pr`-gate reviewer is the final check on them.
 - **The design pivot (`274fbdc4`) is the crux.** The branch history builds and then *removes* an entire transitional backfill layer. Confirm the net diff contains no orphans: no `scripts/backfill-architect-sessions.ts`, no `setArchitectSessionId` (state/route/TowerClient), no `captureRunningClaudeSession`/`extractSessionIdFromCmdline`. A repo-wide grep for those symbols should be empty outside `dist/`.
 - **The `getArchitects() <= 1` check changed meaning, not just location.** In #830 it gated resume *wholesale* (the bug: any sibling → main spawns fresh). Now it gates *only* the legacy jsonl fallback in `launchInstance`; stored-UUID resume applies regardless of architect count. The issue's acceptance criterion literally says "remove the guard" — we kept a `<= 1` check but repurposed it. Worth a careful read of `tower-instances.ts` `launchInstance` against the plan's Revision note 2 to confirm the reinterpretation is sound.
 - **Self-migration on first revival.** `resolveArchitectLaunch` returns the resolved `sessionId`, and every caller persists it. A legacy sole-`main` row therefore resumes via jsonl-discovery *and* gains a stored id in the same revival. Confirm the persist happens on the resume branch, not only the fresh branch.

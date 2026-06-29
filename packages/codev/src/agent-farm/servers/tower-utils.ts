@@ -14,6 +14,7 @@ import type { RateLimitEntry } from './tower-types.js';
 import crypto from 'node:crypto';
 import { loadRolePrompt, type RoleConfig } from '../utils/roles.js';
 import { getArchitectHarness } from '../utils/config.js';
+import { getArchitectByName } from '../state.js';
 
 // ============================================================================
 // Rate Limiting
@@ -239,6 +240,30 @@ export function resolveArchitectLaunch(opts: {
   const sessionId = crypto.randomUUID();
   const built = buildArchitectArgs([...baseArgs, ...harness.session.newSessionArgs(sessionId)], workspacePath);
   return { ...built, sessionId, resumed: false };
+}
+
+/**
+ * Issue #832: resolve launch args for an architect being auto-restarted by its
+ * shellper (claude crash / reconnect). Reads the architect's stored conversation
+ * `session_id` from its state.db row and hands it to `resolveArchitectLaunch`, so an
+ * in-process crash revives the SAME conversation (the silent-context-loss path)
+ * instead of spawning fresh. A legacy row with no stored id resolves to a fresh
+ * session (then self-heals on its next cold revival via the spawn-path persist).
+ *
+ * Unlike the cold-spawn `main` path, there is **no** jsonl-discovery fallback here —
+ * the restart sites rely solely on the stored id (matching #830, which never resumed
+ * at restart). Both shellper restart-bake sites in `tower-terminals.ts` call this so
+ * the read→resolve wiring lives in one tested place. Returns `resolveArchitectLaunch`'s
+ * result plus the `storedSessionId` the caller uses for the "Resuming…" log line.
+ */
+export function resolveArchitectRestart(
+  workspacePath: string,
+  architectName: string,
+  baseArgs: string[],
+): { args: string[]; env: Record<string, string>; sessionId: string | null; resumed: boolean; storedSessionId: string | null } {
+  const storedSessionId = getArchitectByName(workspacePath, architectName)?.sessionId ?? null;
+  const resolved = resolveArchitectLaunch({ workspacePath, name: architectName, baseArgs, storedSessionId });
+  return { ...resolved, storedSessionId };
 }
 
 /**

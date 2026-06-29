@@ -292,3 +292,24 @@ Changes:
   Files/Risks/Test sections updated; removed backfill/lsof/capture references.
 Core builds, codev builds, full suite 3389 passed | 48 skipped (was 3402; -13 removed
 backfill tests). Net simpler than both the original plan and the prior branch state.
+
+## Review-phase consult fix: REQUEST_CHANGES from Codex addressed
+3-way consult (single advisory pass): Codex REQUEST_CHANGES (HIGH) — plan promised
+migration-v12 + tower-terminals restart tests that didn't land; review overstated
+migration coverage. Claude APPROVE (HIGH), same migration gap noted as "acceptable".
+Gemini skipped (agy unavailable). Verified the finding against files: confirmed no
+migration test and tower-terminals.test.ts untouched. Addressed (not rebutted):
+- Added pir-832-migration.test.ts: real post-v11 architect table -> v12 ALTER adds
+  session_id; pre-v12 row reads null; idempotent; duplicate-column swallowed on
+  fresh-install schema. (4 tests, house inline-replication convention.)
+- Extracted the duplicated restart-bake glue at both tower-terminals.ts sites
+  (getArchitectByName(...).sessionId ?? null -> resolveArchitectLaunch) into one
+  helper resolveArchitectRestart in tower-utils.ts; rewired both sites; removed now-
+  unused resolveArchitectLaunch/getArchitectByName imports from tower-terminals.
+- Added resolveArchitectRestart unit tests (tower-utils.test.ts, vi.mock state.js
+  getArchitectByName): stored id -> --resume no role injection; legacy/no-row -> fresh
+  --session-id; per-name lookup no cross-attachment. (4 tests.)
+- Corrected review Test Results (was overstating migration coverage) + documented the
+  disposition in "Things to Look At".
+Build green; full suite 3397 passed | 48 skipped (+8). PIR single-pass: not re-reviewed
+-> escalate to human at pr gate.

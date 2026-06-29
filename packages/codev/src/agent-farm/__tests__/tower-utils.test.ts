@@ -19,7 +19,16 @@ import {
   isTempDirectory,
   serveStaticFile,
   resolveArchitectLaunch,
+  resolveArchitectRestart,
 } from '../servers/tower-utils.js';
+
+// resolveArchitectRestart reads the architect row via getArchitectByName; mock just
+// that one export so the restart-bake wiring is testable without a live state.db.
+vi.mock('../state.js', async (importOriginal) => {
+  const actual = (await importOriginal()) as typeof import('../state.js');
+  return { ...actual, getArchitectByName: vi.fn() };
+});
+import { getArchitectByName } from '../state.js';
 
 describe('tower-utils', () => {
   describe('isRateLimited', () => {
@@ -271,5 +280,54 @@ describe('resolveArchitectLaunch (Issue #832)', () => {
     expect(args).not.toContain('--resume');
     expect(sessionId).toBeNull();
     expect(resumed).toBe(false);
+  });
+});
+
+describe('resolveArchitectRestart (Issue #832 — shellper auto-restart bake)', () => {
+  let workspace: string;
+  const mockGet = vi.mocked(getArchitectByName);
+
+  beforeEach(() => {
+    // Bare temp dir → default Claude harness (has the session capability).
+    workspace = fs.mkdtempSync(path.join(tmpdir(), 'rar-ws-'));
+    mockGet.mockReset();
+  });
+
+  afterEach(() => {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  });
+
+  it('revives the architect\'s stored session id on restart (--resume, no role injection)', () => {
+    mockGet.mockReturnValue({ name: 'reviewer', cmd: 'claude', startedAt: 'x', sessionId: 'stored-xyz' } as never);
+    const { args, env, resumed, storedSessionId } = resolveArchitectRestart(workspace, 'reviewer', []);
+    expect(mockGet).toHaveBeenCalledWith(workspace, 'reviewer');
+    expect(args).toEqual(['--resume', 'stored-xyz']);
+    expect(env).toEqual({});
+    expect(resumed).toBe(true);              // drives the "Resuming…" log line at the bake sites
+    expect(storedSessionId).toBe('stored-xyz');
+  });
+
+  it('falls back to a fresh session when the row has no stored id (legacy / self-heal)', () => {
+    mockGet.mockReturnValue({ name: 'reviewer', cmd: 'claude', startedAt: 'x' } as never); // no sessionId
+    const { args, resumed, storedSessionId } = resolveArchitectRestart(workspace, 'reviewer', []);
+    expect(storedSessionId).toBeNull();
+    expect(resumed).toBe(false);
+    expect(args).toContain('--session-id');  // minted fresh, with role injection
+    expect(args).not.toContain('--resume');
+  });
+
+  it('falls back to a fresh session when no architect row exists', () => {
+    mockGet.mockReturnValue(undefined as never);
+    const { args, resumed, storedSessionId } = resolveArchitectRestart(workspace, 'ghost', []);
+    expect(storedSessionId).toBeNull();
+    expect(resumed).toBe(false);
+    expect(args).not.toContain('--resume');
+  });
+
+  it('looks each architect up by its own name — no cross-attachment between siblings', () => {
+    mockGet.mockImplementation((_ws: string, name: string) =>
+      (name === 'reviewer' ? { sessionId: 'rev-1' } : { sessionId: 'casa-1' }) as never);
+    expect(resolveArchitectRestart(workspace, 'reviewer', []).args).toEqual(['--resume', 'rev-1']);
+    expect(resolveArchitectRestart(workspace, 'casa', []).args).toEqual(['--resume', 'casa-1']);
   });
 });
