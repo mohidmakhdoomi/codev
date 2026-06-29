@@ -1,7 +1,7 @@
 id: bugfix-1113
 title: consult-type-integration-no-wa
 protocol: bugfix
-phase: investigate
+phase: fix
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -11,4 +11,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-06-29T00:07:25.656Z'
-updated_at: '2026-06-29T00:07:25.657Z'
+updated_at: '2026-06-29T00:26:39.591Z'
