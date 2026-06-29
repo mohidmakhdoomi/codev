@@ -222,3 +222,19 @@ architects via `SELECT DISTINCT workspace_path FROM terminal_sessions WHERE
 type='architect'` (precise set; getKnownWorkspacePaths()/listWorkspaces() exist but
 are broader). Refactored to backfillWorkspace(ws, dryRun) + per-workspace printResult;
 --all composes with --dry-run. Smoke-tested --all --dry-run in isolated DB (0 ws).
+
+## Backfill reworked to Option B: Tower-mediated writes (architect chose B)
+Architect: the script reaching around Tower into a cwd-derived state.db is the smell.
+Implemented Option B — single-writer via the owning Tower:
+- NEW narrow route PUT /api/workspaces/:ws/architects/:name/session-id ->
+  handleSetArchitectSessionId -> setArchitectSessionId (targeted UPDATE). Transitional.
+- NEW TowerClient.setArchitectSessionId(ws,name,id).
+- Script rewritten as a thin Tower client: listWorkspaces (--all) / getWorkspaceStatus
+  (live architect name+pid) + captureRunningClaudeSession (lsof) + the setter. NO
+  state.db/config/global.db imports -> no cwd coupling, runs from anywhere.
+- Dropped the stored-sessionId skip (would've needed session_id on the WIRE
+  ArchitectState in @cluesmith/codev-types — two distinct ArchitectState types!).
+  Instead captures every live architect; non-Claude -> null -> skip; already-#832 ->
+  same id -> idempotent re-write.
+Build green, suite 3394 passed, script type-checks. Plan + Files-to-Change updated.
+Note: like all variants, only works once Tower runs #832 code (endpoint must exist).
