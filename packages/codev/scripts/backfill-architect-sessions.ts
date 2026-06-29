@@ -23,12 +23,17 @@
  * `--dry-run` performs the full (read-only) resolution and prints the session id
  * each architect WOULD get, but issues no write. Re-run without it to apply.
  *
- * Disambiguation of siblings sharing one cwd: `captureRunningClaudeSession`
- * correlates each architect's process subtree to the session file it holds OPEN
- * (exact), with a newest-by-mtime fallback only when the workspace has a single
- * architect. A non-Claude architect has no `~/.claude` jsonl, so capture returns
- * null and it is skipped. Capture is Claude-specific and transitional, so it lives
- * here + in `claude-session-discovery.ts`, NOT in any permanent interface.
+ * Disambiguation of siblings sharing one cwd: `captureRunningClaudeSession` reads
+ * the session id straight off each architect's command line (Claude is launched
+ * with `--session-id <uuid>` or `--resume <uuid>`), which is exact even when
+ * siblings share a cwd — newest-by-mtime cannot tell their jsonls apart, and Claude
+ * holds no jsonl open to correlate by fd. A pre-#832 architect spawned with no
+ * session-id arg is recoverable only when it is the sole architect (newest-by-mtime
+ * fallback); a pre-#832 SIBLING returns null here and is skipped — it self-heals on
+ * its first #832 revival (spawns fresh once, then stores and resumes its id). A
+ * non-Claude architect likewise has no id and is skipped. Capture is Claude-specific
+ * and transitional, so it lives here + in `claude-session-discovery.ts`, NOT in any
+ * permanent interface.
  *
  * Requires Tower to be running (the architects must be alive to capture from), and
  * Tower must be on the #832 code (older Tower lacks the write endpoint).
@@ -79,7 +84,14 @@ async function backfillWorkspace(client: Client, workspacePath: string, dryRun: 
       continue;
     }
     if (!liveId) {
-      skipped.push(`${name} (no resumable Claude session found)`);
+      // No `--session-id`/`--resume` on the process: a pre-#832 spawn. A sole
+      // architect would have been recovered by the mtime fallback, so reaching
+      // here with siblings means the id is unrecoverable from the process — it
+      // self-heals on the next revival. A non-Claude architect has no id at all.
+      const reason = soleArchitect
+        ? 'no Claude session id found (non-Claude, or no conversation on disk)'
+        : 'pre-#832 sibling, id not on its command line — will self-heal on next revival';
+      skipped.push(`${name} (${reason})`);
       continue;
     }
 

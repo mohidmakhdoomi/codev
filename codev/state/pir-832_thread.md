@@ -245,3 +245,21 @@ addArchitect, both tower-terminals restart-bake sites) log INFO
 "Resuming architect '<name>' session <id8>… in <ws>" when a stored id is resumed.
 Makes Phase 1/2 of e2e test eyeball-able from Tower logs. Tests assert resumed flag.
 Build green, suite 3394 passed.
+
+## Reworked backfill capture: read session id off the command line (architect feedback)
+Architect asked why the backfill couldn't identify sibling sessions. Root cause
+captured empirically against live agents: Claude does NOT hold its session jsonl
+open (lsof -p <claude> | grep .claude -> empty; lsof +D over the project dir -> no
+holder), so the lsof process->open-file correlation found nothing — every prior
+"success" was purely the sole-architect newest-by-mtime fallback. The dashboard/
+VSCode identify architects by terminalId (PTY handle), NOT by Claude conversation
+UUID, so that mechanism can't be reused for --resume.
+Fix: capture now reads --session-id/--resume <uuid> straight off the process
+subtree's command line (exact, works for siblings sharing a cwd; the id is on the
+claude proc space-separated AND on the shellper parent inside the JSON args blob).
+Removed the lsof path (+ basename import). Kept the sole-architect mtime fallback
+for legacy fresh spawns; a pre-#832 SIBLING returns null and self-heals on its first
+#832 revival. Extracted pure extractSessionIdFromCmdline(cmdline) helper + 8 unit
+tests (space form, resume form, shellper JSON form, =form, lowercasing, bare-prose
+null, no-flag null, glued-token null). Backfill skip message now explains WHY per
+case. Build green; claude-session-discovery suite 20 passed.
