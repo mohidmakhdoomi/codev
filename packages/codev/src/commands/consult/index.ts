@@ -16,6 +16,7 @@ import { query as claudeQuery } from '@anthropic-ai/claude-agent-sdk';
 import { Codex } from '@openai/codex-sdk';
 import { readCodevFile, findWorkspaceRoot } from '../../lib/skeleton.js';
 import { resolveDefaultBranch } from '../../lib/default-branch.js';
+import { loadConfig } from '../../lib/config.js';
 import { getResolver, GitRefResolver, type ArtifactResolver } from '../porch/artifacts.js';
 import { MetricsDB } from './metrics.js';
 import { extractUsage, extractReviewText, type SDKResultLike, type UsageData } from './usage-extractor.js';
@@ -73,6 +74,11 @@ export interface ConsultOptions {
   // Defaults to the PR's headRefName when --issue resolves to a PR.
   // Closes #777 Defect A.
   branch?: string;
+  // Integration-branch override for `--type integration` (#1113). When set,
+  // the integration diff is computed locally as a three-dot diff anchored on
+  // this base (origin/<base>...origin/<head>) instead of `gh pr diff` (the
+  // PR's host-recorded base). Falls back to config `consult.integrationBranch`.
+  base?: string;
   // Porch flags
   output?: string;
   planPhase?: string;
@@ -1188,6 +1194,91 @@ KEY_ISSUES: [List of critical issues if any, or "None"]`;
 }
 
 /**
+ * Resolve the integration-branch base override for `--type integration`.
+ *
+ * Precedence: explicit `--base <ref>` flag → `consult.integrationBranch` from
+ * the merged config (.codev/config.json etc.) → undefined (default behavior,
+ * `gh pr diff`). Returns a bare branch name (e.g. `ci`), which the local-diff
+ * machinery prefixes with `origin/`. (#1113)
+ */
+function resolveIntegrationBase(workspaceRoot: string, baseOption?: string): string | undefined {
+  if (baseOption) return baseOption;
+  try {
+    return loadConfig(workspaceRoot).consult?.integrationBranch;
+  } catch {
+    // A malformed config shouldn't block the default `gh pr diff` path.
+    return undefined;
+  }
+}
+
+/**
+ * Compute the PR diff locally as a three-dot diff anchored on a base-branch
+ * override, instead of relying on the host's `gh pr diff` (which is anchored on
+ * the PR's host-recorded base). Mirrors the `--type impl` machinery: fetch both
+ * refs, verify both resolve, then `git diff origin/<base>...origin/<head>`.
+ *
+ * Three-dot (`A...B`) is `git diff $(git merge-base A B) B` — the meaningful
+ * change set, excluding commits the base branch picked up since head forked.
+ * This is what keeps the diff small in a `ci`-ahead-of-`main` topology (#1113).
+ *
+ * Fails loudly with an actionable `git fetch` hint if either ref is
+ * unresolvable — it never silently degrades to reviewing the checked-out tree
+ * (the cmap-3 degradation guarded against in the impl path). Refs are passed as
+ * single argv elements (execFileSync) so branch names with shell metacharacters
+ * can't break out (#777 cmap-3 follow-up).
+ */
+function computeLocalPRDiff(
+  workspaceRoot: string,
+  baseRef: string,
+  headRef: string,
+): { diff: string; changedFiles: string[] } {
+  // Fetch both refs so the diff has fresh local tracking refs. Fetch failures
+  // are non-fatal (a locally-cached copy may suffice) but surfaced as warnings.
+  for (const ref of [baseRef, headRef]) {
+    try {
+      execFileSync('git', ['fetch', 'origin', ref], { cwd: workspaceRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (err) {
+      const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr).trim() : '';
+      console.error(
+        `Warning: \`git fetch origin ${ref}\` failed; proceeding with any locally-cached copy. ` +
+        `Stale refs may produce misleading diffs.` +
+        (stderr ? ` Underlying: ${stderr}` : '')
+      );
+    }
+  }
+
+  // Verify both refs resolve up front. Without this, a later `git diff` against
+  // a missing ref would fail and (in buildImplQuery's case) silently drop the
+  // reviewer into "explore the filesystem" — degrading to whatever's checked
+  // out locally. Crash explicitly with an actionable message instead.
+  try {
+    for (const ref of [baseRef, headRef]) {
+      execFileSync('git', ['rev-parse', '--verify', `origin/${ref}`], {
+        cwd: workspaceRoot,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    }
+  } catch (err) {
+    throw new Error(
+      `Cannot compute integration diff scope (origin/${baseRef}...origin/${headRef}). ` +
+      `Ensure both refs are fetched: \`git fetch origin ${baseRef} ${headRef}\`. ` +
+      `Underlying error: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  const range = `origin/${baseRef}...origin/${headRef}`;
+  const diff = execFileSync('git', ['diff', range], {
+    cwd: workspaceRoot,
+    encoding: 'utf-8',
+    maxBuffer: 50 * 1024 * 1024,
+  });
+  const nameOnly = execFileSync('git', ['diff', '--name-only', range], { cwd: workspaceRoot, encoding: 'utf-8' });
+  const changedFiles = nameOnly.trim().split('\n').filter(Boolean);
+  return { diff, changedFiles };
+}
+
+/**
  * Build query for PR review.
  *
  * Writes the full PR diff to a temp file and points the model at the path
@@ -1198,10 +1289,15 @@ KEY_ISSUES: [List of critical issues if any, or "None"]`;
  *
  * The temp file is left in place for the model to read during consultation.
  * OS /tmp rotation handles cleanup.
+ *
+ * When `localDiff` is provided (the `--type integration` base-override path,
+ * #1113), its diff and changed-file list are used instead of `gh pr diff` /
+ * the host-recorded base — PR info and comments are still fetched normally.
  */
-function buildPRQuery(prId: string): string {
+function buildPRQuery(prId: string, localDiff?: { diff: string; changedFiles: string[] }): string {
   const prData = fetchPRData(prId);
-  const diff = fetchPRDiff(prId);
+  const diff = localDiff ? localDiff.diff : fetchPRDiff(prId);
+  const changedFiles = localDiff ? localDiff.changedFiles : prData.changedFiles;
 
   // Private-per-user dir to avoid world-readable /tmp diffs + symlink/clobber
   // races: consultSandboxDir() is a fresh mkdtempSync dir owned by us (and the
@@ -1217,7 +1313,7 @@ function buildPRQuery(prId: string): string {
   return composePRQueryText({
     prId,
     info: prData.info,
-    changedFiles: prData.changedFiles,
+    changedFiles,
     comments: prData.comments,
     diffPath,
     diffBytes,
@@ -1569,6 +1665,14 @@ function resolveBuilderQuery(workspaceRoot: string, type: string, options: Consu
     case 'integration': {
       const prId = findPRForCurrentBranch(workspaceRoot);
       console.error(`PR: #${prId} (integration review)`);
+      const base = resolveIntegrationBase(workspaceRoot, options.base);
+      if (base) {
+        // Head is the builder's current branch (== the PR's head by construction).
+        const headRef = execSync('git branch --show-current', { cwd: workspaceRoot, encoding: 'utf-8' }).trim();
+        console.error(`Integration base: origin/${base} (three-dot diff vs origin/${headRef})`);
+        const localDiff = computeLocalPRDiff(workspaceRoot, base, headRef);
+        return buildPRQuery(prId, localDiff);
+      }
       return buildPRQuery(prId);
     }
 
@@ -1740,6 +1844,12 @@ function resolveArchitectQuery(workspaceRoot: string, type: string, options: Con
     case 'integration': {
       const pr = findPRForIssue(workspaceRoot, issueId);
       console.error(`PR: #${pr.number} (integration review)`);
+      const base = resolveIntegrationBase(workspaceRoot, options.base);
+      if (base) {
+        console.error(`Integration base: origin/${base} (three-dot diff vs origin/${pr.headRefName})`);
+        const localDiff = computeLocalPRDiff(workspaceRoot, base, pr.headRefName);
+        return buildPRQuery(String(pr.number), localDiff);
+      }
       return buildPRQuery(String(pr.number));
     }
 
@@ -1774,6 +1884,15 @@ export async function consult(options: ConsultOptions): Promise<void> {
   // --protocol without --type
   if (options.protocol && !options.type) {
     throw new Error('--protocol requires --type. Example: consult -m gemini --protocol spir --type spec');
+  }
+
+  // --base is an integration-review-only override (#1113). Reject it on other
+  // types rather than silently ignoring it (fail-fast).
+  if (options.base && options.type !== 'integration') {
+    throw new Error(
+      '--base only applies to --type integration.\n' +
+      'It overrides the integration diff base, e.g. consult -m codex --type integration --issue 42 --base ci'
+    );
   }
 
   // Neither mode specified
@@ -1910,6 +2029,8 @@ export {
   buildPlanQuery as _buildPlanQuery,
   buildPRQuery as _buildPRQuery,
   composePRQueryText as _composePRQueryText,
+  computeLocalPRDiff as _computeLocalPRDiff,
+  resolveIntegrationBase as _resolveIntegrationBase,
   computePersistentOutputPath as _computePersistentOutputPath,
   MODEL_CONFIGS as _MODEL_CONFIGS,
   MODEL_ALIASES as _MODEL_ALIASES,

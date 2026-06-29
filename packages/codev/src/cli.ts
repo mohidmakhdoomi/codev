@@ -176,6 +176,7 @@ program
   .option('-t, --type <type>', 'Review type: spec, plan, impl, pr, phase, integration')
   .option('--issue <number>', 'Issue number (required from architect context)')
   .option('--branch <ref>', 'Read spec/plan artifacts from this git ref instead of the local workspace (e.g. `origin/builder/777-foo` or `builder/777-foo`). Defaults to the PR\'s head branch when --issue resolves to a PR. Note: this only changes the artifact source — for --type impl, the diff scope is always the PR\'s head→base, not the --branch ref.')
+  .option('--base <ref>', 'For --type integration: anchor the diff on this base branch (e.g. `ci`), computed locally as `git diff origin/<base>...origin/<head>` (three-dot). Use in repos with a long-lived integration branch ahead of the default branch so the review sees only the PR\'s actual change, not the whole integration-over-trunk delta. Defaults to config `consult.integrationBranch`; unset → the PR\'s host base (`gh pr diff`).')
   .option('--output <path>', 'Write consultation output to file (used by porch)')
   .option('--plan-phase <phase>', 'Scope review to a specific plan phase (used by porch)')
   .option('--context <path>', 'Context file with previous iteration feedback (used by porch)')
@@ -215,6 +216,7 @@ program
         type: options.type,
         issue: options.issue,
         branch: options.branch,
+        base: options.base,
         output: options.output,
         planPhase: options.planPhase,
         context: options.context,
