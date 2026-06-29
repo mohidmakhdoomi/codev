@@ -34,3 +34,9 @@ example), so blast radius is contained.
 
 Open UX question for the dev-approval gate: submit-on-Enter vs Cmd/Ctrl+Enter (with Enter
 = newline for multi-line). Leaning Cmd/Ctrl+Enter to submit + Esc to cancel + buttons.
+
+### Plan committed → plan-approval gate pending (2026-06-30)
+Plan written to `codev/plans/1107-preview-inline-comment-composer.md`, committed and
+pushed (907ed56b). `porch check` + `porch done` passed; `plan-approval` gate is now
+**pending**. Waiting for human review. Implementation does not start until the gate is
+approved.
