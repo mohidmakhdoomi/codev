@@ -208,3 +208,10 @@ Architect: capture is backfill-only, shouldn't pollute the permanent agent inter
   (permanent capability = "is this agent resumable at all"). Non-Claude → no ~/.claude
   jsonl → null → skipped anyway.
 Build green, suite 3394 passed.
+
+## Added --dry-run to backfill script (architect request)
+backfill-architect-sessions.ts now accepts --dry-run: performs the full read-only
+resolution (lsof/findLatestSessionId are read-only anyway) and prints the exact
+session id each architect WOULD get, skipping only the setArchitectSessionId write.
+Banner: "[DRY RUN — no changes written]" + "Would capture (...)". Smoke-tested via
+tsx in an isolated test DB (empty workspace early-returns; flag parsed cleanly).
