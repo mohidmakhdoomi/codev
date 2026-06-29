@@ -682,8 +682,9 @@ export async function doctor(): Promise<number> {
       const architectCmd = Array.isArray(shell?.architect)
         ? (shell.architect as string[]).join(' ')
         : (shell?.architect as string ?? '');
-      const isOpencode = architectHarness === 'opencode' ||
-        (architectCmd && detectHarnessFromCommand(architectCmd) === 'opencode');
+      const resolvedHarness = architectHarness ||
+        (architectCmd ? detectHarnessFromCommand(architectCmd) : undefined);
+      const isOpencode = resolvedHarness === 'opencode';
       if (isOpencode) {
         console.log('');
         console.log(chalk.yellow('  ⚠') + ' OpenCode is configured as architect shell — this is unsupported.');
@@ -695,6 +696,25 @@ export async function doctor(): Promise<number> {
           issue: 'OpenCode configured as architect shell (unsupported)',
           recommendation: 'Set shell.architect to "claude --dangerously-skip-permissions" in .codev/config.json',
         });
+      } else if (resolvedHarness === 'gemini') {
+        // Issue #929: gemini is builder-only; the Gemini CLI is retiring (#778),
+        // so it is no longer supported as an architect.
+        console.log('');
+        console.log(chalk.yellow('  ⚠') + ' Gemini is configured as architect shell — this is unsupported.');
+        console.log(chalk.yellow('    ') + 'The Gemini CLI is retiring (#778); gemini is supported for builders, not architects.');
+        console.log(chalk.yellow('    ') + 'Use codex or claude for the architect (e.g., "codex" or "claude --dangerously-skip-permissions").');
+        warnings++;
+        warningDetails.push({
+          name: 'Shell config',
+          issue: 'Gemini configured as architect shell (builder-only, not architect)',
+          recommendation: 'Set shell.architect to "codex" or "claude --dangerously-skip-permissions" in .codev/config.json',
+        });
+      } else if (resolvedHarness === 'codex') {
+        // Issue #929: codex is a supported architect (config-driven).
+        console.log('');
+        console.log(chalk.green('  ✓') + ' codex is configured as architect shell — supported.');
+        console.log(chalk.gray('    ') + 'Conversation resume is Claude-main-only; codex architects relaunch fresh with role injection.');
+        console.log(chalk.gray('    ') + 'Select the architect harness via .codev/config.json (shell.architect / shell.architectHarness).');
       }
     }
   } catch {

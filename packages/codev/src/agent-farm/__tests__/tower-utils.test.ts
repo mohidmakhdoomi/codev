@@ -207,6 +207,7 @@ describe('tower-utils', () => {
       }
     });
   });
+
 });
 
 describe('resolveArchitectLaunch (Issue #832)', () => {

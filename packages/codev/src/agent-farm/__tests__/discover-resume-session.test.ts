@@ -1,7 +1,12 @@
 /**
  * Tests for the discoverResumeSession helper — the spawn-CLI wrapper that
- * gates findLatestSessionId on the --resume flag and surfaces a user-facing
- * log line. (Issues #829 / #831.)
+ * gates the harness's buildResume on the --resume flag and surfaces a
+ * user-facing log line. (Issues #829 / #831 / #929.)
+ *
+ * Issue #929: resume is now gated on the builder harness, not the Claude
+ * session store directly. Only the Claude harness implements buildResume;
+ * codex/gemini return undefined even when a stale Claude jsonl exists (the
+ * regression guard against `codex --resume <claude-uuid>` crash-loops).
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -11,6 +16,7 @@ import { join } from 'node:path';
 
 import { discoverResumeSession } from '../commands/spawn.js';
 import { encodeClaudeProjectDir } from '../utils/claude-session-discovery.js';
+import { CLAUDE_HARNESS, CODEX_HARNESS, GEMINI_HARNESS } from '../utils/harness.js';
 
 // discoverResumeSession reads from $HOME via os.homedir() through
 // findLatestSessionId. Override the env var for the duration of the test so
@@ -54,7 +60,7 @@ describe('discoverResumeSession', () => {
     const worktree = '/Users/x/repo/.builders/spir-1';
     writeSession(projectsRoot, worktree, 'should-not-pick', 1_700_000_000_000);
     pinHome(fakeHome, () => {
-      expect(discoverResumeSession(worktree, false)).toBeUndefined();
+      expect(discoverResumeSession(worktree, false, CLAUDE_HARNESS)).toBeUndefined();
     });
   });
 
@@ -62,23 +68,46 @@ describe('discoverResumeSession', () => {
     const worktree = '/Users/x/repo/.builders/spir-2';
     writeSession(projectsRoot, worktree, 'should-not-pick', 1_700_000_000_000);
     pinHome(fakeHome, () => {
-      expect(discoverResumeSession(worktree, undefined)).toBeUndefined();
+      expect(discoverResumeSession(worktree, undefined, CLAUDE_HARNESS)).toBeUndefined();
     });
   });
 
   it('returns undefined when isResume is true but no jsonl exists', () => {
     const worktree = '/Users/x/repo/.builders/spir-3-no-jsonl';
     pinHome(fakeHome, () => {
-      expect(discoverResumeSession(worktree, true)).toBeUndefined();
+      expect(discoverResumeSession(worktree, true, CLAUDE_HARNESS)).toBeUndefined();
     });
   });
 
-  it('returns the newest jsonl UUID when isResume is true and jsonls exist', () => {
+  it('returns the newest jsonl resume object (claude) when isResume is true and jsonls exist', () => {
     const worktree = '/Users/x/repo/.builders/pir-1661';
     writeSession(projectsRoot, worktree, 'older-uuid', 1_500_000_000_000);
     writeSession(projectsRoot, worktree, 'newest-uuid', 1_700_000_000_000);
     pinHome(fakeHome, () => {
-      expect(discoverResumeSession(worktree, true)).toBe('newest-uuid');
+      const resume = discoverResumeSession(worktree, true, CLAUDE_HARNESS);
+      expect(resume).toEqual({
+        sessionId: 'newest-uuid',
+        args: ['--resume', 'newest-uuid'],
+        scriptFragment: "--resume 'newest-uuid'",
+      });
+    });
+  });
+
+  it('returns undefined for codex even when a stale Claude jsonl exists (regression guard)', () => {
+    // The crash-loop bug: a codex builder must NOT pick up a Claude session id
+    // and build `codex --resume <claude-uuid>`. CODEX_HARNESS has no buildResume.
+    const worktree = '/Users/x/repo/.builders/pir-codex';
+    writeSession(projectsRoot, worktree, 'stale-claude-uuid', 1_700_000_000_000);
+    pinHome(fakeHome, () => {
+      expect(discoverResumeSession(worktree, true, CODEX_HARNESS)).toBeUndefined();
+    });
+  });
+
+  it('returns undefined for gemini even when a stale Claude jsonl exists (regression guard)', () => {
+    const worktree = '/Users/x/repo/.builders/pir-gemini';
+    writeSession(projectsRoot, worktree, 'stale-claude-uuid', 1_700_000_000_000);
+    pinHome(fakeHome, () => {
+      expect(discoverResumeSession(worktree, true, GEMINI_HARNESS)).toBeUndefined();
     });
   });
 
@@ -86,7 +115,7 @@ describe('discoverResumeSession', () => {
     // Negative case: isResume=false short-circuits before any filesystem
     // access happens. Tests pass even if HOME points at /nonexistent.
     pinHome('/nonexistent-home-path', () => {
-      expect(discoverResumeSession('/some/worktree', false)).toBeUndefined();
+      expect(discoverResumeSession('/some/worktree', false, CLAUDE_HARNESS)).toBeUndefined();
     });
   });
 });

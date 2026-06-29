@@ -180,13 +180,14 @@ export function buildArchitectArgs(baseArgs: string[], workspacePath: string): {
   const bundledRolesDir = path.resolve(import.meta.dirname, '../../../skeleton/roles');
   const config: RoleConfig = { codevDir, bundledRolesDir, workspaceRoot: workspacePath };
 
+  const harness = getArchitectHarness(workspacePath);
+
   const role = loadRolePrompt(config, 'architect');
   if (!role) return { args: baseArgs, env: {} };
 
   const roleFile = path.join(workspacePath, '.architect-role.md');
   fs.writeFileSync(roleFile, role.content);
 
-  const harness = getArchitectHarness(workspacePath);
   const injection = harness.buildRoleInjection(role.content, roleFile);
 
   return {

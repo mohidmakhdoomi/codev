@@ -13,6 +13,7 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { encodeWorkspacePath } from '../lib/tower-client.js';
+import { getArchitectHarness } from '../utils/config.js';
 import { loadConfig } from '../../lib/config.js';
 
 const execAsync = promisify(exec);
@@ -34,7 +35,6 @@ import {
   DEFAULT_ARCHITECT_NAME,
 } from '../utils/architect-name.js';
 import { setArchitect, setArchitectByName, getArchitects, getArchitectByName } from '../state.js';
-import { findLatestSessionId } from '../utils/claude-session-discovery.js';
 
 // ============================================================================
 // Dependency interface
@@ -471,20 +471,32 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         // stored on the architect row below so the next restart resumes it. A
         // state.db read failure degrades to a fresh spawn rather than aborting.
         //
-        // Legacy bridge: a row from before #832 has no stored id. For it, fall back
-        // to #830's jsonl-discovery — but ONLY when main is the sole architect, since
-        // a cwd shared with siblings makes newest-by-mtime ambiguous (the old
-        // `safeToResume` guard, now scoped to just this fallback rather than gating
-        // resume wholesale). Stored-UUID resume applies regardless of architect
-        // count, so main resumes in multi-architect workspaces too once it has an id.
-        // resolveArchitectLaunch persists whatever it resolves back onto the row, so
-        // a jsonl-discovered id self-migrates into the stored-UUID path on this same
-        // revival — no separate backfill step needed.
+        // Legacy bridge (#830/#929): a row from before #832 has no stored id. For it,
+        // fall back to harness-gated jsonl-discovery — but ONLY when main is the sole
+        // architect, since a cwd shared with siblings makes newest-by-mtime ambiguous
+        // (the old `safeToResume` guard, now scoped to just this fallback rather than
+        // gating resume wholesale). Going through `harness.buildResume` keeps discovery
+        // harness-gated: only Claude has a jsonl store, so a codex/gemini architect
+        // returns null → fresh, avoiding the stale-jsonl `--resume` crash-loop (#929).
+        // Stored-UUID resume applies regardless of architect count, so main resumes in
+        // multi-architect workspaces once it has an id. resolveArchitectLaunch persists
+        // whatever it resolves, so a discovered id self-migrates into the stored-UUID
+        // path on this same revival — no separate backfill step.
+        // The stored id and the discovery fallback are independent recovery
+        // sources, so a failed read of one must not disable the other (e.g. a
+        // state.db hiccup reading the row shouldn't suppress sole-architect
+        // discovery). Each gets its own try.
         let storedSessionId: string | null = null;
         try {
-          storedSessionId = getArchitectByName(resolvedPath, DEFAULT_ARCHITECT_NAME)?.sessionId
-            ?? (getArchitects(resolvedPath).length <= 1 ? findLatestSessionId(workspacePath) : null);
-        } catch { /* state.db unreadable — spawn fresh */ }
+          storedSessionId = getArchitectByName(resolvedPath, DEFAULT_ARCHITECT_NAME)?.sessionId ?? null;
+        } catch { /* state.db unreadable — fall through to discovery */ }
+        if (!storedSessionId) {
+          try {
+            if (getArchitects(resolvedPath).length <= 1) {
+              storedSessionId = getArchitectHarness(workspacePath).buildResume?.(workspacePath)?.sessionId ?? null;
+            }
+          } catch { /* discovery unavailable — spawn fresh */ }
+        }
         const { args: cmdArgs, env: harnessEnv, sessionId: mainSessionId, resumed } = resolveArchitectLaunch({
           workspacePath,
           name: DEFAULT_ARCHITECT_NAME,

@@ -735,11 +735,13 @@ function installHarnessWorktreeFiles(
 /**
  * Start a terminal session for a builder.
  *
- * When `resumeSessionId` is provided, the launch script invokes
- * `claude --resume <uuid>` instead of a fresh prompt+role invocation. The
- * saved Claude conversation contains the system prompt / role context
- * already, so role injection and the initial prompt are intentionally
- * skipped on that path.
+ * When `resume` is provided, the launch script invokes the harness's resume
+ * form (e.g. `claude --resume <uuid>`) via the pre-escaped `scriptFragment`
+ * instead of a fresh prompt+role invocation. The saved conversation contains
+ * the system prompt / role context already, so role injection and the initial
+ * prompt are intentionally skipped on that path. Only the Claude harness
+ * produces a resume object (Issue #929); codex/gemini pass `undefined` here
+ * and take the fresh role-injection path.
  */
 export async function startBuilderSession(
   config: Config,
@@ -749,21 +751,22 @@ export async function startBuilderSession(
   prompt: string,
   roleContent: string | null,
   roleSource: string | null,
-  resumeSessionId?: string,
+  resume?: { sessionId: string; scriptFragment: string },
 ): Promise<{ terminalId: string }> {
   logger.info('Creating terminal session...');
 
   const scriptPath = resolve(worktreePath, '.builder-start.sh');
   let scriptContent: string;
 
-  if (resumeSessionId) {
-    // Resume path: load the prior Claude conversation by UUID. No prompt file,
-    // no role injection — both are already part of the saved conversation.
-    logger.info(`Resuming Claude session ${resumeSessionId.slice(0, 8)}…`);
+  if (resume) {
+    // Resume path: load the prior conversation via the harness-provided,
+    // shell-escaped resume fragment. No prompt file, no role injection — both
+    // are already part of the saved conversation.
+    logger.info(`Resuming session ${resume.sessionId.slice(0, 8)}…`);
     scriptContent = `#!/bin/bash
 cd "${worktreePath}"
 while true; do
-  ${baseCmd} --resume "${resumeSessionId}"
+  ${baseCmd} ${resume.scriptFragment}
   echo ""
   echo "Agent exited. Restarting in 2 seconds... (Ctrl+C to quit)"
   sleep 2
