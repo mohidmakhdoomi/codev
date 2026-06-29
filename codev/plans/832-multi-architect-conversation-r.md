@@ -115,44 +115,54 @@ REPLACE` can't wipe it — no COALESCE needed.
 sibling, post-#832) gets a generated id stored at spawn, so it is restart-safe from
 birth, deterministically, with zero on-disk guessing.
 
-### Backfill: standalone `scripts/backfill-architect-sessions.ts` (transitional)
+### Backfill: `scripts/backfill-architect-sessions.ts` — a thin Tower client (transitional)
 
-> **Transition-only, OUT of the CLI/API.** This bridge exists solely to carry
-> architects already running under pre-#832 code across the upgrade. It is a
-> **standalone script**, deliberately NOT an `afx` subcommand, REST route, or client
-> method — it must not pollute the day-to-day CLI/API surface for a one-off need.
-> Architects spawned under #832 store their id at spawn, so this only ever does work
-> during the upgrade window and is a candidate for deletion afterward.
+> **Transition-only, no day-to-day CLI surface.** This bridge carries architects
+> already running under pre-#832 code across the upgrade. It is **not** an `afx`
+> subcommand. It IS a thin client over the running Tower: it reads via `TowerClient`
+> and writes through ONE narrow, transitional Tower endpoint (a pure `session_id`
+> setter — not capture/orchestration). Both the script and that endpoint are deleted
+> once the upgrade is done. Architects spawned under #832 store their id at spawn, so
+> this only does real work during the upgrade window (it re-writes the same id
+> idempotently for already-#832 architects).
+
+**Why a Tower endpoint and not a direct `state.db` write (Option B over A).** The
+authoritative `state.db` is owned by the single running Tower; its file location is
+cwd-derived (`getConfig()` → `findWorkspaceRoot(cwd)`). A script writing it directly
+both (a) reaches around the owning process's open SQLite and (b) opens the *wrong*
+DB unless run from exactly the right directory. Routing through Tower makes the
+**owner** do the write, eliminates the cwd footgun, and lets the script run from
+anywhere (it talks to Tower's port, never the filesystem).
 
 The only architects without a stored id are those **already running under pre-#832
 code** (their conversations exist on disk, but Tower never recorded the id). Run the
 script by hand, while they are still alive, before a planned restart/reboot:
 
 ```
-# preview first (read-only — shows the id each architect WOULD get, writes nothing):
-pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [workspacePath] --dry-run
-# or preview EVERY workspace that has architects, in one go:
+# preview every workspace (read-only — shows the id each architect WOULD get):
 pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts --all --dry-run
-# then apply (single workspace, or --all):
+# apply (all workspaces, or a single workspace path):
+pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts --all
 pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [workspacePath]
 ```
 
-- **Targets:** a `workspacePath` arg, or `--all` to process every workspace that
-  currently has architects (enumerated via `SELECT DISTINCT workspace_path FROM
-  terminal_sessions WHERE type='architect'` — the precise backfill set, no Tower HTTP
-  needed; `getKnownWorkspacePaths()` / `TowerClient.listWorkspaces()` exist too but
-  include workspaces with no architects), else the current directory.
-- The script reuses **library functions only** — no new API surface. It reads the
-  workspace's architects via `getArchitects(ws)`, looks up each one's recorded pid
-  from `global.db.terminal_sessions` (by `role_id` = name), resolves the live id by
-  calling `captureRunningClaudeSession(...)` **directly** (the capture is Claude-
-  specific and transitional, so it is NOT on the `HarnessProvider` interface), and
-  writes it with the targeted `setArchitectSessionId(ws, name, id)` (a `session_id`-
-  only `UPDATE`, so it can't clobber other fields and is safe to run while Tower is live).
-- Architects that already have an id are skipped; architects whose harness has no
-  `session` capability (Codex/Gemini/OpenCode → not resumable) are skipped.
-- **Disambiguation (the crux):** the script maps each architect to *its own*
-  conversation by process, not by mtime, via `captureRunningClaudeSession(ws, pid, { soleArchitect })`:
+- **Tower-client only** — no `state.db`/`global.db`/`config` access, so no cwd
+  coupling; runs from anywhere. Enumerate via `TowerClient.listWorkspaces()` (`--all`);
+  per workspace, `TowerClient.getWorkspaceStatus(ws)` gives the live architect
+  terminals (`architectName` + `pid`). It captures each one's live id with
+  `captureRunningClaudeSession(ws, pid, { soleArchitect })` (`lsof`/`ps` — local OS
+  introspection, the one non-HTTP bit), then writes via
+  `TowerClient.setArchitectSessionId(ws, name, id)`.
+- **The new endpoint:** `PUT /api/workspaces/:ws/architects/:name/session-id` →
+  `setArchitectSessionId(ws, name, id)` server-side (targeted `session_id`-only
+  UPDATE). Narrow setter, no capture/orchestration in Tower. Marked transitional.
+- It does **not** need the stored `session_id`: it captures every live architect and
+  writes the result. A non-Claude architect has no `~/.claude` jsonl → capture returns
+  null → skipped. An already-#832 architect resolves to its existing id → idempotent
+  re-write. (This avoids putting `session_id` on the wire `ArchitectState` in
+  `@cluesmith/codev-types`.)
+- **Disambiguation (the crux):** maps each architect to *its own* conversation by
+  process, not by mtime, via `captureRunningClaudeSession(ws, pid, { soleArchitect })`:
   - **Single architect** → `findLatestSessionId(ws)` (unambiguous; no `lsof`).
   - **Multiple architects** → correlate the architect's process subtree to the
     `~/.claude/projects/<encoded-cwd>/*.jsonl` it holds **open** (`lsof`; `/proc/<pid>/fd`
@@ -228,21 +238,26 @@ approach's clean win over the derived scheme, which needed an explicit file prun
   prune from `removeArchitect`.
 - `packages/codev/src/agent-farm/servers/tower-terminals.ts` — both restart-bake sites
   read stored id + resume via the helper.
-- **Backfill script (no CLI/API)**: `packages/codev/scripts/backfill-architect-sessions.ts`
-  — standalone `tsx` script reusing library functions (`getArchitects`,
-  `getArchitectHarness`, `captureRunningClaudeSession`, `setArchitectSessionId`) and
-  reading pids from `global.db.terminal_sessions`. No `afx` subcommand, no REST route, no client
-  method.
+- **Backfill (transitional, no `afx` CLI surface)**:
+  - `packages/codev/scripts/backfill-architect-sessions.ts` — thin `tsx` client over the
+    running Tower (`TowerClient` reads + the new setter), capturing live ids with
+    `captureRunningClaudeSession`. No DB/config imports → no cwd coupling.
+  - `packages/codev/src/agent-farm/servers/tower-routes.ts` — `PUT
+    /api/workspaces/:ws/architects/:name/session-id` → `setArchitectSessionId` (narrow
+    transitional setter; `handleSetArchitectSessionId`).
+  - `packages/core/src/tower-client.ts` — `setArchitectSessionId(ws, name, id)` client method.
 - DB layer: `db/schema.ts`, `db/index.ts` (v12), `db/types.ts`, `types.ts`, `state.ts`
-  (setters write `session_id`; new targeted `setArchitectSessionId`).
+  (setters write `session_id`; new targeted `setArchitectSessionId`, called by the route).
 - Tests — `__tests__/state.test.ts` (round-trip + removal-clears), a migration test,
   `__tests__/tower-utils.test.ts` (harness-routed decision), the harness unit test, and
   a capture test (single-architect `findLatestSessionId` path; multi-architect skip /
   graceful-degrade behavior — the `lsof` subtree-correlation is integration-tested
   manually at the `dev-approval` gate).
 
-**Not touched**: `codev-skeleton/`; builders / `spawn.ts`; `global.db`; Tower routing /
-messaging / SSE; porch / gates.
+**Not touched**: `codev-skeleton/`; builders / `spawn.ts`; `global.db`; Tower
+messaging / SSE; porch / gates; the wire `ArchitectState` in `@cluesmith/codev-types`
+(the script avoids needing `session_id` over the wire). One narrow transitional Tower
+route IS added (the backfill setter, above).
 
 ## Blast Radius & Rollout Control
 
@@ -318,12 +333,14 @@ Unit tests (run from the worktree: `pnpm --filter @cluesmith/codev test`):
 - **Backfill state helper** (`state.test.ts`): `setArchitectSessionId` updates only the
   `session_id` column and is a no-op for a missing row.
 
-Manual (reviewer at `dev-approval`):
-- **Backfill end-to-end**: in a multi-architect workspace, run
-  `pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts` while
-  the architects are alive, then `afx workspace stop` + `afx workspace start`; confirm
-  main + a named sibling each resume their own conversation and the sibling keeps its
-  brief. (Exercises the `lsof` subtree correlation that unit tests can't.)
+Manual (reviewer at `dev-approval`, **post-deploy** — Tower must be on the #832 code
+for the new write endpoint to exist):
+- **Backfill end-to-end**: with a multi-architect workspace's architects alive, run
+  `... backfill-architect-sessions.ts --all --dry-run` and confirm it lists each
+  architect → a resolved id; then run without `--dry-run`, `afx workspace stop` +
+  `afx workspace start`; confirm main + a named sibling each resume their own
+  conversation and the sibling keeps its brief. (Exercises the `lsof` subtree
+  correlation + the Tower setter route that unit tests can't.)
 - Normal multi-architect `stop` + `start` for a workspace whose architects were spawned
   under the new code (ids stored at spawn) — confirm resume with no backfill step.
 - `afx workspace remove-architect reviewer` then re-add; confirm it starts fresh.

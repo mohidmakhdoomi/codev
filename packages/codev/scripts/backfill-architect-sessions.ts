@@ -1,157 +1,118 @@
 /**
  * Transitional one-off backfill (Issue #832).
  *
- * Records the live conversation `session_id` of each running architect that
- * doesn't already have one stored, so the architect resumes its prior
- * conversation on the next `afx workspace start` (instead of coming back fresh).
+ * Records the live conversation `session_id` of each running architect, so the
+ * architect resumes its prior conversation on the next `afx workspace start`
+ * (instead of coming back fresh). Only needed for architects spawned BEFORE #832
+ * shipped — those spawned under #832 store their id at spawn automatically (for
+ * them this re-writes the same id idempotently).
  *
- * Only needed for architects spawned BEFORE #832 shipped: architects spawned
- * under #832 store their id at spawn automatically. This is an upgrade bridge,
- * deliberately kept OUT of the `afx` CLI and the Tower REST API — run it by hand
- * once, while the architects are still alive, before a planned restart/reboot:
+ * Deliberately kept OUT of the `afx` CLI. It is a thin client over the **running
+ * Tower**, which owns the authoritative `state.db`: it reads via `TowerClient` and
+ * writes through one narrow, transitional Tower endpoint (PUT
+ * `/api/workspaces/:ws/architects/:name/session-id`). It never opens a database
+ * file, so there is no cwd dependency — run it from anywhere:
  *
  *   pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [workspacePath] [--all] [--dry-run]
  *
  * Target selection:
- *   - a `workspacePath` argument (the workspace root activated with `afx workspace
- *     start`), or
- *   - `--all` to backfill every workspace that currently has architects (enumerated
- *     from `global.db.terminal_sessions`), or
+ *   - a `workspacePath` argument (the workspace root, as Tower knows it), or
+ *   - `--all` to process every workspace Tower currently has, or
  *   - neither → the current directory.
  *
- * Pass `--dry-run` to PREVIEW: it performs the full (read-only) resolution and
- * prints the exact session id each architect WOULD get, but writes nothing. Re-run
- * without `--dry-run` to apply.
+ * `--dry-run` performs the full (read-only) resolution and prints the session id
+ * each architect WOULD get, but issues no write. Re-run without it to apply.
  *
- * How it disambiguates siblings sharing one cwd: `captureRunningClaudeSession`
+ * Disambiguation of siblings sharing one cwd: `captureRunningClaudeSession`
  * correlates each architect's process subtree to the session file it holds OPEN
  * (exact), with a newest-by-mtime fallback only when the workspace has a single
- * architect (unambiguous). Only architects whose harness can resume a session at
- * all (`harness.session`) are considered; the rest are skipped — and a non-Claude
- * agent has no `~/.claude` jsonl, so capture would return null for it anyway. It
- * writes only the `session_id` column (a targeted UPDATE), so it is safe to run
- * while Tower is live.
+ * architect. A non-Claude architect has no `~/.claude` jsonl, so capture returns
+ * null and it is skipped. Capture is Claude-specific and transitional, so it lives
+ * here + in `claude-session-discovery.ts`, NOT in any permanent interface.
  *
- * Capture is Claude-specific by nature (it reads Claude's on-disk session store),
- * so it lives here + in `claude-session-discovery.ts`, NOT in the permanent
- * `HarnessProvider` interface — this is a transitional backfill, not steady state.
+ * Requires Tower to be running (the architects must be alive to capture from), and
+ * Tower must be on the #832 code (older Tower lacks the write endpoint).
  */
 
-import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-import { getArchitects, setArchitectSessionId } from '../src/agent-farm/state.js';
-import { getGlobalDb } from '../src/agent-farm/db/index.js';
-import { getArchitectHarness } from '../src/agent-farm/utils/config.js';
+import { getTowerClient } from '../src/agent-farm/lib/tower-client.js';
 import { captureRunningClaudeSession } from '../src/agent-farm/utils/claude-session-discovery.js';
-import type { DbTerminalSession } from '../src/agent-farm/servers/tower-types.js';
 
-function canonical(p: string): string {
-  try {
-    return realpathSync(p);
-  } catch {
-    return p;
-  }
-}
+type Client = ReturnType<typeof getTowerClient>;
 
 interface WorkspaceResult {
   workspacePath: string;
-  captured: string[];
+  set: string[];
   skipped: string[];
   noArchitects: boolean;
 }
 
-/** Backfill a single workspace. Read-only when `dryRun` is true. */
-function backfillWorkspace(rawWorkspace: string, dryRun: boolean): WorkspaceResult {
-  const workspacePath = canonical(rawWorkspace);
-  const captured: string[] = [];
+async function backfillWorkspace(client: Client, workspacePath: string, dryRun: boolean): Promise<WorkspaceResult> {
+  const set: string[] = [];
   const skipped: string[] = [];
 
-  const architects = getArchitects(workspacePath);
-  if (architects.length === 0) {
-    return { workspacePath, captured, skipped, noArchitects: true };
+  const status = await client.getWorkspaceStatus(workspacePath);
+  const architectTerminals = (status?.terminals ?? []).filter((t) => t.type === 'architect');
+  if (architectTerminals.length === 0) {
+    return { workspacePath, set, skipped, noArchitects: true };
   }
 
-  // Gate on the (permanent) session capability: only architects whose agent can
-  // resume a session are worth capturing one for.
-  const resumable = !!getArchitectHarness(workspacePath).session;
+  const soleArchitect = architectTerminals.length <= 1;
 
-  // Map architect name -> its recorded root pid (shellper pid for shellper-backed
-  // sessions, else the agent pid). The agent process is at or below this pid.
-  const pidByName = new Map<string, number>();
-  const rows = getGlobalDb()
-    .prepare("SELECT * FROM terminal_sessions WHERE workspace_path = ? AND type = 'architect'")
-    .all(workspacePath) as DbTerminalSession[];
-  for (const r of rows) {
-    const pid = r.shellper_pid ?? r.pid;
-    if (r.role_id && pid) pidByName.set(r.role_id, pid);
-  }
-
-  const soleArchitect = architects.length <= 1;
-
-  for (const a of architects) {
-    if (a.sessionId) {
-      // Already recorded (spawned under #832, or a prior backfill run).
+  for (const t of architectTerminals) {
+    const name = t.architectName;
+    if (!name) {
+      skipped.push('<unnamed architect terminal>');
       continue;
     }
-    if (!resumable) {
-      skipped.push(`${a.name} (agent harness has no resumable sessions)`);
-      continue;
-    }
-    const pid = pidByName.get(a.name);
-    if (!pid) {
-      skipped.push(`${a.name} (no running process found)`);
+    if (!t.pid) {
+      skipped.push(`${name} (no live process)`);
       continue;
     }
 
     let liveId: string | null = null;
     try {
-      liveId = captureRunningClaudeSession(workspacePath, pid, { soleArchitect });
+      liveId = captureRunningClaudeSession(workspacePath, t.pid, { soleArchitect });
     } catch (err) {
-      skipped.push(`${a.name} (capture error: ${(err as Error).message})`);
+      skipped.push(`${name} (capture error: ${(err as Error).message})`);
       continue;
     }
     if (!liveId) {
-      skipped.push(`${a.name} (could not resolve a session)`);
+      skipped.push(`${name} (no resumable Claude session found)`);
       continue;
     }
 
     if (!dryRun) {
-      setArchitectSessionId(workspacePath, a.name, liveId);
+      const res = await client.setArchitectSessionId(workspacePath, name, liveId);
+      if (!res.ok) {
+        skipped.push(`${name} (write failed: ${res.error ?? 'unknown error'})`);
+        continue;
+      }
     }
-    captured.push(`${a.name} -> ${liveId}`);
+    set.push(`${name} -> ${liveId}`);
   }
 
-  return { workspacePath, captured, skipped, noArchitects: false };
-}
-
-/** Every workspace that currently has architect terminals (the backfill targets). */
-function workspacesWithArchitects(): string[] {
-  const rows = getGlobalDb()
-    .prepare("SELECT DISTINCT workspace_path FROM terminal_sessions WHERE type = 'architect'")
-    .all() as { workspace_path: string }[];
-  return rows.map((r) => r.workspace_path);
+  return { workspacePath, set, skipped, noArchitects: false };
 }
 
 function printResult(r: WorkspaceResult, dryRun: boolean): void {
   console.log(`\nWorkspace: ${r.workspacePath}`);
   if (r.noArchitects) {
-    console.log('  No architects found.');
+    console.log('  No live architects.');
     return;
   }
-  if (r.captured.length) {
-    console.log(`  ${dryRun ? 'Would capture' : 'Captured'} (${r.captured.length}):`);
-    for (const c of r.captured) console.log(`    ${c}`);
+  if (r.set.length) {
+    console.log(`  ${dryRun ? 'Would set' : 'Set'} (${r.set.length}):`);
+    for (const s of r.set) console.log(`    ${s}`);
   }
   if (r.skipped.length) {
     console.log(`  Skipped (${r.skipped.length}):`);
     for (const s of r.skipped) console.log(`    ${s}`);
   }
-  if (!r.captured.length && !r.skipped.length) {
-    console.log('  Nothing to do — every architect already has a stored session id.');
-  }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
   const all = args.includes('--all');
@@ -162,34 +123,42 @@ function main(): void {
     process.exit(1);
   }
 
+  const client = getTowerClient();
+  if (!(await client.isRunning())) {
+    console.error('Tower is not running. Start it (and the workspaces) first — the architects must be alive to capture from.');
+    process.exit(1);
+  }
+
   const targets = all
-    ? workspacesWithArchitects()
-    : [positional ?? process.cwd()];
+    ? (await client.listWorkspaces()).map((w) => w.path)
+    : [resolve(positional ?? process.cwd())];
 
   console.log(
     `Backfill architect session ids${dryRun ? '  [DRY RUN — no changes written]' : ''}` +
-    (all ? `  (--all: ${targets.length} workspace(s) with architects)` : ''),
+    (all ? `  (--all: ${targets.length} workspace(s))` : ''),
   );
 
   if (targets.length === 0) {
-    console.log('\nNo workspaces with architects found.');
+    console.log('\nNo workspaces found.');
     return;
   }
 
-  let totalCaptured = 0;
+  let totalSet = 0;
   for (const t of targets) {
-    const result = backfillWorkspace(t, dryRun);
+    const result = await backfillWorkspace(client, t, dryRun);
+    if (all && result.noArchitects) continue; // keep --all output focused
     printResult(result, dryRun);
-    totalCaptured += result.captured.length;
+    totalSet += result.set.length;
   }
 
   if (dryRun) {
-    if (totalCaptured) {
-      console.log('\nDry run only — re-run without `--dry-run` to write these session ids.');
-    }
-  } else if (totalCaptured) {
+    if (totalSet) console.log('\nDry run only — re-run without `--dry-run` to write these session ids.');
+  } else if (totalSet) {
     console.log('\nDone. Restart/reboot, then `afx workspace start` to resume the captured conversations.');
   }
 }
 
-main();
+main().catch((err) => {
+  console.error(err instanceof Error ? err.message : err);
+  process.exit(1);
+});
