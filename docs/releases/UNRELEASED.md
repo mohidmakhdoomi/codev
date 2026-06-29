@@ -118,15 +118,54 @@ The rationale: architect creation is a workspace-orchestration event — it chan
 
 Originally the design was a nested architect tier (architect → area/phase → builder, with passive architects rendering as leaf rows). At the dev-approval gate the running tree showed three problems: it duplicated Workspace > Architects, the single-architect collapse rule introduced a layout shift on adding a second architect, and architect-tier headers competed with area/stage headers for visual hierarchy. The pivot to the flat 3-way axis resolves all three, with the honest trade that ownership becomes a button away rather than always visible per-row. The PR description and the issue body name the trade-off explicitly so it's not invisible at release time.
 
+## Codex as a first-class architect harness (PR #1059)
+
+The architect harness — the CLI Codev wraps as its long-running orchestrator process — is now selectable between `claude` (the default) and `codex` via `.codev/config.json`'s `shell.architect` / `shell.architectHarness` fields, matching the same config-driven mechanism builders have used since v2. Pick the engine that fits your workflow; both flow through the same Tower-managed PTY model with role-prompt injection and identical Spec 786 multi-architect addressing.
+
+The core fix routes session-discovery and `--resume` argument construction through a new optional `HarnessProvider.buildResume` capability so non-Claude architects no longer build invalid `<cmd> --resume <claude-uuid>` invocations against stale Claude `.jsonl` files. That class of crash-loop, hit when a stray Claude transcript existed in `~/.claude/projects/` for a workspace that wasn't running Claude, is now closed by construction: only the Claude harness implements `buildResume`, so codex spawns fresh with role injection instead.
+
+Harness auto-detection is **override-aware**: `getArchitectHarness` and `getBuilderHarness` resolve the harness from the override-aware command (`cliOverrides` → `TOWER_ARCHITECT_CMD` → `.codev/config.json`), so `--architect-cmd codex` or `TOWER_ARCHITECT_CMD=codex` with no explicit `shell.architectHarness` still resolves the codex harness, not claude. An explicit `shell.architectHarness` or `shell.builderHarness` wins over auto-detection. (Before this fix, an override launched the non-claude CLI but resolved the claude harness, which is what re-armed the resume crash-loop.)
+
+Scope notes:
+- **Gemini stays builder-only.** The Gemini CLI is retiring, so the originally-scoped gemini-architect support was removed from this PR; gemini's `GEMINI_SYSTEM_MD` builder surface is untouched. `doctor` warns when `gemini` is configured as an architect.
+- **OpenCode stays builder-only.** Same reason as v3.2.x: opencode's file-based role injection (`opencode.json` `instructions` field) requires an ephemeral worktree, which the long-running architect session doesn't have.
+- **Unrecognized override commands** (e.g. `TOWER_ARCHITECT_CMD=bash`, a wrapper script, or any custom launcher with **no** explicit `shell.architectHarness`) still default to the claude harness. Mitigation: set `shell.architectHarness` explicitly when using an unrecognized launcher command.
+
+Community contribution.
+
+## Multi-architect conversation resume: each architect keeps its own session across restarts (PR #1116)
+
+In v3.2.x, a workspace running more than one architect (`main` + one or more named siblings via `afx workspace add-architect`) silently lost conversation context for every architect on any in-process Claude crash, Tower restart, or machine reboot. The cause: every architect's session JSONL shares the same `~/.claude/projects/<encoded-workspacePath>/` directory because they all share the same cwd, and the heuristic-based "newest jsonl by mtime" lookup the resume path used couldn't disambiguate which transcript belonged to which architect. The conservative fallback was to skip resume entirely when more than one architect was registered — and that turned off `main`'s conversation resume too, just for having a sibling around.
+
+This release closes the gap by **persisting a per-architect session id in `state.db`**. The architect table now carries a `session_id` column (migration v12); at spawn time, Tower generates a UUID, passes it to claude via `--session-id <uuid>`, and stores it on the architect row. At every restart / revive site — `launchInstance` for main on workspace start, `addArchitect` for siblings, and the shellper auto-restart options bake — Tower reads the stored id and passes `--resume <uuid>`, which lands each architect in its own prior conversation, regardless of how many other architects share the cwd.
+
+What gets fixed by surface:
+
+- **Tower restart with shellper survival**: already worked (process-level reattach); still works.
+- **Claude crash inside a still-alive shellper** (the silent path): was the most insidious failure — a sibling architect could lose context mid-session, without any external event the operator could notice. Now the shellper auto-restart honours the stored session id and resumes cleanly.
+- **Machine reboot or shellper kill → workspace cold start**: was the cold-loss path. Now both `launchInstance` and `addArchitect` resume from the stored id; sibling architects come back into their own conversations, not fresh sessions.
+- **`main`'s resume in a multi-architect workspace**: the conservative `safeToResume.length <= 1` guard is gone. Adding a sibling no longer turns off `main`'s resume; each architect's id disambiguates.
+
+For specialised siblings (`reviewer`, `casa`, `demos`, etc.), the practical impact is sharper than for main. Their specialisation comes from a brief sent as their first user message after `afx workspace add-architect` — that brief lives in the conversation, not on disk. Before this release, a sibling that lost its conversation also lost its job description; it came back as a generic architect that didn't know its lane. Now the brief survives every revival surface.
+
+Legacy architect rows (created before migration v12) have no stored session id; on their first revival they fall back to a fresh spawn with role injection — exactly the v3.2.x behaviour — and then carry a stored id forward from that point. No regression; the resume only improves over time as rows get their id populated.
+
+The harness wiring is **agent-neutral**: the persisted column is `session_id` (not `claude_session_id`), and the new `HarnessProvider.session?` interface lets each harness opt in to session-resume semantics — `claude` opts in (`--session-id` to mint, `--resume` to revive); `codex` and `gemini` opt out and spawn fresh, with no schema change needed when their CLIs grow native session-resume support.
+
 ## Polish
 
 <!-- Small vscode items as bullets:
        - **<Headline>** (#<issue>, PR #<pr>). <One short paragraph of context.>
      Move out to its own ## section if the entry grows past ~3 sentences. -->
 
+- **Architect group-header click opens the architect terminal** (#1108, PR #1109). In the Agents view's architect-axis grouping mode, clicking an architect group header now opens that architect's terminal — parity with the existing builder-row click-to-open affordance. The expand-collapse chevron remains a separate target, so the two gestures don't conflict. Only the architect axis gets the affordance; stage and area group headers name no launchable entity and stay as pure containers.
+
 ## Other fixes (dashboard, porch, infrastructure)
 
 <!-- Non-vscode work that ships in the npm release. Same bullet shape as Polish. -->
+
+- **`afx send` fails loud on an unverifiable builder id instead of silently misrouting to main** (#1094, PR #1095). Previously, sending to a typo'd or stale builder id quietly fell back to the main architect — the message went to the wrong recipient with no indication to the sender. The fix returns a clear `NOT_FOUND` error naming the unrecognized id, so the sender notices the mistake immediately instead of discovering it later (or not at all).
+- **`consult --type integration` anchors the diff on the integration-branch base** (#1113, PR #1114). Integration-type reviews compare the working tree against the integration branch; the previous behaviour drifted the diff base over time as the integration branch advanced, causing scope to creep beyond what the reviewer expected. The diff base is now anchored deterministically, so consult's integration reviews stay scoped to the actual integration delta.
 
 ## Breaking changes
 

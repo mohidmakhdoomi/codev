@@ -12,6 +12,8 @@
 
 - **Add Architect is now a conversation with main, not a direct CLI call.** The `Codev: Add Architect` action (`Cmd+K A` / `Ctrl+K A` or the command palette) no longer runs `afx workspace add-architect` directly. It now asks the `main` architect — the workspace orchestrator that owns backlog triage, release decisions, and architect-roster management — to create the new architect. VS Code prompts for the name (validated against the same rule Tower enforces server-side), then dispatches the request to main via `afx send architect:main`. Main decides whether the specialisation makes sense, runs the command from its own terminal, and briefs the new architect via the first message. The handler refuses with an informational modal pointing at `afx workspace start` (or the CLI fallback `afx workspace add-architect --name <name>`) when no main session is active — the action's contract is "ask main to add", so without main there's nothing to ask. Architect creation belongs in main's lane for the same reason cross-cutting work and release decisions do; letting any developer create an unbriefed architect from the sidebar `+` leads to roster drift.
 
+- **Architect group-header click opens the architect terminal.** In the new Agents view's architect-axis grouping mode, clicking an architect group header (e.g. `MAIN`, `VSCODE`) opens that architect's terminal — parity with the existing builder-row click-to-open affordance. The expand-collapse chevron remains a separate target so the two gestures don't conflict. Only the architect axis gets the affordance; stage and area headers stay as pure grouping containers.
+
 ## [3.2.1] - 2026-06-21
 
 ### What's new
