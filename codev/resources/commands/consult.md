@@ -66,12 +66,26 @@ consult -m codex --protocol spir --type phase
 
 # Integration review
 consult -m gemini --type integration
+
+# Integration review anchored on a long-lived integration branch (#1113)
+consult -m codex --type integration --issue 42 --base ci
 ```
 
 **Options:**
 - `--protocol <name>` — Protocol: spir, aspir, air, bugfix, maintain
 - `-t, --type <type>` — Review type: spec, plan, impl, pr, phase, integration
 - `--issue <number>` — Issue number (required from architect context)
+- `--base <ref>` — **`--type integration` only.** Anchor the diff on this base branch (e.g. `ci`), computed locally as `git diff origin/<base>...origin/<head>` (three-dot, merge-base anchored). Use in repos with a long-lived integration branch ahead of the default branch so the review sees only the PR's actual change, not the whole integration-over-trunk delta. Unresolvable refs fail loudly with a `git fetch` hint (no silent fallback to the local checkout). Defaults to config `consult.integrationBranch`; with neither set, the integration review uses the PR's host-recorded base (`gh pr diff`), unchanged.
+
+**Config (`.codev/config.json`):**
+```jsonc
+{
+  "consult": {
+    // Repo-wide default base for `--type integration` (overridden by --base).
+    "integrationBranch": "ci"
+  }
+}
+```
 
 **Context resolution:**
 - **Builder context** (cwd inside `.builders/`): auto-detects project ID, spec, plan, and PR from porch state

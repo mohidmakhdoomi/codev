@@ -41,6 +41,16 @@ export interface CodevConfig {
       models?: string | string[];
     };
   };
+  consult?: {
+    /**
+     * Long-lived integration branch to anchor `consult --type integration`
+     * diffs on (e.g. `ci`). When set, integration reviews compute the diff
+     * locally as `git diff origin/<integrationBranch>...origin/<head>` instead
+     * of `gh pr diff` (the PR's host-recorded base). Overridden per-invocation
+     * by the `--base <ref>` flag. Unset → default behavior (`gh pr diff`).
+     */
+    integrationBranch?: string;
+  };
   forge?: Record<string, string | null> & { provider?: string };
   templates?: {
     dir?: string;
