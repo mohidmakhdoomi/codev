@@ -10,9 +10,14 @@
  * deliberately kept OUT of the `afx` CLI and the Tower REST API — run it by hand
  * once, while the architects are still alive, before a planned restart/reboot:
  *
- *   pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [workspacePath] [--dry-run]
+ *   pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [workspacePath] [--all] [--dry-run]
  *
- * (workspacePath defaults to the current directory.)
+ * Target selection:
+ *   - a `workspacePath` argument (the workspace root activated with `afx workspace
+ *     start`), or
+ *   - `--all` to backfill every workspace that currently has architects (enumerated
+ *     from `global.db.terminal_sessions`), or
+ *   - neither → the current directory.
  *
  * Pass `--dry-run` to PREVIEW: it performs the full (read-only) resolution and
  * prints the exact session id each architect WOULD get, but writes nothing. Re-run
@@ -48,17 +53,22 @@ function canonical(p: string): string {
   }
 }
 
-function main(): void {
-  const args = process.argv.slice(2);
-  const dryRun = args.includes('--dry-run');
-  const rawWorkspace = args.find((a) => !a.startsWith('--')) ?? process.cwd();
+interface WorkspaceResult {
+  workspacePath: string;
+  captured: string[];
+  skipped: string[];
+  noArchitects: boolean;
+}
+
+/** Backfill a single workspace. Read-only when `dryRun` is true. */
+function backfillWorkspace(rawWorkspace: string, dryRun: boolean): WorkspaceResult {
   const workspacePath = canonical(rawWorkspace);
+  const captured: string[] = [];
+  const skipped: string[] = [];
 
   const architects = getArchitects(workspacePath);
   if (architects.length === 0) {
-    console.log(`No architects found for workspace: ${workspacePath}`);
-    console.log('(Is Tower running and the workspace active? Pass the workspace path as an argument.)');
-    return;
+    return { workspacePath, captured, skipped, noArchitects: true };
   }
 
   // Gate on the (permanent) session capability: only architects whose agent can
@@ -77,8 +87,6 @@ function main(): void {
   }
 
   const soleArchitect = architects.length <= 1;
-  const captured: string[] = [];
-  const skipped: string[] = [];
 
   for (const a of architects) {
     if (a.sessionId) {
@@ -113,23 +121,73 @@ function main(): void {
     captured.push(`${a.name} -> ${liveId}`);
   }
 
-  console.log(`Backfill for workspace: ${workspacePath}${dryRun ? '  [DRY RUN — no changes written]' : ''}`);
-  if (captured.length) {
-    console.log(`\n${dryRun ? 'Would capture' : 'Captured'} (${captured.length}):`);
-    for (const c of captured) console.log(`  ${c}`);
+  return { workspacePath, captured, skipped, noArchitects: false };
+}
+
+/** Every workspace that currently has architect terminals (the backfill targets). */
+function workspacesWithArchitects(): string[] {
+  const rows = getGlobalDb()
+    .prepare("SELECT DISTINCT workspace_path FROM terminal_sessions WHERE type = 'architect'")
+    .all() as { workspace_path: string }[];
+  return rows.map((r) => r.workspace_path);
+}
+
+function printResult(r: WorkspaceResult, dryRun: boolean): void {
+  console.log(`\nWorkspace: ${r.workspacePath}`);
+  if (r.noArchitects) {
+    console.log('  No architects found.');
+    return;
   }
-  if (skipped.length) {
-    console.log(`\nSkipped (${skipped.length}):`);
-    for (const s of skipped) console.log(`  ${s}`);
+  if (r.captured.length) {
+    console.log(`  ${dryRun ? 'Would capture' : 'Captured'} (${r.captured.length}):`);
+    for (const c of r.captured) console.log(`    ${c}`);
   }
-  if (!captured.length && !skipped.length) {
-    console.log('\nNothing to do — every architect already has a stored session id.');
+  if (r.skipped.length) {
+    console.log(`  Skipped (${r.skipped.length}):`);
+    for (const s of r.skipped) console.log(`    ${s}`);
   }
+  if (!r.captured.length && !r.skipped.length) {
+    console.log('  Nothing to do — every architect already has a stored session id.');
+  }
+}
+
+function main(): void {
+  const args = process.argv.slice(2);
+  const dryRun = args.includes('--dry-run');
+  const all = args.includes('--all');
+  const positional = args.find((a) => !a.startsWith('--'));
+
+  if (all && positional) {
+    console.error('Pass either a workspacePath or --all, not both.');
+    process.exit(1);
+  }
+
+  const targets = all
+    ? workspacesWithArchitects()
+    : [positional ?? process.cwd()];
+
+  console.log(
+    `Backfill architect session ids${dryRun ? '  [DRY RUN — no changes written]' : ''}` +
+    (all ? `  (--all: ${targets.length} workspace(s) with architects)` : ''),
+  );
+
+  if (targets.length === 0) {
+    console.log('\nNo workspaces with architects found.');
+    return;
+  }
+
+  let totalCaptured = 0;
+  for (const t of targets) {
+    const result = backfillWorkspace(t, dryRun);
+    printResult(result, dryRun);
+    totalCaptured += result.captured.length;
+  }
+
   if (dryRun) {
-    if (captured.length) {
+    if (totalCaptured) {
       console.log('\nDry run only — re-run without `--dry-run` to write these session ids.');
     }
-  } else {
+  } else if (totalCaptured) {
     console.log('\nDone. Restart/reboot, then `afx workspace start` to resume the captured conversations.');
   }
 }

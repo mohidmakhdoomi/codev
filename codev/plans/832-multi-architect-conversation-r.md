@@ -131,10 +131,17 @@ script by hand, while they are still alive, before a planned restart/reboot:
 ```
 # preview first (read-only — shows the id each architect WOULD get, writes nothing):
 pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [workspacePath] --dry-run
-# then apply:
+# or preview EVERY workspace that has architects, in one go:
+pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts --all --dry-run
+# then apply (single workspace, or --all):
 pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [workspacePath]
 ```
 
+- **Targets:** a `workspacePath` arg, or `--all` to process every workspace that
+  currently has architects (enumerated via `SELECT DISTINCT workspace_path FROM
+  terminal_sessions WHERE type='architect'` — the precise backfill set, no Tower HTTP
+  needed; `getKnownWorkspacePaths()` / `TowerClient.listWorkspaces()` exist too but
+  include workspaces with no architects), else the current directory.
 - The script reuses **library functions only** — no new API surface. It reads the
   workspace's architects via `getArchitects(ws)`, looks up each one's recorded pid
   from `global.db.terminal_sessions` (by `role_id` = name), resolves the live id by
