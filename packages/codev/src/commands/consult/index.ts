@@ -1200,15 +1200,17 @@ KEY_ISSUES: [List of critical issues if any, or "None"]`;
  * the merged config (.codev/config.json etc.) → undefined (default behavior,
  * `gh pr diff`). Returns a bare branch name (e.g. `ci`), which the local-diff
  * machinery prefixes with `origin/`. (#1113)
+ *
+ * Config-load errors (malformed `.codev/config.json`, legacy `af-config.json`,
+ * invalid harness config) are NOT swallowed — they propagate, matching every
+ * other `loadConfig` caller. Swallowing them would let a broken
+ * `consult.integrationBranch` silently revert to `gh pr diff` (the overflow this
+ * fix prevents) with no signal why. The explicit `--base` flag short-circuits
+ * before the config read, so it still works even with a broken config.
  */
 function resolveIntegrationBase(workspaceRoot: string, baseOption?: string): string | undefined {
   if (baseOption) return baseOption;
-  try {
-    return loadConfig(workspaceRoot).consult?.integrationBranch;
-  } catch {
-    // A malformed config shouldn't block the default `gh pr diff` path.
-    return undefined;
-  }
+  return loadConfig(workspaceRoot).consult?.integrationBranch;
 }
 
 /**

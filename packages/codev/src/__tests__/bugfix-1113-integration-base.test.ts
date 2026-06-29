@@ -133,6 +133,24 @@ describe('#1113 resolveIntegrationBase precedence', () => {
     writeProjectConfig({ consult: { integrationBranch: 'ci' } });
     expect(resolveIntegrationBase(workDir, 'release-2.0')).toBe('release-2.0');
   });
+
+  it('propagates a malformed-config error instead of silently reverting to gh pr diff', () => {
+    // CMAP (codex) finding: swallowing loadConfig errors would let a broken
+    // consult.integrationBranch quietly fall back to the host base — the exact
+    // overflow this fix prevents. The error must surface like every other
+    // loadConfig caller.
+    const dir = path.join(workDir, '.codev');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'config.json'), '{ not valid json');
+    expect(() => resolveIntegrationBase(workDir, undefined)).toThrow(/parse/i);
+  });
+
+  it('the explicit --base flag still works even with a broken config (short-circuits the read)', () => {
+    const dir = path.join(workDir, '.codev');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'config.json'), '{ not valid json');
+    expect(resolveIntegrationBase(workDir, 'ci')).toBe('ci');
+  });
 });
 
 describe('#1113 --base is rejected outside --type integration (fail-fast)', () => {
