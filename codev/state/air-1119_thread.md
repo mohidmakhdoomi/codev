@@ -50,3 +50,9 @@ no drift footgun.
 - copy-skeleton re-run so the gitignored build artifact reflects template edits.
 - Hot-tier tests (19) green. Full suite running.
 - Diff: 9 tracked files (~172 ins / 155 del, well under 300 LOC).
+
+## Phase: PR
+- Committed (9e6379a2), pushed builder/air-1119.
+- PR #1120 opened with AIR review in the body.
+- porch check: pr_exists + e2e_tests green. porch done → GATE: pr requested.
+- WAITING for human approval at the `pr` gate. Will not call porch approve (human-only).
