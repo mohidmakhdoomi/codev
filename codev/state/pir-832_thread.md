@@ -215,3 +215,10 @@ resolution (lsof/findLatestSessionId are read-only anyway) and prints the exact
 session id each architect WOULD get, skipping only the setArchitectSessionId write.
 Banner: "[DRY RUN — no changes written]" + "Would capture (...)". Smoke-tested via
 tsx in an isolated test DB (empty workspace early-returns; flag parsed cleanly).
+
+## Added --all to backfill script (architect request)
+backfill-architect-sessions.ts now supports --all: enumerates every workspace with
+architects via `SELECT DISTINCT workspace_path FROM terminal_sessions WHERE
+type='architect'` (precise set; getKnownWorkspacePaths()/listWorkspaces() exist but
+are broader). Refactored to backfillWorkspace(ws, dryRun) + per-workspace printResult;
+--all composes with --dry-run. Smoke-tested --all --dry-run in isolated DB (0 ws).
