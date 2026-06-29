@@ -313,3 +313,21 @@ migration test and tower-terminals.test.ts untouched. Addressed (not rebutted):
   disposition in "Things to Look At".
 Build green; full suite 3397 passed | 48 skipped (+8). PIR single-pass: not re-reviewed
 -> escalate to human at pr gate.
+
+## Merged main (48 commits); reconciled with PIR #929 harness-resume
+PR flagged CONFLICTING. main had advanced 48 commits incl. PIR #929 ("harness-gated
+session resume for codex/gemini architects") which collides semantically with #832:
+#929 added HarnessProvider.buildResume?() (discovery-based, Claude-only jsonl, codex/
+gemini -> null -> fresh, fixing a stale-jsonl --resume crash-loop); #832 added
+session?{newSessionArgs,resumeArgs} (stored-UUID). Reconciled (not picked a side):
+- harness.ts: keep BOTH capabilities (buildResume serves builders + legacy fallback;
+  session serves architect stored-UUID resume). CLAUDE_HARNESS auto-merged with both.
+- tower-instances launchInstance (main): stored UUID primary; sole-architect legacy
+  fallback now uses harness.buildResume (absorbs #929 codex-safety) instead of my direct
+  findLatestSessionId (import dropped). Siblings keep storedSessionId ?? null (no fallback).
+- Split the stored-id read and discovery into INDEPENDENT try blocks: a state.db read
+  failure must not suppress discovery. #929's test surfaced this (its db mock has .all()
+  for getArchitects but not .get() for getArchitectByName -> my single try bailed -> fresh).
+- lessons-learned.md: kept both [From #832] and [From #929] lessons.
+Build green (core+codev); full suite 3407 passed | 48 skipped (was 3397; +10 from #929's
+own tests pulled in). Merge commit 190b4992. tower-utils resolveArchitectRestart survived.
