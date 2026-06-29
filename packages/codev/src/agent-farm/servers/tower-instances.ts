@@ -915,7 +915,7 @@ export async function addArchitect(
   try {
     storedSessionId = getArchitectByName(resolvedPath, name)?.sessionId ?? null;
   } catch { /* state.db unreadable — spawn fresh */ }
-  const { args: cmdArgs, env: harnessEnv, sessionId: convoSessionId } = resolveArchitectLaunch({
+  const { args: cmdArgs, env: harnessEnv, sessionId: conversationSessionId } = resolveArchitectLaunch({
     workspacePath,
     name,
     baseArgs: cmdParts.slice(1),
@@ -972,7 +972,7 @@ export async function addArchitect(
           cmd: architectCmd,
           startedAt: new Date().toISOString(),
           terminalId: session.id,
-          sessionId: convoSessionId ?? undefined,
+          sessionId: conversationSessionId ?? undefined,
         });
       } catch (stateErr) {
         _deps.log('WARN', `Failed to persist architect '${name}' to state.db: ${(stateErr as Error).message}`);
@@ -1027,7 +1027,7 @@ export async function addArchitect(
           cmd: architectCmd,
           startedAt: new Date().toISOString(),
           terminalId: session.id,
-          sessionId: convoSessionId ?? undefined,
+          sessionId: conversationSessionId ?? undefined,
         });
       } catch (stateErr) {
         _deps.log('WARN', `Failed to persist architect '${name}' to state.db: ${(stateErr as Error).message}`);
