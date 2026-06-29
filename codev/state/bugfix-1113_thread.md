@@ -60,5 +60,28 @@ Net diff ~150 LOC + 144 LOC test. Well within BUGFIX scope.
   them; verified a sample (github, agent-names, pr-ready-872, tower-messages = 138 tests) green.
   None touched consult/config/cli.
 
+## PR
+- PR #1114 opened against cluesmith/codev main (Fixes #1113).
+
+## CMAP (round 1)
+- claude: APPROVE (HIGH) — clean focused fix mirroring impl-path machinery; strong tests.
+- gemini: APPROVE (HIGH) — correct base override; solid regression suite.
+- codex: REQUEST_CHANGES (HIGH) — blanket try/catch in resolveIntegrationBase swallowed
+  loadConfig errors (malformed config / legacy af-config.json) → broken consult.integrationBranch
+  would silently revert to gh pr diff (the overflow this fix prevents). VALID finding.
+
+## CMAP resolution (2 codex findings, both valid, both addressed)
+1. Config errors swallowed: removed the try/catch in resolveIntegrationBase so loadConfig
+   errors propagate (fail-fast; matches every other caller). --base short-circuits before
+   the read → still works with a broken config. +2 tests. Commit 43507a4b.
+2. Skeleton doc not mirrored: mirrored the consult.md --base/integrationBranch section into
+   codev-skeleton/resources/commands/consult.md (two-tree rule). packages/codev/skeleton/ is a
+   gitignored build artifact. Commit 542b9048.
+
+## Final CMAP: claude=APPROVE, gemini=APPROVE, codex=APPROVE (all HIGH, codex round 3 clean)
+- PR #1114, CMAP summary comment posted.
+- Final full suite: 170 files passed / 3395 tests / 0 failed. pnpm build green.
+
 ## Status
-- Phase: investigate → fix (complete) → PR next
+- Phase: PR complete. Requesting `pr` gate via porch done. WAITING for human gate approval.
+- Do NOT self-merge: merge is gated by porch `pr` state, approved only by a human.
