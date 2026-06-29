@@ -10,9 +10,13 @@
  * deliberately kept OUT of the `afx` CLI and the Tower REST API — run it by hand
  * once, while the architects are still alive, before a planned restart/reboot:
  *
- *   pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [workspacePath]
+ *   pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [workspacePath] [--dry-run]
  *
  * (workspacePath defaults to the current directory.)
+ *
+ * Pass `--dry-run` to PREVIEW: it performs the full (read-only) resolution and
+ * prints the exact session id each architect WOULD get, but writes nothing. Re-run
+ * without `--dry-run` to apply.
  *
  * How it disambiguates siblings sharing one cwd: `captureRunningClaudeSession`
  * correlates each architect's process subtree to the session file it holds OPEN
@@ -45,7 +49,9 @@ function canonical(p: string): string {
 }
 
 function main(): void {
-  const rawWorkspace = process.argv[2] ?? process.cwd();
+  const args = process.argv.slice(2);
+  const dryRun = args.includes('--dry-run');
+  const rawWorkspace = args.find((a) => !a.startsWith('--')) ?? process.cwd();
   const workspacePath = canonical(rawWorkspace);
 
   const architects = getArchitects(workspacePath);
@@ -101,13 +107,15 @@ function main(): void {
       continue;
     }
 
-    setArchitectSessionId(workspacePath, a.name, liveId);
+    if (!dryRun) {
+      setArchitectSessionId(workspacePath, a.name, liveId);
+    }
     captured.push(`${a.name} -> ${liveId}`);
   }
 
-  console.log(`Backfill for workspace: ${workspacePath}`);
+  console.log(`Backfill for workspace: ${workspacePath}${dryRun ? '  [DRY RUN — no changes written]' : ''}`);
   if (captured.length) {
-    console.log(`\nCaptured (${captured.length}):`);
+    console.log(`\n${dryRun ? 'Would capture' : 'Captured'} (${captured.length}):`);
     for (const c of captured) console.log(`  ${c}`);
   }
   if (skipped.length) {
@@ -117,7 +125,13 @@ function main(): void {
   if (!captured.length && !skipped.length) {
     console.log('\nNothing to do — every architect already has a stored session id.');
   }
-  console.log('\nDone. Restart/reboot, then `afx workspace start` to resume the captured conversations.');
+  if (dryRun) {
+    if (captured.length) {
+      console.log('\nDry run only — re-run without `--dry-run` to write these session ids.');
+    }
+  } else {
+    console.log('\nDone. Restart/reboot, then `afx workspace start` to resume the captured conversations.');
+  }
 }
 
 main();

@@ -129,6 +129,9 @@ code** (their conversations exist on disk, but Tower never recorded the id). Run
 script by hand, while they are still alive, before a planned restart/reboot:
 
 ```
+# preview first (read-only — shows the id each architect WOULD get, writes nothing):
+pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [workspacePath] --dry-run
+# then apply:
 pnpm --filter @cluesmith/codev exec tsx scripts/backfill-architect-sessions.ts [workspacePath]
 ```
 
