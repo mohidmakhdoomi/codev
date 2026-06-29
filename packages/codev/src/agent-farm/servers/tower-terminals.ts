@@ -661,12 +661,15 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
         // persisted here (the bake precedes the actual restart) — fine, since
         // post-#832 architects always carry a stored id and take the resume path.
         const storedSessionId = getArchitectByName(workspacePath, architectName)?.sessionId ?? null;
-        const { args: architectArgs, env: harnessEnv } = resolveArchitectLaunch({
+        const { args: architectArgs, env: harnessEnv, resumed } = resolveArchitectLaunch({
           workspacePath,
           name: architectName,
           baseArgs: cmdParts.slice(1),
           storedSessionId,
         });
+        if (resumed && storedSessionId) {
+          _deps.log('INFO', `Resuming architect '${architectName}' session ${storedSessionId.slice(0, 8)}… on restart in ${workspacePath}`);
+        }
         restartOptions = {
           command: cmdParts[0],
           args: architectArgs,
@@ -901,12 +904,15 @@ export async function getTerminalsForWorkspace(
             // Issue #832: revive the same conversation on auto-restart via the
             // stored session id (see matching block above).
             const storedSessionId = getArchitectByName(dbSession.workspace_path, architectName)?.sessionId ?? null;
-            const { args: architectArgs, env: harnessEnv } = resolveArchitectLaunch({
+            const { args: architectArgs, env: harnessEnv, resumed } = resolveArchitectLaunch({
               workspacePath: dbSession.workspace_path,
               name: architectName,
               baseArgs: cmdParts.slice(1),
               storedSessionId,
             });
+            if (resumed && storedSessionId) {
+              _deps.log('INFO', `Resuming architect '${architectName}' session ${storedSessionId.slice(0, 8)}… on reconnect in ${dbSession.workspace_path}`);
+            }
             restartOptions = {
               command: cmdParts[0],
               args: architectArgs,

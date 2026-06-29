@@ -216,16 +216,17 @@ describe('resolveArchitectLaunch (Issue #832)', () => {
   });
 
   it('resumes the stored id (no role injection) and echoes it back', () => {
-    const { args, env, sessionId } = resolveArchitectLaunch({
+    const { args, env, sessionId, resumed } = resolveArchitectLaunch({
       workspacePath: workspace, name: 'reviewer', baseArgs: [], storedSessionId: 'stored-abc',
     });
     expect(args).toEqual(['--resume', 'stored-abc']);
     expect(env).toEqual({});
     expect(sessionId).toBe('stored-abc');
+    expect(resumed).toBe(true);   // drives the "Resuming…" log line at the callers
   });
 
   it('mints a fresh --session-id when there is no stored id, and returns it', () => {
-    const { args, sessionId } = resolveArchitectLaunch({
+    const { args, sessionId, resumed } = resolveArchitectLaunch({
       workspacePath: workspace, name: 'reviewer', baseArgs: [], storedSessionId: null,
     });
     expect(args).not.toContain('--resume');
@@ -233,6 +234,7 @@ describe('resolveArchitectLaunch (Issue #832)', () => {
     // The id passed to --session-id is exactly the one returned for persistence.
     expect(args[args.indexOf('--session-id') + 1]).toBe(sessionId);
     expect(sessionId).toMatch(UUID_RE);
+    expect(resumed).toBe(false);
   });
 
   it('mints distinct ids across fresh spawns', () => {
@@ -262,11 +264,12 @@ describe('resolveArchitectLaunch (Issue #832)', () => {
       path.join(workspace, '.codev', 'config.json'),
       JSON.stringify({ shell: { architect: 'codex' } }),
     );
-    const { args, sessionId } = resolveArchitectLaunch({
+    const { args, sessionId, resumed } = resolveArchitectLaunch({
       workspacePath: workspace, name: 'main', baseArgs: ['--base'], storedSessionId: null,
     });
     expect(args).not.toContain('--session-id');
     expect(args).not.toContain('--resume');
     expect(sessionId).toBeNull();
+    expect(resumed).toBe(false);
   });
 });

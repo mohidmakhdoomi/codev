@@ -216,13 +216,13 @@ export function resolveArchitectLaunch(opts: {
   name: string;
   baseArgs: string[];
   storedSessionId?: string | null;
-}): { args: string[]; env: Record<string, string>; sessionId: string | null } {
+}): { args: string[]; env: Record<string, string>; sessionId: string | null; resumed: boolean } {
   const { workspacePath, baseArgs, storedSessionId } = opts;
   const harness = getArchitectHarness(workspacePath);
 
   // 1. No resumable-session support → plain fresh, nothing to persist.
   if (!harness.session) {
-    return { ...buildArchitectArgs(baseArgs, workspacePath), sessionId: null };
+    return { ...buildArchitectArgs(baseArgs, workspacePath), sessionId: null, resumed: false };
   }
 
   // 2. Resume the persisted conversation (role injection skipped).
@@ -231,13 +231,14 @@ export function resolveArchitectLaunch(opts: {
       args: [...baseArgs, ...harness.session.resumeArgs(storedSessionId)],
       env: {},
       sessionId: storedSessionId,
+      resumed: true,
     };
   }
 
   // 3. Fresh: mint an id, pin the session to it, persist it via the returned id.
   const sessionId = crypto.randomUUID();
   const built = buildArchitectArgs([...baseArgs, ...harness.session.newSessionArgs(sessionId)], workspacePath);
-  return { ...built, sessionId };
+  return { ...built, sessionId, resumed: false };
 }
 
 /**

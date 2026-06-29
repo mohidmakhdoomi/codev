@@ -473,12 +473,15 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         try {
           storedSessionId = getArchitectByName(resolvedPath, DEFAULT_ARCHITECT_NAME)?.sessionId ?? null;
         } catch { /* state.db unreadable — spawn fresh */ }
-        const { args: cmdArgs, env: harnessEnv, sessionId: mainSessionId } = resolveArchitectLaunch({
+        const { args: cmdArgs, env: harnessEnv, sessionId: mainSessionId, resumed } = resolveArchitectLaunch({
           workspacePath,
           name: DEFAULT_ARCHITECT_NAME,
           baseArgs: cmdParts.slice(1),
           storedSessionId,
         });
+        if (resumed && mainSessionId) {
+          _deps.log('INFO', `Resuming architect '${DEFAULT_ARCHITECT_NAME}' session ${mainSessionId.slice(0, 8)}… in ${workspacePath}`);
+        }
 
         // Build env with CLAUDECODE removed so spawned Claude processes
         // don't detect a nested session, and merge harness env vars.
@@ -915,12 +918,15 @@ export async function addArchitect(
   try {
     storedSessionId = getArchitectByName(resolvedPath, name)?.sessionId ?? null;
   } catch { /* state.db unreadable — spawn fresh */ }
-  const { args: cmdArgs, env: harnessEnv, sessionId: conversationSessionId } = resolveArchitectLaunch({
+  const { args: cmdArgs, env: harnessEnv, sessionId: conversationSessionId, resumed } = resolveArchitectLaunch({
     workspacePath,
     name,
     baseArgs: cmdParts.slice(1),
     storedSessionId,
   });
+  if (resumed && conversationSessionId) {
+    _deps.log('INFO', `Resuming architect '${name}' session ${conversationSessionId.slice(0, 8)}… in ${workspacePath}`);
+  }
 
   // Spec 755: inject CODEV_ARCHITECT_NAME so the new architect terminal's
   // afx spawn invocations tag builders with this architect's name.
