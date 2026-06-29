@@ -27,14 +27,14 @@ import {
   normalizeWorkspacePath,
   getWorkspaceName,
   isTempDirectory,
-  buildArchitectArgs,
+  resolveArchitectLaunch,
 } from './tower-utils.js';
 import {
   autoNumberArchitectName,
   validateArchitectName,
   DEFAULT_ARCHITECT_NAME,
 } from '../utils/architect-name.js';
-import { setArchitect, setArchitectByName, getArchitects } from '../state.js';
+import { setArchitect, setArchitectByName, getArchitects, getArchitectByName } from '../state.js';
 
 // ============================================================================
 // Dependency interface
@@ -466,74 +466,45 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         const cmdParts = architectCmd.split(/\s+/);
         const cmd = cmdParts[0];
 
-        // Issue #830 (main architect only): if the configured harness exposes a
-        // resumable prior session for this workspace cwd, resume it instead of
-        // starting fresh. Role injection is skipped on the resume path — the
-        // saved conversation already contains the role/system prompt.
+        // Issue #832: resume main's persisted conversation when its row carries a
+        // session id, else spawn fresh and mint one. The returned `sessionId` is
+        // stored on the architect row below so the next restart resumes it. A
+        // state.db read failure degrades to a fresh spawn rather than aborting.
         //
-        // Issue #929: resume is gated on the harness (via buildResume), not the
-        // Claude session store directly. Only the Claude harness implements
-        // buildResume (its sessions live at ~/.claude/projects/<cwd>/*.jsonl);
-        // codex returns null → fresh, role-injected launch. Previously this
-        // read findLatestSessionId() unconditionally, so a codex architect with
-        // any stale Claude jsonl built `codex --resume <uuid>` and shellper
-        // restart-looped to death.
-        //
-        // Lookup is unconditional here (unlike builders, where spawn.ts gates
-        // discovery behind `options.resume`). The asymmetry is intentional:
-        // launchInstance only runs when main isn't already alive, so the
-        // implicit intent is always "spawn the missing main; resume its
-        // prior conversation if one exists." There is no equivalent user
-        // intent surface (no flag) on the workspace-start path.
-        //
-        // Multi-architect collision guard (Codex / Gemini cmap-3 round 2):
-        // Named sibling architects (Spec 755) share `cwd = workspacePath` and
-        // write their jsonls into the same encoded-cwd directory as main. The
-        // newest-jsonl heuristic can't tell which jsonl belongs to which
-        // architect — so if any sibling is currently persisted in state.db,
-        // main risks resuming a sibling's conversation instead of its own.
-        // Until #832 lands per-architect session UUIDs, the conservative
-        // behavior is: if state.db reports >1 architect, skip resume for
-        // main and spawn fresh with role injection. Single-architect
-        // workspaces (the common case) keep conversation resume.
-        //
-        // Note: this only checks current persisted state, not history. A
-        // sibling that existed before but was removed leaves stale jsonl
-        // files behind; main could still pick one up. Acceptable until #832.
-        let safeToResume: boolean;
+        // Legacy bridge (#830/#929): a row from before #832 has no stored id. For it,
+        // fall back to harness-gated jsonl-discovery — but ONLY when main is the sole
+        // architect, since a cwd shared with siblings makes newest-by-mtime ambiguous
+        // (the old `safeToResume` guard, now scoped to just this fallback rather than
+        // gating resume wholesale). Going through `harness.buildResume` keeps discovery
+        // harness-gated: only Claude has a jsonl store, so a codex/gemini architect
+        // returns null → fresh, avoiding the stale-jsonl `--resume` crash-loop (#929).
+        // Stored-UUID resume applies regardless of architect count, so main resumes in
+        // multi-architect workspaces once it has an id. resolveArchitectLaunch persists
+        // whatever it resolves, so a discovered id self-migrates into the stored-UUID
+        // path on this same revival — no separate backfill step.
+        // The stored id and the discovery fallback are independent recovery
+        // sources, so a failed read of one must not disable the other (e.g. a
+        // state.db hiccup reading the row shouldn't suppress sole-architect
+        // discovery). Each gets its own try.
+        let storedSessionId: string | null = null;
         try {
-          // Single architect (main only, or empty before first spawn) → safe.
-          // Multiple → unsafe (sibling jsonls collide with main's in the same cwd).
-          // Bugfix #826: getArchitects is workspace-scoped — pass resolvedPath
-          // (the canonical workspace path used by the architect table).
-          safeToResume = getArchitects(resolvedPath).length <= 1;
-        } catch {
-          // state.db read should never fail here, but if it does the safe
-          // default is to skip resume rather than risk attaching main to
-          // an unrelated jsonl.
-          safeToResume = false;
+          storedSessionId = getArchitectByName(resolvedPath, DEFAULT_ARCHITECT_NAME)?.sessionId ?? null;
+        } catch { /* state.db unreadable — fall through to discovery */ }
+        if (!storedSessionId) {
+          try {
+            if (getArchitects(resolvedPath).length <= 1) {
+              storedSessionId = getArchitectHarness(workspacePath).buildResume?.(workspacePath)?.sessionId ?? null;
+            }
+          } catch { /* discovery unavailable — spawn fresh */ }
         }
-        const architectHarness = getArchitectHarness(workspacePath);
-        const resume = safeToResume ? (architectHarness.buildResume?.(workspacePath) ?? null) : null;
-        // Only warn about a *skipped* resume when this harness actually supports
-        // resume (buildResume defined → claude). For codex, resume was never on
-        // the table, so the sibling-collision warning is just noise.
-        if (!safeToResume && architectHarness.buildResume) {
-          _deps.log('WARN', `Skipping main architect conversation resume for ${workspacePath}: persisted sibling architects detected (or state.db unreadable); cannot disambiguate jsonl by cwd. See #832.`);
-        }
-
-        let cmdArgs: string[];
-        let harnessEnv: Record<string, string>;
-        if (resume) {
-          cmdArgs = [...cmdParts.slice(1), ...resume.args];
-          harnessEnv = {};
-          _deps.log('INFO', `Resuming main architect session ${resume.sessionId.slice(0, 8)}… for ${workspacePath}`);
-        } else {
-          // Fresh launch — buildArchitectArgs injects the architect role. The
-          // resume path above is claude-only, which needs no role injection.
-          const built = buildArchitectArgs(cmdParts.slice(1), workspacePath);
-          cmdArgs = built.args;
-          harnessEnv = built.env;
+        const { args: cmdArgs, env: harnessEnv, sessionId: mainSessionId, resumed } = resolveArchitectLaunch({
+          workspacePath,
+          name: DEFAULT_ARCHITECT_NAME,
+          baseArgs: cmdParts.slice(1),
+          storedSessionId,
+        });
+        if (resumed && mainSessionId) {
+          _deps.log('INFO', `Resuming architect '${DEFAULT_ARCHITECT_NAME}' session ${mainSessionId.slice(0, 8)}… in ${workspacePath}`);
         }
 
         // Build env with CLAUDECODE removed so spawned Claude processes
@@ -592,6 +563,7 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
                 cmd: architectCmd,
                 startedAt: new Date().toISOString(),
                 terminalId: session.id,
+                sessionId: mainSessionId ?? undefined,
               });
             } catch (stateErr) {
               _deps.log('WARN', `Failed to persist architect to state.db: ${(stateErr as Error).message}`);
@@ -654,6 +626,7 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
               cmd: architectCmd,
               startedAt: new Date().toISOString(),
               terminalId: session.id,
+              sessionId: mainSessionId ?? undefined,
             });
           } catch (stateErr) {
             _deps.log('WARN', `Failed to persist architect to state.db: ${(stateErr as Error).message}`);
@@ -960,7 +933,24 @@ export async function addArchitect(
   const manager = _deps.getTerminalManager();
   const cmdParts = architectCmd.split(/\s+/);
   const cmd = cmdParts[0];
-  const { args: cmdArgs, env: harnessEnv } = buildArchitectArgs(cmdParts.slice(1), workspacePath);
+  // Issue #832: resume this sibling's persisted conversation when its row carries
+  // a session id, else spawn fresh and mint one. The same call serves both a
+  // user-driven `add-architect` (no row yet → fresh) and launchInstance's
+  // reconcile loop re-spawning a persisted sibling after reboot (row has id →
+  // resume). The returned id is persisted on the architect row below.
+  let storedSessionId: string | null = null;
+  try {
+    storedSessionId = getArchitectByName(resolvedPath, name)?.sessionId ?? null;
+  } catch { /* state.db unreadable — spawn fresh */ }
+  const { args: cmdArgs, env: harnessEnv, sessionId: conversationSessionId, resumed } = resolveArchitectLaunch({
+    workspacePath,
+    name,
+    baseArgs: cmdParts.slice(1),
+    storedSessionId,
+  });
+  if (resumed && conversationSessionId) {
+    _deps.log('INFO', `Resuming architect '${name}' session ${conversationSessionId.slice(0, 8)}… in ${workspacePath}`);
+  }
 
   // Spec 755: inject CODEV_ARCHITECT_NAME so the new architect terminal's
   // afx spawn invocations tag builders with this architect's name.
@@ -1012,6 +1002,7 @@ export async function addArchitect(
           cmd: architectCmd,
           startedAt: new Date().toISOString(),
           terminalId: session.id,
+          sessionId: conversationSessionId ?? undefined,
         });
       } catch (stateErr) {
         _deps.log('WARN', `Failed to persist architect '${name}' to state.db: ${(stateErr as Error).message}`);
@@ -1066,6 +1057,7 @@ export async function addArchitect(
           cmd: architectCmd,
           startedAt: new Date().toISOString(),
           terminalId: session.id,
+          sessionId: conversationSessionId ?? undefined,
         });
       } catch (stateErr) {
         _deps.log('WARN', `Failed to persist architect '${name}' to state.db: ${(stateErr as Error).message}`);
@@ -1189,6 +1181,8 @@ export async function removeArchitect(
 
     // Wait for the actual 'exit' event before clearing the flag.
     await exitPromise;
+    // Issue #832: no session cleanup needed — the row delete above cleared the
+    // persisted session_id, so a re-add with the same name starts fresh.
   } finally {
     intentionallyStopping.delete(resolvedPath);
     if (resolvedPath !== workspacePath) intentionallyStopping.delete(workspacePath);
@@ -1197,3 +1191,4 @@ export async function removeArchitect(
   _deps.log('INFO', `Removed architect '${name}' from workspace ${workspacePath}`);
   return { success: true };
 }
+

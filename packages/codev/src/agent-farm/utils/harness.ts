@@ -54,6 +54,25 @@ export interface HarnessProvider {
   }>;
 
   /**
+   * Optional: conversation-session support, for agents whose CLI can pin and
+   * resume a session by id (Issue #832). Harnesses that omit this are treated as
+   * having no resumable sessions — architects on those agents always spawn fresh
+   * and nothing is persisted. Keeps agent-specific session flags out of Tower.
+   *
+   * This is the stored-UUID mechanism (architect resume): an id is minted at spawn,
+   * pinned via `newSessionArgs`, persisted on the architect row, and replayed via
+   * `resumeArgs`. It disambiguates siblings sharing one cwd, which `buildResume`
+   * (mtime discovery) cannot. The two coexist: `buildResume` serves builder resume
+   * and the legacy sole-architect fallback; `session` serves architect stored-UUID resume.
+   */
+  session?: {
+    /** Args to START a new session pinned to `sessionId` (caller merges role injection). */
+    newSessionArgs(sessionId: string): string[];
+    /** Args to RESUME an existing session by id (caller skips role injection). */
+    resumeArgs(sessionId: string): string[];
+  };
+
+  /**
    * Optional: discover a resumable prior session for the given working dir and
    * return how to resume it — in BOTH forms, mirroring buildRoleInjection /
    * buildScriptRoleInjection:
@@ -62,6 +81,10 @@ export interface HarnessProvider {
    * Returns null when no resumable session exists or this harness has no
    * cwd-keyed session store → callers fall back to a fresh launch. Only Claude
    * implements it (store: ~/.claude/projects/<encoded-cwd>/<uuid>.jsonl).
+   *
+   * Discovery-based (newest jsonl by mtime): used for builder resume (#831/#929) and,
+   * for architects (#832), only as the harness-gated legacy fallback when `main` has
+   * no stored session id yet (codex/gemini omit it → no stale-jsonl crash-loop).
    */
   buildResume?(absolutePath: string, opts?: { homeDir?: string }): {
     sessionId: string;
@@ -104,6 +127,12 @@ export const CLAUDE_HARNESS: HarnessProvider = {
   // cannot silently write outside its worktree (e.g. into the main checkout).
   getWorktreeFiles: (_content, _filePath, worktreePath) =>
     buildWorktreeGuardFiles(worktreePath),
+  // Issue #832: Claude pins/resumes a conversation by UUID and stores each session
+  // as ~/.claude/projects/<encoded-cwd>/<id>.jsonl.
+  session: {
+    newSessionArgs: (sessionId) => ['--session-id', sessionId],
+    resumeArgs: (sessionId) => ['--resume', sessionId],
+  },
 };
 
 export const CODEX_HARNESS: HarnessProvider = {

@@ -186,6 +186,60 @@ describe('State Management', () => {
     });
   });
 
+  describe('session id persistence (Issue #832)', () => {
+    it('round-trips sessionId for main via setArchitect / getArchitectByName', () => {
+      state.setArchitect(WS, {
+        name: 'main',
+        cmd: 'claude',
+        startedAt: new Date().toISOString(),
+        sessionId: 'sess-main-1',
+      });
+      expect(state.getArchitectByName(WS, 'main')?.sessionId).toBe('sess-main-1');
+      expect(state.loadState(WS).architect?.sessionId).toBe('sess-main-1');
+    });
+
+    it('round-trips sessionId for a named sibling', () => {
+      state.setArchitectByName(WS, 'reviewer', {
+        name: 'reviewer',
+        cmd: 'claude',
+        startedAt: new Date().toISOString(),
+        sessionId: 'sess-rev-1',
+      });
+      expect(state.getArchitectByName(WS, 'reviewer')?.sessionId).toBe('sess-rev-1');
+    });
+
+    it('reads back undefined when no sessionId was stored (legacy row)', () => {
+      state.setArchitectByName(WS, 'legacy', {
+        name: 'legacy',
+        cmd: 'claude',
+        startedAt: new Date().toISOString(),
+      });
+      expect(state.getArchitectByName(WS, 'legacy')?.sessionId).toBeUndefined();
+    });
+
+    it('clears the stored sessionId when the row is removed (removal-clears-id)', () => {
+      state.setArchitectByName(WS, 'reviewer', {
+        name: 'reviewer',
+        cmd: 'claude',
+        startedAt: new Date().toISOString(),
+        sessionId: 'sess-rev-1',
+      });
+      state.setArchitectByName(WS, 'reviewer', null);
+      expect(state.getArchitectByName(WS, 'reviewer')).toBeNull();
+    });
+
+    it('keeps sibling session ids distinct (no cross-attachment)', () => {
+      state.setArchitectByName(WS, 'reviewer', {
+        name: 'reviewer', cmd: 'claude', startedAt: new Date().toISOString(), sessionId: 'rev',
+      });
+      state.setArchitectByName(WS, 'casa', {
+        name: 'casa', cmd: 'claude', startedAt: new Date().toISOString(), sessionId: 'casa',
+      });
+      expect(state.getArchitectByName(WS, 'reviewer')?.sessionId).toBe('rev');
+      expect(state.getArchitectByName(WS, 'casa')?.sessionId).toBe('casa');
+    });
+  });
+
   describe('upsertBuilder', () => {
     it('should add new builder', () => {
       const builder = {

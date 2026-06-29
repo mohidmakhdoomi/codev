@@ -34,7 +34,7 @@ function extractShellperSessionId(socketPath: string | null): string | null {
 import type { SessionManager, ReconnectRestartOptions } from '../../terminal/session-manager.js';
 import type { PtySession } from '../../terminal/pty-session.js';
 import type { WorkspaceTerminals, TerminalEntry, DbTerminalSession } from './tower-types.js';
-import { normalizeWorkspacePath, buildArchitectArgs } from './tower-utils.js';
+import { normalizeWorkspacePath, resolveArchitectRestart } from './tower-utils.js';
 import { setArchitectByName } from '../state.js';
 import { isIntentionallyStopping } from './tower-instances.js';
 
@@ -650,9 +650,21 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
       // sibling would lose affinity to the sibling. The `|| 'main'` fallback
       // covers legacy rows where role_id is null (v13 backfill should have
       // populated them; this is belt-and-suspenders).
-      cleanEnv['CODEV_ARCHITECT_NAME'] = dbSession.role_id || 'main';
+      const architectName = dbSession.role_id || 'main';
+      cleanEnv['CODEV_ARCHITECT_NAME'] = architectName;
       try {
-        const { args: architectArgs, env: harnessEnv } = buildArchitectArgs(cmdParts.slice(1), workspacePath);
+        // Issue #832: bake `--resume <storedId>` into the auto-restart args so a
+        // claude crash inside a live shellper revives the SAME conversation (the
+        // silent-context-loss path). The id was stored at the original spawn; a
+        // legacy architect with none falls through to a fresh session, then self-
+        // heals (the next spawn/revival stores an id). The minted id on the fresh
+        // branch is not persisted here (the bake precedes the actual restart) —
+        // fine, since post-#832 architects always carry a stored id and resume.
+        const { args: architectArgs, env: harnessEnv, resumed, storedSessionId } =
+          resolveArchitectRestart(workspacePath, architectName, cmdParts.slice(1));
+        if (resumed && storedSessionId) {
+          _deps.log('INFO', `Resuming architect '${architectName}' session ${storedSessionId.slice(0, 8)}… on restart in ${workspacePath}`);
+        }
         restartOptions = {
           command: cmdParts[0],
           args: architectArgs,
@@ -881,9 +893,16 @@ export async function getTerminalsForWorkspace(
           delete cleanEnv['CLAUDECODE'];
           // Spec 786 Phase 2: preserve architect identity across shellper auto-
           // restart (see matching block in reconcileTerminalSessionsInner above).
-          cleanEnv['CODEV_ARCHITECT_NAME'] = dbSession.role_id || 'main';
+          const architectName = dbSession.role_id || 'main';
+          cleanEnv['CODEV_ARCHITECT_NAME'] = architectName;
           try {
-            const { args: architectArgs, env: harnessEnv } = buildArchitectArgs(cmdParts.slice(1), dbSession.workspace_path);
+            // Issue #832: revive the same conversation on auto-restart via the
+            // stored session id (see matching block above).
+            const { args: architectArgs, env: harnessEnv, resumed, storedSessionId } =
+              resolveArchitectRestart(dbSession.workspace_path, architectName, cmdParts.slice(1));
+            if (resumed && storedSessionId) {
+              _deps.log('INFO', `Resuming architect '${architectName}' session ${storedSessionId.slice(0, 8)}… on reconnect in ${dbSession.workspace_path}`);
+            }
             restartOptions = {
               command: cmdParts[0],
               args: architectArgs,

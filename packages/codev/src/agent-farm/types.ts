@@ -40,6 +40,10 @@ export interface ArchitectState {
   cmd: string;
   startedAt: string;
   terminalId?: string;
+  // Issue #832: the agent's conversation session id, persisted so the architect
+  // resumes its prior conversation on restart. Agent-neutral (Claude uses a UUID;
+  // other agents may use their own scheme). Undefined until first stored.
+  sessionId?: string;
 }
 
 export interface DashboardState {

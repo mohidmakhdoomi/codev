@@ -11,8 +11,10 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import type { ServerResponse } from 'node:http';
 import type { RateLimitEntry } from './tower-types.js';
+import crypto from 'node:crypto';
 import { loadRolePrompt, type RoleConfig } from '../utils/roles.js';
 import { getArchitectHarness } from '../utils/config.js';
+import { getArchitectByName } from '../state.js';
 
 // ============================================================================
 // Rate Limiting
@@ -192,6 +194,77 @@ export function buildArchitectArgs(baseArgs: string[], workspacePath: string): {
     args: [...baseArgs, ...injection.args],
     env: injection.env,
   };
+}
+
+/**
+ * Issue #832: resolve the args/env to launch (or revive) an architect, choosing
+ * between resuming its persisted conversation and starting a fresh one. The
+ * session mechanics are agent-neutral — they come from the resolved harness's
+ * `session` capability, so no agent-specific flags appear here.
+ *
+ * Decision order:
+ *   1. Harness has no `session` capability (e.g. Codex/Gemini today) → plain fresh
+ *      spawn, `sessionId: null` (nothing to resume next time).
+ *   2. `storedSessionId` present → resume it (no role injection — the saved
+ *      conversation already holds the role/system prompt); echo the same id back.
+ *   3. Else fresh → generate a new id, pin the session to it (with role injection),
+ *      and return it for the caller to persist.
+ *
+ * The returned `sessionId` is the value the caller writes onto the architect row,
+ * so the column is populated correctly on every spawn.
+ */
+export function resolveArchitectLaunch(opts: {
+  workspacePath: string;
+  name: string;
+  baseArgs: string[];
+  storedSessionId?: string | null;
+}): { args: string[]; env: Record<string, string>; sessionId: string | null; resumed: boolean } {
+  const { workspacePath, baseArgs, storedSessionId } = opts;
+  const harness = getArchitectHarness(workspacePath);
+
+  // 1. No resumable-session support → plain fresh, nothing to persist.
+  if (!harness.session) {
+    return { ...buildArchitectArgs(baseArgs, workspacePath), sessionId: null, resumed: false };
+  }
+
+  // 2. Resume the persisted conversation (role injection skipped).
+  if (storedSessionId) {
+    return {
+      args: [...baseArgs, ...harness.session.resumeArgs(storedSessionId)],
+      env: {},
+      sessionId: storedSessionId,
+      resumed: true,
+    };
+  }
+
+  // 3. Fresh: mint an id, pin the session to it, persist it via the returned id.
+  const sessionId = crypto.randomUUID();
+  const built = buildArchitectArgs([...baseArgs, ...harness.session.newSessionArgs(sessionId)], workspacePath);
+  return { ...built, sessionId, resumed: false };
+}
+
+/**
+ * Issue #832: resolve launch args for an architect being auto-restarted by its
+ * shellper (claude crash / reconnect). Reads the architect's stored conversation
+ * `session_id` from its state.db row and hands it to `resolveArchitectLaunch`, so an
+ * in-process crash revives the SAME conversation (the silent-context-loss path)
+ * instead of spawning fresh. A legacy row with no stored id resolves to a fresh
+ * session (then self-heals on its next cold revival via the spawn-path persist).
+ *
+ * Unlike the cold-spawn `main` path, there is **no** jsonl-discovery fallback here —
+ * the restart sites rely solely on the stored id (matching #830, which never resumed
+ * at restart). Both shellper restart-bake sites in `tower-terminals.ts` call this so
+ * the read→resolve wiring lives in one tested place. Returns `resolveArchitectLaunch`'s
+ * result plus the `storedSessionId` the caller uses for the "Resuming…" log line.
+ */
+export function resolveArchitectRestart(
+  workspacePath: string,
+  architectName: string,
+  baseArgs: string[],
+): { args: string[]; env: Record<string, string>; sessionId: string | null; resumed: boolean; storedSessionId: string | null } {
+  const storedSessionId = getArchitectByName(workspacePath, architectName)?.sessionId ?? null;
+  const resolved = resolveArchitectLaunch({ workspacePath, name: architectName, baseArgs, storedSessionId });
+  return { ...resolved, storedSessionId };
 }
 
 /**

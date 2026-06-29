@@ -33,6 +33,15 @@ describe('harness', () => {
       expect(result.fragment).toContain(ROLE_FILE);
       expect(result.env).toEqual({});
     });
+
+    // Issue #832: session capability (Claude pins/resumes a conversation by id).
+    it('session.newSessionArgs returns --session-id <id>', () => {
+      expect(CLAUDE_HARNESS.session?.newSessionArgs('abc')).toEqual(['--session-id', 'abc']);
+    });
+
+    it('session.resumeArgs returns --resume <id>', () => {
+      expect(CLAUDE_HARNESS.session?.resumeArgs('abc')).toEqual(['--resume', 'abc']);
+    });
   });
 
   describe('CODEX_HARNESS', () => {
@@ -46,6 +55,14 @@ describe('harness', () => {
       const result = CODEX_HARNESS.buildScriptRoleInjection(ROLE_CONTENT, ROLE_FILE);
       expect(result.fragment).toBe(`-c model_instructions_file='${ROLE_FILE}'`);
       expect(result.env).toEqual({});
+    });
+
+    // Issue #832: Codex has no resumable-session capability → no `session` block,
+    // so architects on Codex spawn fresh and nothing is persisted.
+    it('has no session capability', () => {
+      expect(CODEX_HARNESS.session).toBeUndefined();
+      expect(GEMINI_HARNESS.session).toBeUndefined();
+      expect(OPENCODE_HARNESS.session).toBeUndefined();
     });
   });
 

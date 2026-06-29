@@ -95,3 +95,8 @@ describe('findLatestSessionId', () => {
     expect(findLatestSessionId(worktree, { homeDir: fakeHome })).toBe('only-uuid');
   });
 });
+
+// Issue #832: the live-process session-id capture (cmdline-reading backfill) was
+// dropped in favour of the sole-architect jsonl-discovery fallback in
+// launchInstance + the stored-UUID spawn/revive path. findLatestSessionId (above)
+// is the shared discovery helper that remains.
