@@ -166,7 +166,7 @@
       },
       {
         "command": "codev.openBacklogSearch",
-        "title": "Codev: Search Backlog",
+        "title": "Codev: Open Backlog Search Panel",
         "icon": "$(search)"
       },
       {
@@ -183,6 +183,10 @@
         "command": "codev.searchBacklog",
         "title": "Codev: Search Backlog...",
         "icon": "$(search)"
+      },
+      {
+        "command": "codev.openIssueById",
+        "title": "Codev: Open Issue by ID..."
       },
       {
         "command": "codev.refreshTeam",
@@ -758,6 +762,11 @@
         "key": "ctrl+k b",
         "mac": "cmd+k b",
         "when": "codev.activeEditorIsBuilderFile && editorHasSelection"
+      },
+      {
+        "command": "codev.openIssueById",
+        "key": "ctrl+k i",
+        "mac": "cmd+k i"
       },
       {
         "command": "codev.diffNextFile",
