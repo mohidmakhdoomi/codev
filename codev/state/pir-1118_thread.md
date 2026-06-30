@@ -70,3 +70,48 @@ not per-boot). Key points:
 Also added (architect idea): reusable `db/consolidate.ts` engine (upsert-if-newer) with two
 callers — auto boot one-off (marker-gated) + manual `afx db consolidate <path>` (not gated,
 Tower-up-safe). Plan fully specified. Awaiting plan-approval gate approval.
+
+## Phase: implement (plan-approval APPROVED, rebased on main)
+
+### Builder-read callsite audit (done before coding)
+- `loadState(ws)` → scope builders by `workspace_path` (consistent w/ architect; status/stop/
+  send/attach/cleanup all pass a ws).
+- `lib/builder-lookup.ts` findBuilderByIssue/ById → pass `getConfig().workspaceRoot` to
+  getBuilders/getBuilder (matches its loadTowerBuilderRows scoping).
+- `tower-routes.ts:1895` getBuilders() → getBuilders(workspacePath) (handleWorkspaceState has it).
+- `cleanup.ts:381` removeBuilder(id) → removeBuilder(id, config.workspaceRoot).
+- `getBuildersByStatus` → no production callers.
+- Signatures: builder reads get optional `workspacePath?` (scope if provided, else cross-ws);
+  upsertBuilder DERIVES workspace_path from builder.worktree (no sig change).
+
+### Schema/migration decisions
+- LOCAL_SCHEMA kept UNCHANGED as legacy-state.db reference (used by consolidate fixtures + ~7
+  existing tests; old builders shape = id-only PK = correct legacy representation).
+- GLOBAL_SCHEMA gains architect/utils/annotations as-is + builders RESHAPED (workspace_path +
+  composite PK) + indexes + builders trigger + idx_architect_workspace.
+- getDb()→getGlobalDb(); remove ensureLocalDatabase + local v1-v12 ladder + migrateLocalFromJson
+  from production path; getDbPath()→getGlobalDbPath(); add global migration v14 (create 4 tables
+  on existing global.db); GLOBAL_CURRENT_VERSION 13→14.
+- Expect test fallout (migrate.test, bugfix-826/pir-832 local-ladder tests, state.test mock);
+  fix iteratively after build.
+
+### Implementation complete (pre dev-approval)
+Commits on builder/pir-1118:
+- data layer: schema.ts (GLOBAL_SCHEMA + 4 tables, builders reshaped), index.ts (getDb→global,
+  v14, removed ensureLocalDatabase + ladder), types.ts, state.ts (builder workspace-scoping),
+  callsites (builder-lookup/cleanup/tower-routes/overview), deleted db/migrate.ts
+- engine: db/consolidate.ts (planMigration/applyMigration upsert-if-newer, _consolidation
+  marker, runBootConsolidation strict one-off), tower-server boot hook, afx db consolidate,
+  afx tower start --dry-run-migration
+- tests: rewrote state.test mock (unified GLOBAL_SCHEMA), spec-755-lookup-builder (single-db),
+  overview.test (global db enrichment), new consolidate.test (8 cases), deleted migrate.test
+
+**Bug caught by tests**: deriveWorkspaceFromWorktree used indexOf('/.builders/') → wrong when
+the worktree path itself sits under another .builders/ (our test runs inside pir-1118's
+worktree!). Fixed to lastIndexOf in BOTH state.ts and consolidate.ts.
+
+**Test status**: full agent-farm suite GREEN (2014 passed, 34 skipped, 0 fail). The 8 failing
+files outside agent-farm (adopt/update/cold-tier/hot-tier/consult/hot-tier-injection/
+session-manager) are PRE-EXISTING — verified they fail with my changes stashed (scaffold tests
+need built skeleton; session-manager needs live shellper). Running pnpm build to confirm.
+Next: dev-approval gate.
