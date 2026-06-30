@@ -8,7 +8,9 @@
  */
 
 import { existsSync, unlinkSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { getDb, getGlobalDb, getDbPath, getGlobalDbPath, closeDb, closeGlobalDb } from '../db/index.js';
+import { planMigration, applyMigration } from '../db/consolidate.js';
 import { logger, fatal } from '../utils/logger.js';
 
 interface DumpOptions {
@@ -162,4 +164,48 @@ export function dbStats(options: { global?: boolean } = {}): void {
   logger.kv('  Page size', `${pageSize} bytes`);
   logger.kv('  Page count', String(pageCount));
   logger.kv('  Total size', `${Math.round(pageCount * pageSize / 1024)} KB`);
+}
+
+/**
+ * Consolidate a legacy state.db into global.db (Issue #1118).
+ *
+ * Pulls a satellite `state.db` — one missed by the automatic boot one-off —
+ * into the shared global.db (upsert-if-newer), then renames the source. Dry-run
+ * by default; `--apply` commits. Safe with Tower running.
+ */
+export function dbConsolidate(stateDbPath: string, options: { apply?: boolean } = {}): void {
+  const sourcePath = resolve(stateDbPath);
+  if (!existsSync(sourcePath)) {
+    fatal(`No state.db found at ${sourcePath}`);
+  }
+
+  const db = getGlobalDb();
+  const plan = planMigration(db, sourcePath);
+
+  logger.header(`Consolidate ${options.apply ? '(apply)' : '(dry-run)'}`);
+  logger.kv('Source', sourcePath);
+  logger.kv('Target', getGlobalDbPath());
+  logger.blank();
+
+  if (plan.total === 0) {
+    logger.info('Nothing to migrate (source has no rows in architect/builders/utils/annotations).');
+    return;
+  }
+
+  for (const s of plan.stats) {
+    logger.kv(`  ${s.table}`, `${s.inserted} new, ${s.updated} newer (replace), ${s.skipped} older (skip)`);
+  }
+  logger.blank();
+
+  if (!options.apply) {
+    logger.info('Dry-run only. Re-run with --apply to migrate and rename the source.');
+    return;
+  }
+
+  const result = applyMigration(db, sourcePath);
+  const moved = result.stats.reduce((n, s) => n + s.inserted + s.updated, 0);
+  logger.success(`Migrated ${moved} row(s) into global.db.`);
+  if (result.renamedTo) {
+    logger.kv('Source renamed to', result.renamedTo);
+  }
 }
