@@ -33,8 +33,9 @@ import {
   type ReviewMarker,
 } from '@cluesmith/codev-artifact-canvas';
 import '@cluesmith/codev-artifact-canvas/default-theme.css';
+import type { HostToWebviewMessage, WebviewToHostMessage } from '../messages.js';
 
-declare function acquireVsCodeApi(): { postMessage(message: unknown): void };
+declare function acquireVsCodeApi(): { postMessage(message: WebviewToHostMessage): void };
 
 const vscodeApi = acquireVsCodeApi();
 // Host-opaque document id — the host already knows which document this editor is
@@ -81,7 +82,7 @@ function render(): void {
 }
 
 window.addEventListener('message', (event: MessageEvent) => {
-  const msg = event.data as { type?: string; content?: string; markers?: ReviewMarker[] };
+  const msg = event.data as HostToWebviewMessage | null;
   if (msg?.type !== 'update') { return; }
   content = msg.content ?? '';
   markers = msg.markers ?? [];

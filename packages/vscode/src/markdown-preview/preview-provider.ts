@@ -33,6 +33,7 @@ import {
   parseReviewMarkers,
 } from '@cluesmith/codev-core/review-markers';
 import { renderMarkdownPreviewHtml } from './preview-template.js';
+import type { HostToWebviewMessage, WebviewToHostMessage } from './messages.js';
 import type { OverviewCache } from '../views/overview-data.js';
 
 export class MarkdownPreviewProvider implements vscode.CustomTextEditorProvider {
@@ -68,11 +69,12 @@ export class MarkdownPreviewProvider implements vscode.CustomTextEditorProvider 
       // Send the raw document text: the canvas renderer strips REVIEW/comment lines itself
       // (and keeps blocks intact + data-line accurate), so the host no longer pre-hides them.
       const text = document.getText();
-      panel.webview.postMessage({
+      const message: HostToWebviewMessage = {
         type: 'update',
         content: text,
         markers: parseReviewMarkers(text),
-      });
+      };
+      panel.webview.postMessage(message);
     };
 
     const changeSub = vscode.workspace.onDidChangeTextDocument((e) => {
@@ -82,7 +84,9 @@ export class MarkdownPreviewProvider implements vscode.CustomTextEditorProvider 
 
     panel.webview.onDidReceiveMessage((msg: unknown) => {
       if (!msg || typeof msg !== 'object') { return; }
-      const m = msg as { type?: string; line?: number; text?: string };
+      // Untrusted input from the webview: cast to the protocol union for the discriminant, but still
+      // validate the `addComment` payload fields at runtime before acting on them.
+      const m = msg as WebviewToHostMessage;
       if (m.type === 'ready') { pushUpdate(); return; }
       if (m.type === 'addComment' && typeof m.line === 'number' && typeof m.text === 'string') {
         this.addComment(document, m.line, m.text);
