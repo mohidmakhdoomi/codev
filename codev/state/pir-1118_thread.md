@@ -62,4 +62,11 @@ not per-boot). Key points:
   mark-on-first-real-migration (when active state.db absent/empty on first boot). Flagged in
   plan Open Q #3.
 
-Still at plan-approval gate awaiting re-review.
+### All open questions resolved (architect, plan-approval gate)
+1. **Cut** `afx prune-state` + `afx workspace forget` — confirmed dropped.
+2. **Accept** builders reshape (workspace_path + composite PK, mirror #826) + callsite audit.
+3. **Strict** one-off marker — `_consolidation` row written on first boot unconditionally;
+   state.db never read again. Satellite recovery via manual `afx db consolidate <path>`.
+Also added (architect idea): reusable `db/consolidate.ts` engine (upsert-if-newer) with two
+callers — auto boot one-off (marker-gated) + manual `afx db consolidate <path>` (not gated,
+Tower-up-safe). Plan fully specified. Awaiting plan-approval gate approval.

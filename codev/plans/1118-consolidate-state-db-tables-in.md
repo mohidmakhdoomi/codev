@@ -134,9 +134,11 @@ marker or about Tower boot):
 
 **Caller 1 — automatic boot one-off** (`tower-server.ts main()`, before `initInstances()`):
 gated by the persistent `_consolidation` marker. If unset: `applyMigration(activeStateDbPath())`,
-then write the marker **in the same transaction as the row copy**. Once set, every subsequent
-boot reads the marker and short-circuits — `state.db` is never opened again. The marker guards
-*the automatic boot cutover only*.
+then write the marker **in the same transaction as the row copy**. The marker is written **on the
+first boot unconditionally** (strict policy — even if the active `state.db` was absent/empty), so
+once set, every subsequent boot reads the marker and short-circuits — `state.db` is never opened
+again. The marker guards *the automatic boot cutover only*; if a stateless first-boot misses a
+richer satellite file, the user recovers it via Caller 2.
 - Preview: `afx tower start --dry-run-migration` prints what the active file would contribute and
   **exits without spawning the server**, opening global.db read-only so the preview never
   applies. `--apply-migration` (or plain `afx tower start`) commits.
@@ -221,10 +223,10 @@ standalone follow-up. (Architect to confirm cutting these two acceptance criteri
   empty, marker unset) and the next boot cleanly retries; a crash *after* commit but before the
   file rename leaves the marker set (so no re-migrate) and only an un-renamed `state.db` lingering
   (cosmetic, never read again).
-- **Risk — first post-upgrade boot is from a workspace with an absent/empty `state.db`.** Under
-  strict lifetime-once, marking done unconditionally would abandon a richer aggregate file in
-  another workspace. See Open Question #3 for the exact marker-set policy. Mitigation regardless:
-  the dry-run preview + guidance to first-start from the dominant start-cwd.
+- **Risk — first post-upgrade boot is from a workspace with an absent/empty `state.db`.** Strict
+  policy marks done regardless, so a richer satellite file in another workspace is skipped by the
+  *automatic* path. Mitigation: fully recoverable via `afx db consolidate <path>` (Caller 2);
+  plus the dry-run preview + guidance to first-start from the dominant start-cwd.
 - **Risk — a stray `getGlobalDb()` from a read-only CLI command triggers the migration before the
   user runs Tower.** Mitigation: schema (v14) is separated from the data migration; the migration
   is gated to Tower boot / explicit `--apply-migration`, not to mere DB open. Dry-run opens
@@ -242,22 +244,21 @@ standalone follow-up. (Architect to confirm cutting these two acceptance criteri
   ids are `<protocol>-<issueNumber>`, provably non-unique across repos, and the contract is
   security-relevant.
 
-## Open Questions (for the plan gate)
+## Resolved Decisions (plan-approval gate)
 
-1. **Cutting `afx prune-state` + `afx workspace forget`** — recommended (see "Cut from scope").
-   Confirm this deviation from the issue's acceptance criteria, or specify why a cleanup command
-   is still wanted.
-2. **`builders` reshape buy-in** — adding `workspace_path` + composite PK to `builders` (and the
-   builder-callsite audit) is the one structural change and expands blast radius slightly beyond
-   the issue's "move as-is" framing. Confirm the approach (mirror #826) vs any alternative.
-3. **One-off marker — shape and set-policy.** Shape: a dedicated persistent `_consolidation`
-   row/table in global.db (recommended), written inside the migration transaction, read at the
-   top of every boot to short-circuit. Set-policy when the first boot's active `state.db` is
-   absent/empty: (a) **strict** — mark done unconditionally on first boot (honors "never check
-   state.db again," but a stateless first-boot abandons other workspaces' files), or (b)
-   **mark-on-first-real-migration** — only set the marker once a `state.db` was actually found at
-   the active path (technically re-checks until one appears, marginally more forgiving). Confirm
-   which.
+1. **Cut `afx prune-state` + `afx workspace forget`** — confirmed. Both dropped from this PIR
+   (deliberate deviation from the issue's acceptance criteria). Stale rows are harmless under
+   workspace-scoped reads; cleanup is not part of the consolidation. See "Cut from scope."
+2. **`builders` reshape accepted** — `builders` gains `workspace_path` + composite PK
+   `(workspace_path, id)`, mirroring #826/v11 for `architect`, plus the builder-read callsite
+   audit. Not optional for correctness (builder ids are non-unique across repos and the spoofing
+   check is security-relevant).
+3. **Strict one-off marker** — the dedicated persistent `_consolidation` table is written on the
+   first post-upgrade boot **unconditionally** (even if the active `state.db` is absent/empty),
+   inside the migration transaction; every later boot short-circuits and `state.db` is never read
+   again. A stateless first-boot that misses a richer satellite file is fully recoverable via
+   `afx db consolidate <path>` (Caller 2) — the manual command is the accepted recovery path, so
+   strict simplicity wins.
 
 ## Test Plan
 
