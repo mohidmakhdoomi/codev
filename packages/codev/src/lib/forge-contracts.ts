@@ -22,9 +22,12 @@ export interface IssueViewResult {
   body: string;
   state: string;
   /**
-   * Canonical forge URL of the issue, when the concept supplies it. GitHub's
-   * `issue-view` script emits it (`gh issue view --json …,url`); other forge
-   * scripts may omit it. Optional to keep the contract forge-neutral.
+   * The issue's **browser/web** URL (NOT an API endpoint), when the concept
+   * supplies it. Each forge script maps its own web-URL field here: GitHub
+   * `url`, GitLab `web_url`, Gitea `html_url` (Gitea's `url` is the API
+   * endpoint — do not use it), Linear `url`. Optional to keep the contract
+   * forge-neutral. Currently emitted by the GitHub `issue-view` script only
+   * (`gh issue view --json …,url`).
    */
   url?: string;
   comments: Array<{
