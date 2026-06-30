@@ -108,35 +108,44 @@ reshape — out of scope here.
   - `overview.ts:808-836` — open `getGlobalDbPath()` read-only (or `getDb()`); match by
     `worktree` (unique) as today, which naturally scopes to this workspace's builders.
 
-### C. One-time on-disk consolidation (migrate legacy state.db files) — at Tower boot
+### C. One-off migration of the active state.db (lifetime-once, then state.db is dead)
+A **single** migration that runs **once in the lifetime of the install**, at the first
+post-upgrade Tower boot. It is guarded by one persistent marker in global.db; once set,
+`state.db` has no further role and is **never read or checked again**. This is not a per-boot
+sweep — it is a one-off cutover.
+
 New module `db/consolidate.ts`:
-- `discoverLegacyStateDbFiles(globalDb): string[]` — union of every
-  `<workspace_path>/.agent-farm/state.db` from `known_workspaces`, plus `~/.agent-farm/state.db`
-  (the `$HOME`-fallback file, which may not be registered), filtered to existing files.
-  `known_workspaces` lives in the already-global `~/.agent-farm/global.db`, so it is a reliable
-  index of where the source files are.
-- `planConsolidation(globalDb, files): ConsolidationPlan` — pure read. For each table, collect
-  rows from all sources and report per-table merge counts + **conflicts** (same primary key in
-  ≥2 source files with differing content). No writes. Reads each source defensively
-  (`PRAGMA table_info`): a pre-v11 `architect` row with no `workspace_path` gets it synthesized
-  from the file's own directory; a `builders` row gets `workspace_path` derived from its
-  `worktree` column (or the file's directory as fallback).
-- `applyConsolidation(globalDb, files, plan)` — per table, gather all source rows, sort
-  ascending by `started_at`, `INSERT OR REPLACE` in that order so **latest-started_at wins** on
-  PK collisions (architect/builders PK = `(workspace_path, id)`; utils/annotations PK = `id`).
-  Row merge is one transaction; after commit, rename each source `state.db` (and its
-  `-wal`/`-shm` sidecars) to `state.db.pre-merge-<timestamp>` — preserved, never deleted.
-- Idempotency marker: a dedicated `_consolidation` marker in global.db (clearer than reusing
-  the integer `_migrations` ladder). Re-run-safe regardless: renamed sources are no longer
-  discovered, and re-merging is idempotent under latest-wins.
+- `activeStateDbPath(): string` — the pre-fix `getDb()` path for this boot
+  (`<Tower-start-workspace-root>/.agent-farm/state.db`).
+- `planMigration(globalDb, file): MigrationPlan` — pure read; reports per-table row counts from
+  the active file. Reads defensively (`PRAGMA table_info`): a pre-v11 `architect` row with no
+  `workspace_path` gets it synthesized from the file's directory; a `builders` row gets
+  `workspace_path` derived from its `worktree` column (fallback: the file's directory).
+- `applyMigration(globalDb, file)` — a **straight copy**: the global tables are empty before the
+  one-off and a single `state.db` has unique PKs, so there is **no conflict resolution** — rows
+  insert cleanly (architect/builders carry their workspace_path; utils/annotations carry their
+  UUIDs). One transaction; on success, set the marker and rename the source `state.db`
+  (+ `-wal`/`-shm` sidecars) to `state.db.pre-merge-<timestamp>` (preserved, never deleted, for
+  recovery/tidiness). Other workspaces' `state.db` files are left untouched and simply
+  abandoned.
+- Idempotency: the persistent marker. Every subsequent boot reads the marker and short-circuits
+  before touching any `state.db`.
 
 **Where it runs**:
-- Normal start: invoked at Tower boot in `tower-server.ts main()` (apply mode), before
-  `initInstances()`. (Schema v14 is already applied by the first `getGlobalDb()`.)
-- Preview: `afx tower start --dry-run-migration` computes + prints the plan (sources, per-table
-  counts, conflicts) and **exits without spawning the server**. It opens global.db read-only/
-  defensively so the preview never applies the consolidation as a side effect. `--apply-migration`
-  (or plain `afx tower start`) commits.
+- Normal start: invoked at Tower boot in `tower-server.ts main()`, before `initInstances()`,
+  gated by the marker. (Schema v14 is already applied by the first `getGlobalDb()`.)
+- Preview: `afx tower start --dry-run-migration` prints what the active file would contribute
+  (per-table counts) and **exits without spawning the server**, opening global.db read-only so
+  the preview never applies the migration. `--apply-migration` (or plain `afx tower start`)
+  commits.
+
+**Accepted scope** (deliberate simplification): only the file active at the first post-upgrade
+boot is migrated. Rows that live *only* in another workspace's `state.db` (sessions Tower
+happened to start from elsewhere) are **not** recovered — they remain on disk for manual
+recovery. Recovery completeness therefore depends on which workspace Tower is first started from
+after the upgrade; first-starting from the dominant start-cwd (the usual aggregate, e.g. the
+audit's 40-row codev file) captures the bulk. The dry-run lets the user confirm the right file
+before committing.
 
 ### D. Leave in place (per issue "what doesn't change")
 - `~/.agent-farm/global.db` location; `known_workspaces`, `terminal_sessions`,
@@ -162,7 +171,8 @@ standalone follow-up. (Architect to confirm cutting these two acceptance criteri
 - `packages/codev/src/agent-farm/db/index.ts` — `getDb()`→`getGlobalDb()`; remove
   `ensureLocalDatabase` + local migration ladder; bump `GLOBAL_CURRENT_VERSION` to 14 + add
   global migration v14; `getDbPath()`→`getGlobalDbPath()`; collapse `closeDb`.
-- `packages/codev/src/agent-farm/db/consolidate.ts` — **new**: discover/plan/apply + marker.
+- `packages/codev/src/agent-farm/db/consolidate.ts` — **new**: `activeStateDbPath` /
+  `planMigration` / `applyMigration` + persistent one-off marker.
 - `packages/codev/src/agent-farm/state.ts` — builder functions thread `workspace_path`
   (derive in `upsertBuilder`; filter in `getBuilder`/`getBuilders`/`removeBuilder`/
   `getBuildersByStatus`/`lookupBuilderSpawningArchitect`); drop the per-workspace direct open.
@@ -194,16 +204,23 @@ standalone follow-up. (Architect to confirm cutting these two acceptance criteri
   explicit callsite audit (above) + the `spec-755-lookup-builder` cross-workspace test reframed
   onto the single-file model + a new test asserting two same-id builders in different workspaces
   stay distinct.
-- **Risk — data loss on a botched merge.** Mitigation: sources renamed, never deleted
-  (`*.pre-merge-<ts>`); merge is transactional; dry-run preview surfaces conflicts before any
-  write; idempotent marker prevents re-merge.
-- **Risk — a stray `getGlobalDb()` from a read-only CLI command triggers the file rename/merge
-  before the user runs Tower.** Mitigation: schema (v14) is separated from the data
-  consolidation; consolidation is gated to Tower boot / explicit `--apply-migration`, not to
-  mere DB open. Dry-run opens defensively (read-only).
-- **Risk — source-version heterogeneity** (the audited pre-v11 file). Mitigation: per-source
-  `PRAGMA table_info` + synthesized `workspace_path`; validated live via the dry-run against the
-  real 8 files at the dev-approval gate.
+- **Risk — re-running the one-off (duplicate rows).** Mitigation: the row copy **and** the
+  marker insert happen in the **same transaction** — either both commit or neither. Every boot
+  checks the marker first and short-circuits. A crash mid-copy rolls back (global tables stay
+  empty, marker unset) and the next boot cleanly retries; a crash *after* commit but before the
+  file rename leaves the marker set (so no re-migrate) and only an un-renamed `state.db` lingering
+  (cosmetic, never read again).
+- **Risk — first post-upgrade boot is from a workspace with an absent/empty `state.db`.** Under
+  strict lifetime-once, marking done unconditionally would abandon a richer aggregate file in
+  another workspace. See Open Question #3 for the exact marker-set policy. Mitigation regardless:
+  the dry-run preview + guidance to first-start from the dominant start-cwd.
+- **Risk — a stray `getGlobalDb()` from a read-only CLI command triggers the migration before the
+  user runs Tower.** Mitigation: schema (v14) is separated from the data migration; the migration
+  is gated to Tower boot / explicit `--apply-migration`, not to mere DB open. Dry-run opens
+  defensively (read-only).
+- **Risk — source-version heterogeneity** (a pre-v11 active file). Mitigation: `PRAGMA
+  table_info` + synthesized `workspace_path`; validated live via the dry-run at the dev-approval
+  gate.
 - **Risk — test fallout** from `getDb`≡`getGlobalDb`. Mitigation: update the central mock; the
   change generally *simplifies* test isolation (one file). Run the full agent-farm suite.
 - **Alternative — per-workspace state.db with an LRU pool** (issue alt #1): rejected upstream as
@@ -222,8 +239,14 @@ standalone follow-up. (Architect to confirm cutting these two acceptance criteri
 2. **`builders` reshape buy-in** — adding `workspace_path` + composite PK to `builders` (and the
    builder-callsite audit) is the one structural change and expands blast radius slightly beyond
    the issue's "move as-is" framing. Confirm the approach (mirror #826) vs any alternative.
-3. **Consolidation marker** — dedicated `_consolidation` marker (recommended) vs a reserved
-   `_migrations` sentinel. Confirm.
+3. **One-off marker — shape and set-policy.** Shape: a dedicated persistent `_consolidation`
+   row/table in global.db (recommended), written inside the migration transaction, read at the
+   top of every boot to short-circuit. Set-policy when the first boot's active `state.db` is
+   absent/empty: (a) **strict** — mark done unconditionally on first boot (honors "never check
+   state.db again," but a stateless first-boot abandons other workspaces' files), or (b)
+   **mark-on-first-real-migration** — only set the marker once a `state.db` was actually found at
+   the active path (technically re-checks until one appears, marginally more forgiving). Confirm
+   which.
 
 ## Test Plan
 
@@ -234,18 +257,21 @@ standalone follow-up. (Architect to confirm cutting these two acceptance criteri
   and B; `getBuilder`/`lookupBuilderSpawningArchitect` scoped by `workspace_path` return the
   correct, distinct rows; `upsertBuilder` derives `workspace_path` from `worktree` and does not
   clobber the other workspace's row.
-- Consolidation row-routing: synthesize 2–3 legacy `state.db` files (incl. a pre-v11 shape and
-  an overlapping same-id builder) with differing `started_at`; assert latest-started_at wins,
-  all distinct rows present, conflicts reported, sources renamed (not deleted).
-- Idempotency: second consolidation run is a no-op (marker set; no further renames/merges).
+- One-off migration: an active `state.db` (incl. a pre-v11 architect shape + a builder with no
+  `workspace_path`) copies cleanly into empty global tables; `workspace_path` synthesized
+  correctly for builders/pre-v11 architect rows; source renamed to `*.pre-merge-<ts>`.
+- Marker idempotency: with the marker set, a second boot is a no-op — `state.db` is not opened,
+  not re-read, not re-renamed; global rows unchanged (no duplicates).
+- Crash-safety: simulate a crash after the migration commit but before rename — next boot
+  short-circuits on the marker (no re-migrate), leaving the un-renamed file untouched.
 
 **Manual (dev-approval gate, against the local fragmented machine)**
-- `afx tower start --dry-run-migration` against the real 8 fragmented state.db files: preview
-  lists every source + per-table counts + flags conflicts; no files changed.
+- `afx tower start --dry-run-migration` against the real active state.db: preview lists the
+  per-table counts it would migrate; no files changed.
 - Reboot scenario: `afx tower stop` (from workspace A), `afx tower start` (from workspace B),
   confirm A's architects are now readable from Tower at B (`afx status` shows them).
-- Confirm source `state.db` files are renamed to `*.pre-merge-<ts>` after the real start, and a
-  second start does not re-migrate.
+- Confirm the active `state.db` is renamed to `*.pre-merge-<ts>` after the real start, the marker
+  is set, and a second start does **not** re-migrate (and never opens `state.db` again).
 - Spawn a builder + add a sibling architect post-merge; confirm `afx status`, dashboard, and the
   VS Code sidebar read correct state regardless of Tower's start CWD, and that messaging /
   spoofing-check authorization still resolves to the right architect.

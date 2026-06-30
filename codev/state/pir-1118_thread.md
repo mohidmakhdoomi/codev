@@ -49,4 +49,17 @@ Architect pushed back on 4 points; plan revised:
 
 Builder-read callsite audit (getBuilder/getBuilders/removeBuilder/getBuildersByStatus) is the
 bounded extra cost. upsertBuilder can derive workspace_path from builder.worktree (no sig change).
+### Migration scope decision (architect, plan-approval gate)
+Architect chose **strict one-off migration of the ACTIVE state.db only** (not multi-file scan,
+not per-boot). Key points:
+- Runs ONCE in the install's lifetime, at first post-upgrade Tower boot. Persistent marker in
+  global.db (written in the SAME txn as the row copy) → every later boot short-circuits;
+  state.db is dead, never read again.
+- Straight copy (single source, empty target) → NO conflict resolution needed.
+- Satellite files (other workspaces' state.db) abandoned — accepted loss. Completeness depends
+  on which workspace Tower is first started from after upgrade. Dry-run lets user confirm.
+- Open marker set-policy question: strict (mark on first boot unconditionally) vs
+  mark-on-first-real-migration (when active state.db absent/empty on first boot). Flagged in
+  plan Open Q #3.
+
 Still at plan-approval gate awaiting re-review.
