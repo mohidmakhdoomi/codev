@@ -374,6 +374,15 @@ export interface IssueView {
   title: string;
   body: string;
   state: string;
+  /**
+   * The issue's **browser/web** URL (NOT an API endpoint), when the forge
+   * concept supplies it. Each forge maps its own web-URL field into this:
+   * GitHub `url`, GitLab `web_url`, Gitea `html_url` (Gitea's `url` is the API
+   * endpoint — do not use it), Linear `url`. Optional so the contract stays
+   * forge-neutral; consumers that open the issue in a browser degrade
+   * gracefully when it's absent (e.g. a forge script that doesn't emit it).
+   */
+  url?: string;
   comments: Array<{
     body: string;
     createdAt: string;

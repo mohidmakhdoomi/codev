@@ -27,6 +27,7 @@ import { viewPlanFile, viewSpecFile, viewReviewFile } from './commands/view-arti
 import { activateIssueView, viewBacklogIssue } from './commands/view-issue.js';
 import { BacklogSearchPanel } from './webviews/backlog-search-panel.js';
 import { searchBacklog } from './commands/search-backlog.js';
+import { openIssueById } from './commands/open-issue-by-id.js';
 import { connectTunnel, disconnectTunnel } from './commands/tunnel.js';
 import { listCronTasks } from './commands/cron.js';
 import { addReviewComment } from './commands/review.js';
@@ -1002,6 +1003,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		reg('codev.openBacklogSearch', () =>
 			BacklogSearchPanel.createOrShow(connectionManager!, overviewCache, context.extensionUri)),
 		reg('codev.searchBacklog', () => searchBacklog(overviewCache)),
+		reg('codev.openIssueById', () => openIssueById(connectionManager!)),
 		reg('codev.openMarkdownPreview', async () => {
 			const uri = vscode.window.activeTextEditor?.document.uri;
 			if (!uri) {
