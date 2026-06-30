@@ -62,3 +62,11 @@ Per-forge mapping (field names verified vs each forge's API docs):
 Testability: only github is runtime-testable here. The gitlab/gitea/linear jq transforms were validated against representative sample payloads (correct url extracted, other fields preserved, gitea fallback works) but NOT against live glab/tea/Linear. Flagged for the human at dev-approval / a forge-equipped reviewer.
 
 Exec bits preserved (755, no git mode change). Porch checks: build ✓, tests ✓.
+
+## Review phase (2026-06-30)
+
+dev-approval approved → review phase. Wrote `codev/reviews/1096-vscode-codev-openissuebynumber.md` (Summary + Files + Commits + Test Results + Architecture Updates [no-change, rationale: per-forge url-field mapping documented inline at the contract] + Lessons Learned [added one COLD entry to lessons-learned.md on per-forge field divergence + gitea footgun, extends #920/#909] + Things to Look At + How to Test). Committed bd494d82.
+
+Opened PR #1123 ("Open Issue by ID (Cmd+K I): open any issue in the browser"), body = review file, Fixes #1096 confirmed. Recorded with porch. Ran `porch done` → 3-way consultation (single advisory pass, max_iterations:1). Awaiting verdicts, then pr gate.
+
+Consultation verdicts (single advisory pass): claude=APPROVE (HIGH), codex=APPROVE (HIGH). Gemini/agy unavailable → 2-way pass. No REQUEST_CHANGES. `pr` gate now pending; notified architect; awaiting human merge + pr-gate approval.
