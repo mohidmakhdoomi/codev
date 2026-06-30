@@ -58,10 +58,12 @@ function canonicalize(p: string): string {
   }
 }
 
-/** A builder's owning workspace: the prefix before `/.builders/`, else fallback. */
+/** A builder's owning workspace: the prefix before the LAST `/.builders/`, else fallback. */
 function deriveWorkspaceFromWorktree(worktree: string, fallback: string): string {
+  // lastIndexOf, not indexOf — robust when the path contains an earlier
+  // `.builders` segment (a builder worktree nested under another).
   const marker = '/.builders/';
-  const idx = worktree.indexOf(marker);
+  const idx = worktree.lastIndexOf(marker);
   if (idx >= 0) return canonicalize(worktree.slice(0, idx));
   return fallback;
 }

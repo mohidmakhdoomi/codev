@@ -51,8 +51,11 @@ function canonicalize(workspacePath: string): string {
  * so a builder's row is keyed by the same canonical workspace its architect is.
  */
 function deriveWorkspaceFromWorktree(worktree: string): string {
+  // lastIndexOf, not indexOf: the workspace is the prefix before the FINAL
+  // `/.builders/` — robust when the path itself contains an earlier `.builders`
+  // segment (e.g. a builder worktree nested under another).
   const marker = '/.builders/';
-  const idx = worktree.indexOf(marker);
+  const idx = worktree.lastIndexOf(marker);
   const root = idx >= 0 ? worktree.slice(0, idx) : path.dirname(path.dirname(worktree));
   return canonicalize(root);
 }
