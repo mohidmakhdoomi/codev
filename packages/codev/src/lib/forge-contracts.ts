@@ -21,6 +21,12 @@ export interface IssueViewResult {
   title: string;
   body: string;
   state: string;
+  /**
+   * Canonical forge URL of the issue, when the concept supplies it. GitHub's
+   * `issue-view` script emits it (`gh issue view --json …,url`); other forge
+   * scripts may omit it. Optional to keep the contract forge-neutral.
+   */
+  url?: string;
   comments: Array<{
     body: string;
     createdAt: string;

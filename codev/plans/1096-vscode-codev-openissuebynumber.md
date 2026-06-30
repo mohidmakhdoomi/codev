@@ -13,8 +13,8 @@ multi-step palette round-trip today (`Cmd+Shift+P` → "Codev: Search Backlog...
    issue affordances.
 
 The fix is additive: one new command (`codev.openIssueById`) that prompts
-for an issue ID and opens the issue preview via the *existing* open path, plus a
-default `Cmd+K I` / `Ctrl+K I` keybinding.
+for an issue ID and opens that issue's forge page in the browser, plus a default
+`Cmd+K I` / `Ctrl+K I` keybinding.
 
 > **Naming note:** the GitHub issue #1096 proposes the command id
 > `codev.openIssueByNumber`. Per architect direction at plan time, this plan uses
@@ -48,7 +48,7 @@ where the three issue-entry verbs are clearly distinguished:
 
 | Command | New title | Verb |
 |---|---|---|
-| `codev.openIssueById` (new) | `Codev: Open Issue by ID...` | open one issue by typed ID (incl. closed/arbitrary) |
+| `codev.openIssueById` (new) | `Codev: Open Issue by ID...` | open one issue by typed ID in the **browser** (incl. closed/arbitrary) |
 | `codev.searchBacklog` (unchanged) | `Codev: Search Backlog...` | fuzzy quick-pick over the backlog set |
 | `codev.openBacklogSearch` (retitled) | `Codev: Open Backlog Search Panel` | rich persistent triage panel |
 
@@ -83,31 +83,36 @@ Add a new command `codev.openIssueById` whose handler:
    `validateInput` callback that rejects empty / non-numeric input live.
 2. Parses the input with a pure `parseIssueId(input)` helper (trims, strips a
    single leading `#`, requires the remainder to be all digits and non-empty).
-3. On a valid ID, **delegates to `codev.viewBacklogIssue`** via
-   `vscode.commands.executeCommand('codev.viewBacklogIssue', parsed)`. This is
-   the same delegation `searchBacklog` uses, so placement / focus / reuse / the
-   connection check / the null-issue message are all inherited unchanged — no
-   duplicated fetch or render logic. Because the open path is the live forge
-   fetch (not the cached backlog set), it works for open AND closed/archived
-   issues and arbitrary IDs, exactly as the acceptance criteria require.
+3. On a valid ID, **fetches the issue via the forge-agnostic `client.getIssue`**
+   (the same fetch path the in-editor preview uses), then **opens the issue's
+   canonical forge URL in the external browser** (`vscode.env.openExternal`).
+   Because it's a live fetch by id (not the cached backlog set), it works for
+   open AND closed/archived issues, and for ids already claimed by a builder
+   (which the backlog filters out).
 
-Register it with the plain `reg` helper (it needs no CLI — `viewBacklogIssue`
-already gates on Tower connection). Add the command + palette title + default
-keybinding to `package.json`.
+### Differentiator: browser, not in-editor (decided during dev-approval)
 
-### Why delegate rather than re-fetch (the one real design decision)
+This command is the **browser** counterpart to the backlog / "View Issue"
+family, which render a read-only preview *inside* VSCode. Making "Open Issue by
+ID" open the forge page in the browser is what distinguishes it from
+`codev.viewBacklogIssue` / `codev.searchBacklog` (which already match an open,
+unclaimed issue by typed id and preview it in-editor). The split — *type an id →
+browser* vs *browse the backlog → in-editor* — is the command's reason to exist.
 
-The issue's acceptance criterion #4 suggests the message *"Codev: issue #1234 not
-found in this repository"*. But `getIssue` returns `null` indistinguishably for
-not-found and forge-unavailable, so asserting "not found in this repository"
-would over-claim whenever the forge is merely down. `viewBacklogIssue` already
-shows a clean, honest warning for the null case (`Could not load issue #N (forge
-unavailable?)`) with no exception leak. **Recommendation: delegate to
-`viewBacklogIssue` and keep its existing message**, rather than re-implement the
-fetch just to print a message we can't actually substantiate. This keeps a single
-source of truth for the open path and satisfies criterion #4's spirit (clean
-message, no exception leak). See plan-gate decision #2 below if a distinct
-wording is still wanted.
+Reusing the existing `codev.openBacklogIssue` ("Open Issue in Browser") directly
+was **not possible**: that command only accepts a backlog *tree item* with a
+pre-computed `issueUrl`, and the by-id fetch (`IssueView`) carried no URL. So we
+thread a `url` through the issue-view fetch contract (the forge already knows it)
+and open it here.
+
+**Not-found / no-url handling.** Fetching first gives a clean signal: `null` →
+honest warning (`Could not open issue #N (not found, or forge unavailable)`), no
+exception leak. When the forge supplies no `url` (non-GitHub scripts may not),
+the command **degrades to the in-editor preview** (`codev.viewBacklogIssue`)
+rather than failing — so it stays useful on every forge.
+
+Register it with the plain `reg` helper, passing `connectionManager` (the handler
+needs the Tower client for the fetch).
 
 ## Files to Change
 
@@ -116,13 +121,25 @@ wording is still wanted.
     no `vscode` dependency in its logic; trims, strips one optional leading `#`,
     returns the digit string if the remainder is non-empty and all digits, else
     `undefined`.
-  - `export async function openIssueById(): Promise<void>` — `showInputBox`
-    (placeholder e.g. `"Issue ID, e.g. 1096 or #1096"`, `validateInput` using
-    `parseIssueId`) → on accept, parse → `executeCommand('codev.viewBacklogIssue', parsed)`.
+  - `export async function openIssueById(connectionManager): Promise<void>` —
+    `showInputBox` (placeholder `"Issue ID, e.g. 1096 or #1096"`, `validateInput`
+    using `parseIssueId`) → on accept, parse → `client.getIssue(id, workspacePath)`
+    → `issue.url` present: `vscode.env.openExternal`; absent: fall back to
+    `executeCommand('codev.viewBacklogIssue', id)`; `null`: warning.
+- `packages/types/src/api.ts` — add optional `url?: string` to `IssueView` (wire
+  contract; the forge supplies it).
+- `packages/codev/src/lib/forge-contracts.ts` — add optional `url?: string` to
+  `IssueViewResult` (mirrors the wire contract). Tower's `handleIssueView` already
+  passes the whole object through, so no route change is needed.
+- `packages/codev/scripts/forge/github/issue-view.sh` — add `url` to the
+  `gh issue view --json` field list. Other forge scripts (gitlab/gitea/linear)
+  leave `url` unset for now; the optional field + in-editor fallback keeps them
+  working. (No `codev-skeleton` mirror: forge scripts ship from the package, not
+  the skeleton.)
 - `packages/vscode/src/extension.ts`
   - Import `openIssueById` (near the `view-issue` / `search-backlog` imports, ~line 27-29).
-  - Register `reg('codev.openIssueById', () => openIssueById())` in the
-    command block near `codev.searchBacklog` (~line 1004).
+  - Register `reg('codev.openIssueById', () => openIssueById(connectionManager!))`
+    in the command block near `codev.searchBacklog` (~line 1004).
 - `packages/vscode/package.json`
   - `contributes.commands`: add `{ "command": "codev.openIssueById", "title": "Codev: Open Issue by ID..." }`.
   - `contributes.keybindings`: add `{ "command": "codev.openIssueById", "key": "ctrl+k i", "mac": "cmd+k i" }` — **no `when` clause** (global, per criterion #6).
@@ -137,14 +154,14 @@ wording is still wanted.
     consistent with existing release notes (no CHANGELOG edit needed here — that
     accumulates via the architect's vscode-changelog workflow post-merge).
 - `packages/vscode/src/__tests__/open-issue-by-id.test.ts` — **new file.** Unit
-  tests for `parseIssueId`: `"1234"`→`"1234"`, `"#1234"`→`"1234"`,
-  `" 1234 "`→`"1234"`, `" #1234 "`→`"1234"`, `""`→`undefined`, `"abc"`→`undefined`,
-  `"12a3"`→`undefined`, `"#"`→`undefined`, `"##12"`→`undefined`. Uses the
-  `vi.mock('vscode')` pattern if the import chain requires it (the parser itself
-  is vscode-free).
+  tests for `parseIssueId` (the `1234` / `#1234` / whitespace / empty / non-numeric
+  / `#`-only / double-`#` table) **and** the handler's routing: url present →
+  `openExternal`; url absent → `viewBacklogIssue` fallback; `null` → warning;
+  not-connected → error; dismissed input → no-op. Uses the `vi.mock('vscode')`
+  pattern with a fake `ConnectionManager`.
 
-No `codev-skeleton/` mirror: this is VSCode-extension product code (single
-source), not a framework doc/template/protocol.
+No `codev-skeleton/` mirror for the VSCode code or forge scripts: both ship from
+their packages (single source), not the skeleton.
 
 ## Risks & Alternatives Considered
 
@@ -155,21 +172,25 @@ source), not a framework doc/template/protocol.
 - **Risk: keybinding conflicts with a user's personal binding.** Shipping a
   default matches the `Cmd+K B` / `Cmd+K A`-family precedent; users override in
   `keybindings.json`. Accepted.
-- **Alternative: re-fetch in the new command to print a precise "not found"
-  message.** Rejected — double-fetch + can't actually distinguish 404 from
-  forge-down; delegating keeps one source of truth. (Revisitable at gate
-  decision #2.)
+- **Risk: `url` field unset on non-GitHub forges.** gitlab/gitea/linear scripts
+  don't emit `url` yet. Mitigation: the field is optional and the handler falls
+  back to the in-editor preview when it's absent — no breakage, just no browser
+  open on those forges until their scripts add `url`. Clean follow-up.
+- **Alternative: construct `<repo>/issues/N` client-side.** Rejected — the URL
+  shape is forge-specific (breaks neutrality) and no repo base URL is exposed
+  client-side. Threading `url` through the fetch (the forge's own canonical URL)
+  is forge-neutral.
 - **Alternative: route PRs (decision #4).** Deferred — see below.
 
 ## Plan-gate decisions (recommendations to lock at `plan-approval`)
 
 1. **Input validation shape.** Recommend: numeric + single optional leading `#`,
    trimmed. No URL parsing in v1 (follow-up if users paste links).
-2. **Not-found message.** Recommend: delegate to `viewBacklogIssue` and keep its
-   existing honest warning, rather than assert "not found in this repository"
-   (the contract can't distinguish 404 from forge-down). If you want a distinct
-   message, the alternative is a pre-fetch in the new command (one extra GET) —
-   say so and I'll implement that instead.
+2. **Not-found message.** RESOLVED: since the handler now fetches before opening
+   the browser, `null` yields a clean honest warning (`Could not open issue #N
+   (not found, or forge unavailable)`), no exception leak. We still don't assert a
+   definitive "not found in this repository" (the fetch can't distinguish 404 from
+   forge-down), which keeps the message truthful.
 3. **Cross-repo (`owner/repo#1234`).** Recommend: no for v1; same-repo only.
 4. **Accept PR numbers too.** Recommend: **no for v1 — issues only.** The open
    path is `/api/issue`; routing PRs cleanly needs a separate viewer surface and
@@ -188,11 +209,10 @@ source), not a framework doc/template/protocol.
 - **Manual (reviewer at `dev-approval`, running the worktree in VSCode):**
   - `Cmd+Shift+P` → "Codev: Open Issue by ID..." appears and runs.
   - Press `Cmd+K I` → input box appears immediately (no editor/view scoping).
-  - Enter `1096` → issue #1096 preview opens in the same placement as a
-    sidebar-row click / search-pick.
+  - Enter `1096` → issue #1096 opens in the **external browser** (its GitHub page).
   - Enter `#1096` → same result (hash accepted).
-  - Enter a closed/archived issue ID not in the current backlog → still opens
-    (proves it's the live forge fetch, not the backlog set).
+  - Enter a closed/archived issue ID not in the current backlog → still opens in
+    the browser (proves it's the live forge fetch, not the backlog set).
   - Enter a non-existent ID → clean warning, no exception in the dev console.
   - Enter empty / letters → input box shows live validation error, won't submit.
   - Confirm `codev.searchBacklog`, `codev.viewBacklogIssue`, `codev.openBacklogIssue`

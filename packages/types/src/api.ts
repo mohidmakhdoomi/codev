@@ -374,6 +374,13 @@ export interface IssueView {
   title: string;
   body: string;
   state: string;
+  /**
+   * Canonical forge URL of the issue, when the forge concept supplies it
+   * (GitHub's `issue-view` emits it; some forge scripts may not). Optional so
+   * the contract stays forge-neutral — consumers that want to open the issue
+   * in a browser degrade gracefully when it's absent.
+   */
+  url?: string;
   comments: Array<{
     body: string;
     createdAt: string;

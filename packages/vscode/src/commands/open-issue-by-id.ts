@@ -1,22 +1,28 @@
 /**
- * Codev: Open Issue by ID — open a specific issue's preview by typing its id,
- * without first having to find it in the backlog Quick Pick.
+ * Codev: Open Issue by ID — open a specific issue by typing its id, without
+ * first finding it in the backlog Quick Pick.
  *
- * Bound to `Cmd+K I` / `Ctrl+K I`. Prompts for an issue id, then delegates to
- * `codev.viewBacklogIssue` so the fetch path, preview placement, focus, reuse,
- * and not-found handling are all identical to a sidebar-row click (#1076) — no
- * duplicated forge fetch or render logic here. Because that path is a live forge
- * fetch (not the cached backlog set), this works for open AND closed/archived
- * issues, plus arbitrary ids not currently in the backlog.
+ * Bound to `Cmd+K I` / `Ctrl+K I`. This is the *browser* counterpart to the
+ * backlog/`View Issue` family: where those render a read-only preview inside
+ * VSCode, "Open Issue by ID" opens the issue's canonical forge page in the
+ * external browser. That split is the command's reason to exist — direct,
+ * keyboard-driven access to any issue (open, closed, archived, or one already
+ * claimed by a builder and therefore filtered out of the backlog), fetched live
+ * by id rather than picked from the loaded backlog set.
  *
  * "ID" rather than "number": the term is forge-neutral (GitLab `iid`, Linear /
- * Jira identifiers are not bare numbers), matching the extension's existing
- * `issueId` vocabulary and Codev's forge-abstraction. The numeric validation in
- * `parseIssueId` is the GitHub-specific part; only it loosens if a non-numeric
- * forge is ever supported.
+ * Jira identifiers aren't bare numbers), matching the extension's existing
+ * `issueId` vocabulary. The numeric validation in `parseIssueId` is the
+ * GitHub-specific part; only it loosens if a non-numeric forge is supported.
+ *
+ * Graceful degradation: the issue is fetched via the same forge-agnostic
+ * `getIssue` path the in-editor preview uses. When the forge supplies a `url`
+ * (GitHub does), we open the browser; when it doesn't, we fall back to the
+ * in-editor preview (`codev.viewBacklogIssue`) rather than failing.
  */
 
 import * as vscode from 'vscode';
+import type { ConnectionManager } from '../connection-manager.js';
 
 /**
  * Normalize a typed issue id to its bare numeric string, or `undefined` if it
@@ -35,11 +41,11 @@ export function parseIssueId(input: string): string | undefined {
   return withoutHash;
 }
 
-export async function openIssueById(): Promise<void> {
+export async function openIssueById(connectionManager: ConnectionManager): Promise<void> {
   const input = await vscode.window.showInputBox({
     title: 'Codev: Open Issue by ID',
     placeHolder: 'Issue ID, e.g. 1096 or #1096',
-    prompt: 'Opens the issue preview — works for open, closed, or archived issues.',
+    prompt: 'Opens the issue in your browser — works for open, closed, or archived issues.',
     validateInput: (value) =>
       parseIssueId(value) === undefined
         ? 'Enter a numeric issue id (e.g. 1096 or #1096).'
@@ -50,5 +56,26 @@ export async function openIssueById(): Promise<void> {
   const issueId = parseIssueId(input);
   if (issueId === undefined) { return; }
 
+  const client = connectionManager.getClient();
+  const workspacePath = connectionManager.getWorkspacePath();
+  if (!client || !workspacePath || connectionManager.getState() !== 'connected') {
+    vscode.window.showErrorMessage('Codev: Not connected to Tower');
+    return;
+  }
+
+  const issue = await client.getIssue(issueId, workspacePath);
+  if (!issue) {
+    vscode.window.showWarningMessage(
+      `Codev: Could not open issue #${issueId} (not found, or forge unavailable).`,
+    );
+    return;
+  }
+
+  if (issue.url) {
+    await vscode.env.openExternal(vscode.Uri.parse(issue.url));
+    return;
+  }
+
+  // Forge supplied no URL — degrade to the in-editor preview rather than fail.
   await vscode.commands.executeCommand('codev.viewBacklogIssue', issueId);
 }
