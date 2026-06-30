@@ -19,3 +19,17 @@ Key plan-gate recommendation: delegate the open path entirely to `codev.viewBack
 
 - Architect chose to **fold in** a palette-clarity fix: rename `codev.openBacklogSearch`'s title "Codev: Search Backlog" → "Codev: Open Backlog Search Panel" (title-only, no command-id rename) to disambiguate from the `codev.searchBacklog` Quick Pick ("Codev: Search Backlog...").
 - Architect direction: command is **`codev.openIssueById`** / "Codev: Open Issue by **ID**...", NOT `openIssueByNumber` as the issue text proposes. Parser `parseIssueId`, file `open-issue-by-id.ts`. Porch project slug + plan filename stay `…openissuebynumber` (porch-managed, derived from issue title; plan_exists check is pinned to that path).
+
+## Implement phase (2026-06-30)
+
+Implemented per approved plan:
+- New `packages/vscode/src/commands/open-issue-by-id.ts` — pure `parseIssueId(input)` (trim, strip one optional leading `#`, all-digits) + `openIssueById()` (showInputBox with live validation, delegates to `codev.viewBacklogIssue`).
+- `extension.ts` — import + `reg('codev.openIssueById', ...)`.
+- `package.json` — command contribution `Codev: Open Issue by ID...`, keybinding `cmd+k i`/`ctrl+k i` (no when-clause, global), and folded-in title rename of `codev.openBacklogSearch` → "Codev: Open Backlog Search Panel" (title-only).
+- New unit test `src/__tests__/open-issue-by-id.test.ts` — 8 cases for parseIssueId.
+
+Validation (run from worktree, after building types/core/artifact-canvas deps): check-types ✓, lint ✓, vitest 524/524 ✓. Porch checks: build ✓ (7.9s), tests ✓ (20.6s). Committed 2a423a6e, pushed.
+
+Note: the 11 initially-"failed" test files + check-types errors were pre-existing module-resolution failures from unbuilt workspace deps (codev-core/codev-artifact-canvas), not my diff — resolved by building those deps first. None of my touched files were implicated.
+
+Awaiting dev-approval gate.
