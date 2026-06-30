@@ -1,20 +1,28 @@
-# PIR Plan: `codev.openIssueByNumber` + `Cmd+K I` keybinding
+# PIR Plan: `codev.openIssueById` + `Cmd+K I` keybinding
 
 ## Understanding
 
-Opening a specific GitHub issue by number in the Codev VSCode extension is a
+Opening a specific GitHub issue by its ID in the Codev VSCode extension is a
 multi-step palette round-trip today (`Cmd+Shift+P` → "Codev: Search Backlog..."
 → Quick Pick → scan filtered rows → Enter). Two gaps:
 
 1. **No direct "open #N" command.** `codev.searchBacklog` is a Quick Pick that
    filters backlog rows by typed text; there is no command that takes a typed
-   issue number and opens it directly, independent of the backlog set.
+   issue ID and opens it directly, independent of the backlog set.
 2. **No keybinding on any issue command.** `contributes.keybindings` has zero
    issue affordances.
 
-The fix is additive: one new command (`codev.openIssueByNumber`) that prompts
-for a number and opens the issue preview via the *existing* open path, plus a
+The fix is additive: one new command (`codev.openIssueById`) that prompts
+for an issue ID and opens the issue preview via the *existing* open path, plus a
 default `Cmd+K I` / `Ctrl+K I` keybinding.
+
+> **Naming note:** the GitHub issue #1096 proposes the command id
+> `codev.openIssueByNumber`. Per architect direction at plan time, this plan uses
+> **`codev.openIssueById`** ("Open Issue by ID") instead — "ID" is the preferred
+> term. This is a deliberate divergence from the issue text, not an oversight.
+> (The porch project slug / plan filename remain `…openissuebynumber` because
+> they are porch-managed identifiers derived from the original issue title; only
+> the shipped command, title, and code identifiers use "ID".)
 
 ### Folded-in palette-clarity fix (approved at planning)
 
@@ -35,12 +43,12 @@ tell which opens what. The agreed fix (folded into this PR) is a **title-only**
 rename of the panel command so the two read distinctly. This is purely a display
 change in `contributes.commands` — **no command-id rename** (that would break the
 `view/title` menu binding, future keybindings, and `executeCommand` callers) and
-**no behavior change**. The new `codev.openIssueByNumber` then joins a palette
+**no behavior change**. The new `codev.openIssueById` then joins a palette
 where the three issue-entry verbs are clearly distinguished:
 
 | Command | New title | Verb |
 |---|---|---|
-| `codev.openIssueByNumber` (new) | `Codev: Open Issue by Number...` | open one issue by typed number (incl. closed/arbitrary) |
+| `codev.openIssueById` (new) | `Codev: Open Issue by ID...` | open one issue by typed ID (incl. closed/arbitrary) |
 | `codev.searchBacklog` (unchanged) | `Codev: Search Backlog...` | fuzzy quick-pick over the backlog set |
 | `codev.openBacklogSearch` (retitled) | `Codev: Open Backlog Search Panel` | rich persistent triage panel |
 
@@ -69,19 +77,19 @@ where the three issue-entry verbs are clearly distinguished:
 
 ## Proposed Change
 
-Add a new command `codev.openIssueByNumber` whose handler:
+Add a new command `codev.openIssueById` whose handler:
 
-1. Prompts via `vscode.window.showInputBox` for an issue number, with a
+1. Prompts via `vscode.window.showInputBox` for an issue ID, with a
    `validateInput` callback that rejects empty / non-numeric input live.
-2. Parses the input with a pure `parseIssueNumber(input)` helper (trims, strips a
+2. Parses the input with a pure `parseIssueId(input)` helper (trims, strips a
    single leading `#`, requires the remainder to be all digits and non-empty).
-3. On a valid number, **delegates to `codev.viewBacklogIssue`** via
+3. On a valid ID, **delegates to `codev.viewBacklogIssue`** via
    `vscode.commands.executeCommand('codev.viewBacklogIssue', parsed)`. This is
    the same delegation `searchBacklog` uses, so placement / focus / reuse / the
    connection check / the null-issue message are all inherited unchanged — no
    duplicated fetch or render logic. Because the open path is the live forge
    fetch (not the cached backlog set), it works for open AND closed/archived
-   issues and arbitrary numbers, exactly as the acceptance criteria require.
+   issues and arbitrary IDs, exactly as the acceptance criteria require.
 
 Register it with the plain `reg` helper (it needs no CLI — `viewBacklogIssue`
 already gates on Tower connection). Add the command + palette title + default
@@ -103,21 +111,21 @@ wording is still wanted.
 
 ## Files to Change
 
-- `packages/vscode/src/commands/open-issue-by-number.ts` — **new file.**
-  - `export function parseIssueNumber(input: string): string | undefined` — pure,
+- `packages/vscode/src/commands/open-issue-by-id.ts` — **new file.**
+  - `export function parseIssueId(input: string): string | undefined` — pure,
     no `vscode` dependency in its logic; trims, strips one optional leading `#`,
     returns the digit string if the remainder is non-empty and all digits, else
     `undefined`.
-  - `export async function openIssueByNumber(): Promise<void>` — `showInputBox`
-    (placeholder e.g. `"Issue number, e.g. 1096 or #1096"`, `validateInput` using
-    `parseIssueNumber`) → on accept, parse → `executeCommand('codev.viewBacklogIssue', parsed)`.
+  - `export async function openIssueById(): Promise<void>` — `showInputBox`
+    (placeholder e.g. `"Issue ID, e.g. 1096 or #1096"`, `validateInput` using
+    `parseIssueId`) → on accept, parse → `executeCommand('codev.viewBacklogIssue', parsed)`.
 - `packages/vscode/src/extension.ts`
-  - Import `openIssueByNumber` (near the `view-issue` / `search-backlog` imports, ~line 27-29).
-  - Register `reg('codev.openIssueByNumber', () => openIssueByNumber())` in the
+  - Import `openIssueById` (near the `view-issue` / `search-backlog` imports, ~line 27-29).
+  - Register `reg('codev.openIssueById', () => openIssueById())` in the
     command block near `codev.searchBacklog` (~line 1004).
 - `packages/vscode/package.json`
-  - `contributes.commands`: add `{ "command": "codev.openIssueByNumber", "title": "Codev: Open Issue by Number..." }`.
-  - `contributes.keybindings`: add `{ "command": "codev.openIssueByNumber", "key": "ctrl+k i", "mac": "cmd+k i" }` — **no `when` clause** (global, per criterion #6).
+  - `contributes.commands`: add `{ "command": "codev.openIssueById", "title": "Codev: Open Issue by ID..." }`.
+  - `contributes.keybindings`: add `{ "command": "codev.openIssueById", "key": "ctrl+k i", "mac": "cmd+k i" }` — **no `when` clause** (global, per criterion #6).
   - `commandPalette`: no entry needed — palette-discoverable by default (we do NOT add a `when: false` hide entry).
   - **Folded-in rename:** change the `title` of `codev.openBacklogSearch` from
     `"Codev: Search Backlog"` to `"Codev: Open Backlog Search Panel"`. Title field
@@ -128,8 +136,8 @@ wording is still wanted.
     panel as the "Search Backlog editor-tab webview" / 🔍 icon, so the new title is
     consistent with existing release notes (no CHANGELOG edit needed here — that
     accumulates via the architect's vscode-changelog workflow post-merge).
-- `packages/vscode/src/__tests__/open-issue-by-number.test.ts` — **new file.** Unit
-  tests for `parseIssueNumber`: `"1234"`→`"1234"`, `"#1234"`→`"1234"`,
+- `packages/vscode/src/__tests__/open-issue-by-id.test.ts` — **new file.** Unit
+  tests for `parseIssueId`: `"1234"`→`"1234"`, `"#1234"`→`"1234"`,
   `" 1234 "`→`"1234"`, `" #1234 "`→`"1234"`, `""`→`undefined`, `"abc"`→`undefined`,
   `"12a3"`→`undefined`, `"#"`→`undefined`, `"##12"`→`undefined`. Uses the
   `vi.mock('vscode')` pattern if the import chain requires it (the parser itself
@@ -174,18 +182,18 @@ source), not a framework doc/template/protocol.
 ## Test Plan
 
 - **Unit** (`pnpm --filter @cluesmith/codev-vscode test:unit`, or from
-  `packages/vscode`): `parseIssueNumber` table — `1234`, `#1234`, whitespace
+  `packages/vscode`): `parseIssueId` table — `1234`, `#1234`, whitespace
   variants, empty, non-numeric, `#`-only, double-`#` all handled per above.
 - **Build/typecheck**: `pnpm --filter ... build` (or the repo's vscode build) is green.
 - **Manual (reviewer at `dev-approval`, running the worktree in VSCode):**
-  - `Cmd+Shift+P` → "Codev: Open Issue by Number..." appears and runs.
+  - `Cmd+Shift+P` → "Codev: Open Issue by ID..." appears and runs.
   - Press `Cmd+K I` → input box appears immediately (no editor/view scoping).
   - Enter `1096` → issue #1096 preview opens in the same placement as a
     sidebar-row click / search-pick.
   - Enter `#1096` → same result (hash accepted).
-  - Enter a closed/archived issue number not in the current backlog → still opens
+  - Enter a closed/archived issue ID not in the current backlog → still opens
     (proves it's the live forge fetch, not the backlog set).
-  - Enter a non-existent number → clean warning, no exception in the dev console.
+  - Enter a non-existent ID → clean warning, no exception in the dev console.
   - Enter empty / letters → input box shows live validation error, won't submit.
   - Confirm `codev.searchBacklog`, `codev.viewBacklogIssue`, `codev.openBacklogIssue`
     still work (no regression).

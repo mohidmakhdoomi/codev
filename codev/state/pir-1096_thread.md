@@ -14,3 +14,8 @@ Investigated the VSCode extension. Key findings:
 Plan written to `codev/plans/1096-vscode-codev-openissuebynumber.md`. Awaiting plan-approval gate.
 
 Key plan-gate recommendation: delegate the open path entirely to `codev.viewBacklogIssue` (DRY, identical placement) and keep its existing null message rather than asserting "not found" we can't verify. PRs (decision #4): recommend NO for v1 (issues only).
+
+### Plan revisions during plan-approval review
+
+- Architect chose to **fold in** a palette-clarity fix: rename `codev.openBacklogSearch`'s title "Codev: Search Backlog" → "Codev: Open Backlog Search Panel" (title-only, no command-id rename) to disambiguate from the `codev.searchBacklog` Quick Pick ("Codev: Search Backlog...").
+- Architect direction: command is **`codev.openIssueById`** / "Codev: Open Issue by **ID**...", NOT `openIssueByNumber` as the issue text proposes. Parser `parseIssueId`, file `open-issue-by-id.ts`. Porch project slug + plan filename stay `…openissuebynumber` (porch-managed, derived from issue title; plan_exists check is pinned to that path).
