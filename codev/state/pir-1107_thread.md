@@ -50,3 +50,27 @@ overlay. Implementation: inject an in-flow placeholder below the block and
 Clarified scope: this issue is **add only**; edit/delete/reply/resolve = #1055. The
 composer sets the visual precedent #1055's edit mode will reuse. Plan sections 1, 2,
 5, files table, risks, and test plan updated + recommitted. Gate still pending.
+
+## Phase: Implement
+
+### Implemented (2026-06-30)
+plan-approval approved → implement phase. Built the inline composer per the approved plan:
+- New `CommentComposer.tsx` (textarea + Submit/Cancel; ⌘/Ctrl+Enter submits, Enter = newline,
+  Esc cancels, empty = no-op) + unit tests.
+- `types.ts`: `onAddComment(line)` → `onAddComment(line, text)` (contract amendment, documented).
+- `ArtifactCanvas.tsx`: `composingLine` + `composerHost` state; `+`/Enter/Space open the composer;
+  in-flow placeholder injected below the block (after the marker-card stack) via a dedicated
+  idempotent effect; composer `createPortal`'d into it; submit emits `(line, text)` + closes;
+  Esc/Cancel closes + restores focus; reload removing the block closes it; `+` suppressed for the
+  composing line. Updated existing unit + e2e tests to drive through the composer; added
+  Esc-closes + reload-clears tests.
+- CSS: `.codev-canvas-comment-composer*` mirroring the marker-card left-rule/spacing.
+- Host: `webview/main.ts` posts `{line, text}`; `preview-provider.ts` drops `showInputBox`, writes
+  the marker from the posted text. Doc comments updated.
+
+**Verification:** artifact-canvas `check-types` + `build` ✓, `test` ✓ (68 tests). vscode
+`check-types` (host + webview) ✓, esbuild bundle ✓, `lint` ✓, `test:unit` ✓ (516). Note: had to
+build codev-core/types first (pre-existing build-order, unrelated to this change).
+
+→ dev-approval gate next. Reviewer should run the worktree and exercise the composer in the
+Codev Markdown Preview. Key UX to confirm: ⌘/Ctrl+Enter-to-submit (vs old Enter-to-submit).
