@@ -16,6 +16,34 @@ The fix is additive: one new command (`codev.openIssueByNumber`) that prompts
 for a number and opens the issue preview via the *existing* open path, plus a
 default `Cmd+K I` / `Ctrl+K I` keybinding.
 
+### Folded-in palette-clarity fix (approved at planning)
+
+A review of the existing palette surfaced a pre-existing discoverability bug,
+independent of the new command: two entries whose titles differ only by a
+trailing `...`:
+
+- `codev.openBacklogSearch` — **"Codev: Search Backlog"** — opens the rich
+  **webview panel** (#920): persistent editor tab, filter by Area/Assignee/Author,
+  body substring search, sortable columns. Also the 🔍 icon in the Backlog view
+  title bar (`view/title` menu).
+- `codev.searchBacklog` — **"Codev: Search Backlog..."** — opens the lightweight
+  **Quick Pick** (#918): one-shot fuzzy filter over backlog rows, Enter to open.
+  Palette-only.
+
+A user typing "Codev: Search Backlog" sees two near-identical rows and cannot
+tell which opens what. The agreed fix (folded into this PR) is a **title-only**
+rename of the panel command so the two read distinctly. This is purely a display
+change in `contributes.commands` — **no command-id rename** (that would break the
+`view/title` menu binding, future keybindings, and `executeCommand` callers) and
+**no behavior change**. The new `codev.openIssueByNumber` then joins a palette
+where the three issue-entry verbs are clearly distinguished:
+
+| Command | New title | Verb |
+|---|---|---|
+| `codev.openIssueByNumber` (new) | `Codev: Open Issue by Number...` | open one issue by typed number (incl. closed/arbitrary) |
+| `codev.searchBacklog` (unchanged) | `Codev: Search Backlog...` | fuzzy quick-pick over the backlog set |
+| `codev.openBacklogSearch` (retitled) | `Codev: Open Backlog Search Panel` | rich persistent triage panel |
+
 ### Relevant existing code (verified)
 
 - `packages/vscode/src/commands/view-issue.ts:154` — `viewBacklogIssue(connectionManager, issueId)`:
@@ -91,6 +119,15 @@ wording is still wanted.
   - `contributes.commands`: add `{ "command": "codev.openIssueByNumber", "title": "Codev: Open Issue by Number..." }`.
   - `contributes.keybindings`: add `{ "command": "codev.openIssueByNumber", "key": "ctrl+k i", "mac": "cmd+k i" }` — **no `when` clause** (global, per criterion #6).
   - `commandPalette`: no entry needed — palette-discoverable by default (we do NOT add a `when: false` hide entry).
+  - **Folded-in rename:** change the `title` of `codev.openBacklogSearch` from
+    `"Codev: Search Backlog"` to `"Codev: Open Backlog Search Panel"`. Title field
+    only; the command id, its `view/title` menu binding (the 🔍 Backlog title-bar
+    icon, whose tooltip updates automatically), and all callers are untouched.
+    Leave `codev.searchBacklog`'s `"Codev: Search Backlog..."` as the canonical
+    quick-pick title. Note: `packages/vscode/CHANGELOG.md` already refers to the
+    panel as the "Search Backlog editor-tab webview" / 🔍 icon, so the new title is
+    consistent with existing release notes (no CHANGELOG edit needed here — that
+    accumulates via the architect's vscode-changelog workflow post-merge).
 - `packages/vscode/src/__tests__/open-issue-by-number.test.ts` — **new file.** Unit
   tests for `parseIssueNumber`: `"1234"`→`"1234"`, `"#1234"`→`"1234"`,
   `" 1234 "`→`"1234"`, `" #1234 "`→`"1234"`, `""`→`undefined`, `"abc"`→`undefined`,
@@ -152,3 +189,8 @@ source), not a framework doc/template/protocol.
   - Enter empty / letters → input box shows live validation error, won't submit.
   - Confirm `codev.searchBacklog`, `codev.viewBacklogIssue`, `codev.openBacklogIssue`
     still work (no regression).
+  - **Palette rename:** `Cmd+Shift+P` → type "Search Backlog" now shows two
+    clearly-distinct entries: "Codev: Search Backlog..." (Quick Pick) and
+    "Codev: Open Backlog Search Panel" (webview). The 🔍 icon in the Backlog view
+    title bar still opens the panel (its tooltip now reads "Open Backlog Search
+    Panel"). The panel itself behaves identically (rename was title-only).
