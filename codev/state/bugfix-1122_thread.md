@@ -42,3 +42,25 @@ Lesson: NEVER `git stash pop` in a worktree that carries a foreign pre-existing
 stash — a bare pop targets `stash@{0}` regardless of intent. Use explicit file
 backups (cp to /tmp) instead of stash for temporary set-aside, which is what I
 should have done from the start.
+
+## PR
+
+- PR #1130 opened against main (Fixes #1122). Branch pushed, in sync with origin.
+- CMAP (gemini/codex/claude, --type pr --issue 1122) running in background.
+- `afx send architect` FAILED: "Workspace: not active in tower" / cannot resolve
+  canonical builder id (#1094). This worktree isn't registered in Tower's state,
+  so builder→architect messaging is down. Not fixing from the worktree (afx
+  tower/workspace commands must run from the main root). Architect can see PR
+  #1130 on GitHub; will retry `afx send` if the workspace gets activated.
+- STASH HEADS-UP for architect (since messaging is down): stash@{0} (GitHub
+  Desktop, on main) is intact and was never dropped — see the Incident section
+  above. No action needed; flagging for transparency.
+
+## CMAP verdicts (PR #1130)
+
+- Gemini: SKIPPED (agy unavailable/unauthenticated — non-blocking).
+- Codex: APPROVE, no key issues.
+- Claude: APPROVE (HIGH), no key issues; confirmed the regression test fails under
+  the old `markerInsertionLine` behaviour and parity with the preview composer.
+- No REQUEST_CHANGES, no new defects. Posted summary as a PR comment.
+- Next: `porch done bugfix-1122` to request the `pr` gate, then STOP for human approval.
