@@ -85,8 +85,8 @@ export function loadState(workspacePath: string): DashboardState {
   // The ORDER BY uses `id != 'main'` so that 'main' sorts first
   // (0 < 1 with this expression), then started_at ASC for siblings.
   //
-  // Bugfix #826: scoped by workspace_path so a state.db that contains rows
-  // for multiple workspaces (Tower's CWD shared by many) returns only the
+  // Bugfix #826 / Issue #1118: scoped by workspace_path so the single shared
+  // global.db (which holds every workspace's architect rows) returns only the
   // architects belonging to the requested workspace.
   const architectRows = db.prepare(
     "SELECT * FROM architect WHERE workspace_path = ? ORDER BY (id != 'main'), started_at"
@@ -442,7 +442,7 @@ export function clearRuntime(): void {
 }
 
 /**
- * Spec 786: remove a single architect by name from `state.db.architect`.
+ * Spec 786: remove a single architect by name from the `architect` table.
  *
  * Idempotent — no-op if the named row is absent. Used by `remove-architect`
  * (Phase 4) and the permanent-exit handler (Phase 3 / OQ-B).
