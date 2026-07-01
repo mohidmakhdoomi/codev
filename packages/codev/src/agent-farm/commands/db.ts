@@ -9,6 +9,7 @@
 
 import { existsSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
+import Database from 'better-sqlite3';
 import { getDb, getGlobalDb, getDbPath, getGlobalDbPath, closeDb, closeGlobalDb } from '../db/index.js';
 import { planMigration, applyMigration } from '../db/consolidate.js';
 import { logger, fatal } from '../utils/logger.js';
@@ -190,35 +191,57 @@ export function dbConsolidate(stateDbPath: string, options: { apply?: boolean } 
     return;
   }
 
-  const db = getGlobalDb();
-  const plan = planMigration(db, sourcePath);
+  const globalDbPath = getGlobalDbPath();
 
-  let mode = '(dry-run)';
-  if (options.apply) mode = '(apply)';
-  logger.header(`Consolidate ${mode}`);
-  logger.kv('Source', sourcePath);
-  logger.kv('Target', getGlobalDbPath());
-  logger.blank();
-
-  if (plan.total === 0) {
-    logger.info('Nothing to migrate (source has no rows in architect/builders/utils/annotations).');
-    return;
+  // Dry-run must be side-effect-free (codex review): open global.db READ-ONLY so
+  // the preview can't create or migrate the target DB (getGlobalDb() eagerly runs
+  // migration v14). Fall back to an in-memory DB if global.db doesn't exist yet —
+  // its empty tables make every source row read as "new", the correct preview.
+  // The `--apply` path uses the real getGlobalDb() connection.
+  let db: Database.Database;
+  let closeAfter = false;
+  if (options.apply) {
+    db = getGlobalDb();
+  } else if (existsSync(globalDbPath)) {
+    db = new Database(globalDbPath, { readonly: true });
+    closeAfter = true;
+  } else {
+    db = new Database(':memory:');
+    closeAfter = true;
   }
 
-  for (const s of plan.stats) {
-    logger.kv(`  ${s.table}`, `${s.inserted} new, ${s.updated} newer (replace), ${s.skipped} older (skip)`);
-  }
-  logger.blank();
+  try {
+    const plan = planMigration(db, sourcePath);
 
-  if (!options.apply) {
-    logger.info('Dry-run only. Re-run with --apply to migrate and rename the source.');
-    return;
-  }
+    let mode = '(dry-run)';
+    if (options.apply) mode = '(apply)';
+    logger.header(`Consolidate ${mode}`);
+    logger.kv('Source', sourcePath);
+    logger.kv('Target', globalDbPath);
+    logger.blank();
 
-  const result = applyMigration(db, sourcePath);
-  const moved = result.stats.reduce((n, s) => n + s.inserted + s.updated, 0);
-  logger.success(`Migrated ${moved} row(s) into global.db.`);
-  if (result.renamedTo) {
-    logger.kv('Source renamed to', result.renamedTo);
+    if (plan.total === 0) {
+      logger.info('Nothing to migrate (source has no rows in architect/builders/utils/annotations).');
+      return;
+    }
+
+    for (const s of plan.stats) {
+      logger.kv(`  ${s.table}`, `${s.inserted} new, ${s.updated} newer (replace), ${s.skipped} older (skip)`);
+    }
+    logger.blank();
+
+    if (!options.apply) {
+      logger.info('Dry-run only. Re-run with --apply to migrate and rename the source.');
+      return;
+    }
+
+    const result = applyMigration(db, sourcePath);
+    const moved = result.stats.reduce((n, s) => n + s.inserted + s.updated, 0);
+    logger.success(`Migrated ${moved} row(s) into global.db.`);
+    if (result.renamedTo) {
+      logger.kv('Source renamed to', result.renamedTo);
+    }
+  } finally {
+    if (closeAfter) db.close();
   }
 }

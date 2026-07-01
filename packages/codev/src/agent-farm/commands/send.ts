@@ -14,6 +14,8 @@ import Database from 'better-sqlite3';
 import type { SendOptions } from '../types.js';
 import { logger, fatal } from '../utils/logger.js';
 import { loadState } from '../state.js';
+import { getGlobalDbPath } from '../db/index.js';
+import { normalizeWorkspacePath } from '../utils/workspace-path.js';
 import { TowerClient } from '../lib/tower-client.js';
 
 const MAX_FILE_SIZE = 48 * 1024; // 48KB limit per spec
@@ -111,23 +113,24 @@ export function detectCurrentBuilderId(): string | null {
   const workspacePath = match[1];
   const worktreeDirName = match[2];
 
-  // Open the WORKSPACE's state.db readonly — not the singleton getDb(),
-  // which resolves to the worktree-local state.db when CWD is inside
-  // .builders/<id>/. From here on we are unambiguously in a builder worktree,
-  // so any inability to resolve the canonical id is an ERROR condition, not a
-  // "this isn't a builder" condition.
-  const dbPath = join(workspacePath, '.agent-farm', 'state.db');
+  // Issue #1118: builders live in the single shared global.db, scoped by
+  // workspace_path (state.db is retired). Open global.db readonly and scope the
+  // query to THIS workspace — so a same-id builder in another repo can't be
+  // matched. From here on we are unambiguously in a builder worktree, so any
+  // inability to resolve the canonical id is an ERROR condition, not a "this
+  // isn't a builder" condition (issue #1094 anti-spoofing).
+  const dbPath = getGlobalDbPath();
   if (!existsSync(dbPath)) {
     throw new BuilderIdResolutionError(
       `Cannot resolve builder identity for worktree '${worktreeDirName}': ` +
-        `workspace state.db not found at ${dbPath} (is Tower running for this workspace?). ` +
+        `global.db not found at ${dbPath} (has Tower ever run?). ` +
         `Refusing to send with an unverified identity — it would silently misroute to 'main' (issue #1094).`,
     );
   }
 
-  let wsDb: Database.Database;
+  let gdb: Database.Database;
   try {
-    wsDb = new Database(dbPath, { readonly: true });
+    gdb = new Database(dbPath, { readonly: true });
   } catch (err) {
     throw new BuilderIdResolutionError(describeStateDbOpenFailure(dbPath, worktreeDirName, err));
   }
@@ -135,11 +138,13 @@ export function detectCurrentBuilderId(): string | null {
   try {
     // Match by canonical worktree path first (most precise), then fall back
     // to a tail-segment match for legacy rows that recorded a different
-    // absolute prefix.
+    // absolute prefix. Scoped by workspace_path so only this workspace's
+    // builders are considered.
+    const ws = normalizeWorkspacePath(workspacePath);
     const canonicalWorktree = join(workspacePath, '.builders', worktreeDirName);
-    const rows = wsDb
-      .prepare('SELECT id, worktree FROM builders WHERE worktree IS NOT NULL')
-      .all() as Array<{ id: string; worktree: string }>;
+    const rows = gdb
+      .prepare('SELECT id, worktree FROM builders WHERE workspace_path = ? AND worktree IS NOT NULL')
+      .all(ws) as Array<{ id: string; worktree: string }>;
 
     const exact = rows.find(r => r.worktree === canonicalWorktree);
     if (exact) return exact.id;
@@ -149,11 +154,11 @@ export function detectCurrentBuilderId(): string | null {
 
     throw new BuilderIdResolutionError(
       `Cannot resolve canonical builder id for worktree '${worktreeDirName}': ` +
-        `no matching builder row in ${dbPath} (the worktree may be stale or unregistered). ` +
+        `no matching builder row in ${dbPath} for workspace ${ws} (the worktree may be stale or unregistered). ` +
         `Refusing to send with an unverified identity — it would silently misroute to 'main' (issue #1094).`,
     );
   } finally {
-    wsDb.close();
+    gdb.close();
   }
 }
 
