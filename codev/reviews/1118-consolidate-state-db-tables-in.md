@@ -125,6 +125,15 @@ more consolidation-fallout bugs, both fixed (commit `7f6ce330`):
 - **Known low-severity item**: `loadState()` returns `utils`/`annotations` unscoped (they have no
   `workspace_path` column). These tables are vestigial (no production producers — verified), so
   the exposure is a stale/empty read, not a live leak. Left as-is; noted for a future cleanup.
+**Iteration 3** (final re-run: claude APPROVE, gemini COMMENT, codex REQUEST_CHANGES) — two
+items, both addressed (commit `c81b8f0d`):
+  5. **`send.ts` `.builders` regexes used lazy `.+?` (first-match)** — a *nested* worktree
+     (`<repo>/.builders/a/.builders/b`) would resolve the outer builder. Same class as the
+     `indexOf`→`lastIndexOf` fix; switched to greedy `.+` (last `/.builders/`) + regression test.
+     Nesting is an unsupported anti-pattern (`afx spawn` from inside a worktree), so this is a
+     consistency fix, not a normal-path bug. (Stale `detectCurrentBuilderId` docstring refreshed.)
+  6. **No direct `runBootConsolidation` coverage** — added tests for the real boot path:
+     first-boot migrate+marker+rename, marker-set no-op, and strict mark-done-when-absent.
 - **Env note**: the codex consult initially failed because macOS 26 XProtect flagged the
   un-notarized `@openai/codex` vendor binary as malware and auto-deleted it (SIGKILL→ENOENT);
   restoring the binary + ad-hoc `codesign` unblocked it. Upstream/packaging follow-up, not a
