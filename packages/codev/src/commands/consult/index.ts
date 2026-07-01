@@ -789,7 +789,19 @@ async function runAgyConsultation(
   }
 
   // agy has no system-prompt flag — fold the role into the prompt (hermes precedent).
-  const prompt = `${role}\n\n---\n\n${queryText}`;
+  // Prepend strict constraint directive to force agy to remain on-task, prevent exploratory actions
+  // that lead to wandering off-task, and avoid unrelated local skills/directories (Issue #1032).
+  const prependConstraints = [
+    '=== CRITICAL: READ-ONLY HEADLESS MODE ===',
+    'You are running in a non-interactive headless test harness.',
+    '1. Do NOT list directories, check git status, check permissions, or run exploratory shell commands.',
+    '2. Do NOT explore, read, or activate local skills or plugins (including google-antigravity-sdk) unless explicitly asked.',
+    '3. Focus strictly on the review/consultation query. Read ONLY the target files specified in the prompt.',
+    '4. You MUST output your response directly. If a review verdict is requested, end your response with a parseable verdict: VERDICT: APPROVE, VERDICT: REQUEST_CHANGES, or VERDICT: COMMENT.',
+    '========================================='
+  ].join('\n');
+
+  const prompt = `${prependConstraints}\n\n${role}\n\n---\n\n${queryText}`;
   // Grant the sandboxed agent read access to the workspace AND the dedicated consult
   // sandbox dir (where buildPRQuery writes the diff and, below, a large-prompt file
   // lands) — NOT the entire OS temp dir, which would over-expose unrelated /tmp files.
@@ -801,6 +813,7 @@ async function runAgyConsultation(
     tempFile = path.join(consultSandboxDir(), `codev-consult-prompt-${Date.now()}.md`);
     fs.writeFileSync(tempFile, prompt);
     promptArg = [
+      prependConstraints,
       `Read the full consultation prompt from this file: ${tempFile}`,
       'You have file access. Read files directly from disk to review code.',
     ].join('\n\n');
