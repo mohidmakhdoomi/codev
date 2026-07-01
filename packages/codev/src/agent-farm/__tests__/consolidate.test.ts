@@ -155,6 +155,38 @@ describe('Issue #1118 — consolidation engine', () => {
     expect(builder).toBeDefined();
   });
 
+  it('migrates a v11-but-not-v12 state.db whose architect table has NO session_id column', () => {
+    // The most common field shape: workspace_path exists (Bugfix #826 / v11) but
+    // session_id does NOT (Issue #832 / v12 not yet rolled out). Since #1118
+    // retired the migration ladder, consolidation is the SOLE reader and never
+    // runs v12 — it must tolerate the missing column (SELECT * + `?? null`),
+    // not fail with "no such column: session_id".
+    const dir = join(wsA, '.agent-farm');
+    mkdirSync(dir, { recursive: true });
+    const src = join(dir, 'state.db');
+    const s = new Database(src);
+    s.exec(`
+      CREATE TABLE architect (
+        workspace_path TEXT NOT NULL, id TEXT NOT NULL, pid INTEGER NOT NULL,
+        port INTEGER NOT NULL, cmd TEXT NOT NULL,
+        started_at TEXT NOT NULL DEFAULT (datetime('now')), terminal_id TEXT,
+        PRIMARY KEY (workspace_path, id)
+      );
+    `); // NOTE: no session_id column (pre-v12)
+    s.prepare(
+      "INSERT INTO architect (workspace_path, id, pid, port, cmd, started_at) VALUES (?, 'main', 1, 0, 'v11-claude', '2026-06-01 10:00:00')",
+    ).run(realpathSync(wsA));
+    s.close();
+
+    expect(() => applyMigration(globalDb, src)).not.toThrow();
+
+    const arch = globalDb
+      .prepare("SELECT cmd, session_id FROM architect WHERE workspace_path = ? AND id = 'main'")
+      .get(realpathSync(wsA)) as { cmd: string; session_id: string | null };
+    expect(arch.cmd).toBe('v11-claude');
+    expect(arch.session_id).toBeNull(); // absent in source → null in global.db
+  });
+
   it('keeps same-id builders in different workspaces distinct', () => {
     const srcA = makeLegacyStateDb(wsA, 'current', (db) => {
       db.prepare(
