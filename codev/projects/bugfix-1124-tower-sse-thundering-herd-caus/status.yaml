@@ -1,7 +1,7 @@
 id: bugfix-1124
 title: tower-sse-thundering-herd-caus
 protocol: bugfix
-phase: investigate
+phase: fix
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -11,4 +11,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-01T01:22:39.407Z'
-updated_at: '2026-07-01T01:22:39.408Z'
+updated_at: '2026-07-01T01:24:38.461Z'
