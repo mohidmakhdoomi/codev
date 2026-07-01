@@ -18,9 +18,12 @@
  */
 
 import Database from 'better-sqlite3';
-import { existsSync, renameSync, realpathSync } from 'node:fs';
+import { existsSync, renameSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { getConfig } from '../utils/index.js';
+// Issue #1118: shared workspace-path canonicalization (single source of truth),
+// aliased to `canonicalize` for the local callsites.
+import { normalizeWorkspacePath as canonicalize } from '../utils/workspace-path.js';
 
 type Row = Record<string, unknown>;
 
@@ -48,14 +51,6 @@ export interface MigrationResult {
 /** The `state.db` the pre-#1118 `getDb()` would have opened for this process. */
 export function activeStateDbPath(): string {
   return resolve(getConfig().stateDir, 'state.db');
-}
-
-function canonicalize(p: string): string {
-  try {
-    return realpathSync(p);
-  } catch {
-    return resolve(p);
-  }
 }
 
 /** A builder's owning workspace: the prefix before the LAST `/.builders/`, else fallback. */

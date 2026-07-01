@@ -6,7 +6,6 @@
  */
 
 import path from 'node:path';
-import { realpathSync } from 'node:fs';
 import type { DashboardState, ArchitectState, Builder, UtilTerminal, Annotation } from './types.js';
 import { getDb, closeDb } from './db/index.js';
 import type { DbArchitect, DbBuilder, DbUtil, DbAnnotation } from './db/types.js';
@@ -17,29 +16,11 @@ import {
   dbAnnotationToAnnotation,
 } from './db/types.js';
 import { isPortConflictError } from './db/errors.js';
-
-/**
- * Normalize a workspace path to its canonical form (Bugfix #826 iter-6).
- *
- * The architect table's primary key includes `workspace_path`. Tower writes
- * canonical realpaths (via `normalizeWorkspacePath` in tower-utils.ts); CLI
- * callers and legacy migration paths often pass raw paths (e.g. a symlinked
- * workspace root). Without normalization, accessing a workspace via two
- * different paths (symlink + realpath) creates two distinct rows and lookups
- * silently fail.
- *
- * Mirrors the contract of `servers/tower-utils.ts:normalizeWorkspacePath`.
- * Kept inline to avoid pulling the server-layer import chain into the data
- * layer. Uses `realpathSync` when the path exists; falls back to
- * `path.resolve` for not-yet-existing paths (e.g. fresh installs).
- */
-function canonicalize(workspacePath: string): string {
-  try {
-    return realpathSync(workspacePath);
-  } catch {
-    return path.resolve(workspacePath);
-  }
-}
+// Issue #1118: shared workspace-path canonicalization (single source of truth).
+// The architect/builders tables key on `workspace_path`; writers and readers
+// must agree on its exact form, so both layers normalize through this one leaf
+// helper (Bugfix #826 iter-6). Aliased to `canonicalize` for the local callsites.
+import { normalizeWorkspacePath as canonicalize } from './utils/workspace-path.js';
 
 /**
  * Derive a builder's owning workspace from its worktree path (Issue #1118).
