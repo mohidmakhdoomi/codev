@@ -152,3 +152,15 @@ dry-run finding) found 2 MORE, both FIXED (commit 7f6ce330, +tests):
   producers), future cleanup.
 Audit complete: 3 direct-opens total (all fixed), all builder-fn callers scoped, clearState no
 callers. iter2 rebuttal written. Full suite 2018 passed. Architect re-notified.
+
+### CI fix + iter3 (final consult)
+- CI failed on migrate.test.ts (ERR_MODULE_NOT_FOUND) — its deletion was working-tree-only
+  (a git stash pop unstaged it); committed the deletion (14604d24). CI now GREEN.
+- iter3 (claude APPROVE, gemini COMMENT, codex REQUEST_CHANGES), commit c81b8f0d:
+  - send.ts detectWorkspaceRoot/detectCurrentBuilderId lazy `.+?` regex → greedy `.+`
+    (nested-worktree last-match; consistency w/ lastIndexOf). Unsupported anti-pattern, not a
+    normal-path bug, but fixed for consistency + docstring refresh. +regression test.
+  - Added runBootConsolidation tests (first-boot, marker no-op, strict mark-when-absent).
+- Full suite 2022 passed. iter3 rebuttal written. Still at pr gate.
+codex earned its keep across all 3 iters: clearRuntime wipe, dry-run side-effect, nested regex —
+plus the audit-found send.ts direct-open that ALL 3 models missed.
