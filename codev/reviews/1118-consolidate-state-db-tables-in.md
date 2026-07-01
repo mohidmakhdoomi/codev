@@ -107,8 +107,28 @@ already captures the headline; this PR is a detailed instance of it, so it belon
 - **codex**: REQUEST_CHANGES — caught **two real issues, both now fixed + regression-tested** (commit `d9828577`):
   1. **`clearRuntime()` wiped all workspaces' builders** — it did an unscoped `DELETE FROM builders`, and `afx workspace stop` calls it; on the shared `global.db` that deleted *every* workspace's builders, not just the stopping one. Fixed: `clearRuntime(workspacePath)` scopes the delete by `workspace_path` (threaded through `stop.ts`); `utils`/`annotations` (global, vestigial) are left untouched to avoid a cross-workspace wipe. Test: `clearRuntime(A)` leaves B's builders intact.
   2. **`afx db consolidate` repeat-run wasn't idempotent** — re-running on the renamed source `fatal`ed, and an already-`*.pre-merge-*` archive would re-migrate + double-rename. Fixed: missing source → friendly no-op; archived file → skip. Tests added.
-- gemini/agy: not configured (porch scheduled a 2-way consult).
-- **Env note**: the codex consult initially failed because macOS 26 XProtect flagged the un-notarized `@openai/codex` vendor binary as malware and auto-deleted it (SIGKILL→ENOENT); restoring the binary + ad-hoc `codesign` unblocked it. This is an upstream/packaging issue (a separate follow-up), not a signal about this PR.
+- gemini/agy: not configured for the porch verify (a 2-way consult); a later ad-hoc 3-way
+  re-run (iteration 2) added gemini (APPROVE).
+
+**Iteration 2 (re-run after the iter-1 fixes) + a manual cross-workspace audit** surfaced two
+more consolidation-fallout bugs, both fixed (commit `7f6ce330`):
+  3. **`send.ts detectCurrentBuilderId` opened the RETIRED per-workspace `state.db`** to resolve
+     a builder's canonical id for `afx send` (issue #1094 anti-spoofing). After migration renames
+     that file, `afx send` from a worktree would break. This was the **last** direct `state.db`
+     open (its siblings `lookupBuilderSpawningArchitect` and `overview.ts` were fixed in the main
+     implementation; this one was missed). Found by the audit — **all three consult models missed
+     it**. Fixed: read `global.db` scoped by `workspace_path`. Test rewritten incl. a same-id
+     cross-workspace scoping case.
+  4. **`afx db consolidate` dry-run wasn't side-effect-free** (codex iter2) — it called
+     `getGlobalDb()`, which eagerly creates/migrates `global.db`. Fixed: dry-run opens `global.db`
+     read-only (or in-memory if absent); only `--apply` uses the RW connection. Test added.
+- **Known low-severity item**: `loadState()` returns `utils`/`annotations` unscoped (they have no
+  `workspace_path` column). These tables are vestigial (no production producers — verified), so
+  the exposure is a stale/empty read, not a live leak. Left as-is; noted for a future cleanup.
+- **Env note**: the codex consult initially failed because macOS 26 XProtect flagged the
+  un-notarized `@openai/codex` vendor binary as malware and auto-deleted it (SIGKILL→ENOENT);
+  restoring the binary + ad-hoc `codesign` unblocked it. Upstream/packaging follow-up, not a
+  signal about this PR.
 
 ## Notes / Out of Scope
 
