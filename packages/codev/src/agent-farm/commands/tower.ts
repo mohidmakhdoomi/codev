@@ -57,9 +57,12 @@ async function previewStateDbMigration(): Promise<void> {
     return;
   }
 
-  const globalDb = existsSync(globalPath)
-    ? new Database(globalPath, { readonly: true })
-    : new Database(':memory:');
+  let globalDb: Database.Database;
+  if (existsSync(globalPath)) {
+    globalDb = new Database(globalPath, { readonly: true });
+  } else {
+    globalDb = new Database(':memory:');
+  }
   try {
     const plan = planMigration(globalDb, source);
     if (plan.total === 0) {

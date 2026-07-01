@@ -182,7 +182,9 @@ export function dbConsolidate(stateDbPath: string, options: { apply?: boolean } 
   const db = getGlobalDb();
   const plan = planMigration(db, sourcePath);
 
-  logger.header(`Consolidate ${options.apply ? '(apply)' : '(dry-run)'}`);
+  let mode = '(dry-run)';
+  if (options.apply) mode = '(apply)';
+  logger.header(`Consolidate ${mode}`);
   logger.kv('Source', sourcePath);
   logger.kv('Target', getGlobalDbPath());
   logger.blank();

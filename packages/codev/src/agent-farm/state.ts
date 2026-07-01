@@ -56,7 +56,12 @@ function deriveWorkspaceFromWorktree(worktree: string): string {
   // segment (e.g. a builder worktree nested under another).
   const marker = '/.builders/';
   const idx = worktree.lastIndexOf(marker);
-  const root = idx >= 0 ? worktree.slice(0, idx) : path.dirname(path.dirname(worktree));
+  let root: string;
+  if (idx >= 0) {
+    root = worktree.slice(0, idx);
+  } else {
+    root = path.dirname(path.dirname(worktree));
+  }
   return canonicalize(root);
 }
 
@@ -255,10 +260,15 @@ export function removeBuilder(id: string, workspacePath?: string): void {
  */
 export function getBuilder(id: string, workspacePath?: string): Builder | null {
   const db = getDb();
-  const row = (workspacePath
-    ? db.prepare('SELECT * FROM builders WHERE workspace_path = ? AND id = ?').get(canonicalize(workspacePath), id)
-    : db.prepare('SELECT * FROM builders WHERE id = ?').get(id)) as DbBuilder | undefined;
-  return row ? dbBuilderToBuilder(row) : null;
+  let row: DbBuilder | undefined;
+  if (workspacePath) {
+    row = db.prepare('SELECT * FROM builders WHERE workspace_path = ? AND id = ?')
+      .get(canonicalize(workspacePath), id) as DbBuilder | undefined;
+  } else {
+    row = db.prepare('SELECT * FROM builders WHERE id = ?').get(id) as DbBuilder | undefined;
+  }
+  if (!row) return null;
+  return dbBuilderToBuilder(row);
 }
 
 /**
@@ -267,9 +277,13 @@ export function getBuilder(id: string, workspacePath?: string): Builder | null {
  */
 export function getBuilders(workspacePath?: string): Builder[] {
   const db = getDb();
-  const rows = (workspacePath
-    ? db.prepare('SELECT * FROM builders WHERE workspace_path = ? ORDER BY started_at').all(canonicalize(workspacePath))
-    : db.prepare('SELECT * FROM builders ORDER BY started_at').all()) as DbBuilder[];
+  let rows: DbBuilder[];
+  if (workspacePath) {
+    rows = db.prepare('SELECT * FROM builders WHERE workspace_path = ? ORDER BY started_at')
+      .all(canonicalize(workspacePath)) as DbBuilder[];
+  } else {
+    rows = db.prepare('SELECT * FROM builders ORDER BY started_at').all() as DbBuilder[];
+  }
   return rows.map(dbBuilderToBuilder);
 }
 
@@ -278,9 +292,13 @@ export function getBuilders(workspacePath?: string): Builder[] {
  */
 export function getBuildersByStatus(status: Builder['status'], workspacePath?: string): Builder[] {
   const db = getDb();
-  const rows = (workspacePath
-    ? db.prepare('SELECT * FROM builders WHERE workspace_path = ? AND status = ? ORDER BY started_at').all(canonicalize(workspacePath), status)
-    : db.prepare('SELECT * FROM builders WHERE status = ? ORDER BY started_at').all(status)) as DbBuilder[];
+  let rows: DbBuilder[];
+  if (workspacePath) {
+    rows = db.prepare('SELECT * FROM builders WHERE workspace_path = ? AND status = ? ORDER BY started_at')
+      .all(canonicalize(workspacePath), status) as DbBuilder[];
+  } else {
+    rows = db.prepare('SELECT * FROM builders WHERE status = ? ORDER BY started_at').all(status) as DbBuilder[];
+  }
   return rows.map(dbBuilderToBuilder);
 }
 
@@ -538,12 +556,16 @@ export function lookupBuilderSpawningArchitect(
   workspacePath?: string,
 ): string | null | undefined {
   const db = getDb();
-  const row = (workspacePath
-    ? db.prepare('SELECT spawned_by_architect FROM builders WHERE workspace_path = ? AND id = ?')
-        .get(canonicalize(workspacePath), builderId)
-    : db.prepare('SELECT spawned_by_architect FROM builders WHERE id = ?').get(builderId)) as
-    | { spawned_by_architect: string | null }
-    | undefined;
+  let row: { spawned_by_architect: string | null } | undefined;
+  if (workspacePath) {
+    row = db
+      .prepare('SELECT spawned_by_architect FROM builders WHERE workspace_path = ? AND id = ?')
+      .get(canonicalize(workspacePath), builderId) as { spawned_by_architect: string | null } | undefined;
+  } else {
+    row = db
+      .prepare('SELECT spawned_by_architect FROM builders WHERE id = ?')
+      .get(builderId) as { spawned_by_architect: string | null } | undefined;
+  }
   if (!row) return undefined;
   return row.spawned_by_architect;
 }

@@ -85,11 +85,13 @@ function readRows(db: Database.Database, table: string): Row[] {
 }
 
 function str(v: unknown, fallback = ''): string {
-  return v == null ? fallback : String(v);
+  if (v == null) return fallback;
+  return String(v);
 }
 function num(v: unknown, fallback = 0): number {
   const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
+  if (Number.isFinite(n)) return n;
+  return fallback;
 }
 
 const VALID_STATUS = new Set(['spawning', 'implementing', 'blocked', 'pr', 'complete']);
@@ -104,9 +106,19 @@ const VALID_TYPE = new Set(['spec', 'task', 'protocol', 'shell', 'worktree', 'bu
 function normalizeArchitect(row: Row, wsFromFile: string): Row {
   // Pre-v11 rows lack workspace_path → derive from the file's own directory.
   // Pre-v9 rows used integer id=1 → the singleton became 'main'.
-  const workspace_path = row.workspace_path ? canonicalize(str(row.workspace_path)) : wsFromFile;
+  let workspace_path: string;
+  if (row.workspace_path) {
+    workspace_path = canonicalize(str(row.workspace_path));
+  } else {
+    workspace_path = wsFromFile;
+  }
   const idRaw = row.id;
-  const id = idRaw == null || str(idRaw) === '1' ? 'main' : str(idRaw);
+  let id: string;
+  if (idRaw == null || str(idRaw) === '1') {
+    id = 'main';
+  } else {
+    id = str(idRaw);
+  }
   return {
     workspace_path,
     id,
@@ -121,15 +133,20 @@ function normalizeArchitect(row: Row, wsFromFile: string): Row {
 
 function normalizeBuilder(row: Row, wsFromFile: string): Row {
   const worktree = str(row.worktree);
-  const workspace_path = row.workspace_path
-    ? canonicalize(str(row.workspace_path))
-    : deriveWorkspaceFromWorktree(worktree, wsFromFile);
+  let workspace_path: string;
+  if (row.workspace_path) {
+    workspace_path = canonicalize(str(row.workspace_path));
+  } else {
+    workspace_path = deriveWorkspaceFromWorktree(worktree, wsFromFile);
+  }
   let status = str(row.status, 'spawning');
   if (status === 'pr-ready') status = 'pr'; // pre-v7 rename
   if (!VALID_STATUS.has(status)) status = 'implementing';
   let type = str(row.type, 'spec');
   if (!VALID_TYPE.has(type)) type = 'spec';
   const startedAt = str(row.started_at);
+  let issueNumber: string | null = null;
+  if (row.issue_number != null) issueNumber = str(row.issue_number);
   return {
     workspace_path,
     id: str(row.id),
@@ -143,7 +160,7 @@ function normalizeBuilder(row: Row, wsFromFile: string): Row {
     type,
     task_text: row.task_text ?? null,
     protocol_name: row.protocol_name ?? null,
-    issue_number: row.issue_number != null ? str(row.issue_number) : null,
+    issue_number: issueNumber,
     terminal_id: row.terminal_id ?? null,
     spawned_by_architect: row.spawned_by_architect ?? null,
     started_at: startedAt,
@@ -286,7 +303,8 @@ function classify(
     .prepare(`SELECT started_at FROM ${spec.table} WHERE ${where}`)
     .get(...spec.pk.map((c) => row[c])) as { started_at: string } | undefined;
   if (!existing) return 'inserted';
-  return str(row.started_at) > str(existing.started_at) ? 'updated' : 'skipped';
+  if (str(row.started_at) > str(existing.started_at)) return 'updated';
+  return 'skipped';
 }
 
 /**
