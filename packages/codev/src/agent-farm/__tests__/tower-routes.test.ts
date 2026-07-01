@@ -138,7 +138,7 @@ function makeCtx(overrides: Partial<RouteContext> = {}): RouteContext {
     hasReactDashboard: false,
     getShellperManager: () => null,
     broadcastNotification: vi.fn(),
-    addSseClient: vi.fn(),
+    addSseClient: vi.fn(() => true),
     removeSseClient: vi.fn(),
     ...overrides,
   };
@@ -418,6 +418,41 @@ describe('tower-routes', () => {
 
       // Should only clean up once despite three events
       expect(ctx.removeSseClient).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns 503 when addSseClient rejects at capacity (Bugfix #1124)', async () => {
+      const ctx = makeCtx({ addSseClient: vi.fn(() => false) });
+      const req = makeReq('GET', '/api/events');
+      const { res, statusCode, headers, body } = makeRes();
+
+      await handleRequest(req, res, ctx);
+
+      expect(statusCode()).toBe(503);
+      expect(headers()['Retry-After']).toBe('5');
+      expect(body()).toContain('capacity');
+      expect(ctx.removeSseClient).not.toHaveBeenCalled();
+    });
+
+    it('sends retry directive to space out reconnections (Bugfix #1124)', async () => {
+      const ctx = makeCtx();
+      const req = makeReq('GET', '/api/events');
+      const { res, body } = makeRes();
+
+      await handleRequest(req, res, ctx);
+
+      expect(body()).toContain('retry: 5000');
+    });
+
+    it('does not register cleanup listeners when rejected (Bugfix #1124)', async () => {
+      const ctx = makeCtx({ addSseClient: vi.fn(() => false) });
+      const req = makeReq('GET', '/api/events');
+      const { res } = makeRes();
+
+      await handleRequest(req, res, ctx);
+
+      // After rejection, close events should not call removeSseClient
+      req.emit('close');
+      expect(ctx.removeSseClient).not.toHaveBeenCalled();
     });
   });
 
