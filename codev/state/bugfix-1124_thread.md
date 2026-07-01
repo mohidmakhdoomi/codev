@@ -28,3 +28,9 @@ Three regression tests added to tower-routes.test.ts:
 - No cleanup listeners registered after rejection
 
 All 87 tower-routes tests pass. Build passes.
+
+## CMAP review — Gemini finding addressed
+
+Gemini identified that browser `EventSource` transitions to `CLOSED` (readyState === 2) on a non-200 response (our 503) and does NOT auto-reconnect. The dashboard's `useSSE.ts` hook assumed auto-reconnect on all errors. Fixed by adding manual reconnection with 2-5s jitter when `readyState === EventSource.CLOSED`. VSCode extension and legacy `tower.html` already use fetch-based SSE with their own retry logic — no change needed there.
+
+Added regression test in `useSSE.reconnect.test.ts`. All 6 dashboard SSE tests pass.
