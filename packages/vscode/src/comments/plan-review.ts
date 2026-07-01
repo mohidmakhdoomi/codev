@@ -21,7 +21,7 @@
 import * as vscode from 'vscode';
 import {
   serializeReviewMarker,
-  markerInsertionLine,
+  markerAppendLine,
   isEligibleReviewPath,
 } from '@cluesmith/codev-core/review-markers';
 import type { OverviewCache } from '../views/overview-data.js';
@@ -147,7 +147,9 @@ export function activateReviewComments(
   );
 }
 
-async function submitReviewComment(
+// Exported for unit testing (regression for #1122: append vs prepend). The
+// runtime entry point is the `codev.submitReviewComment` command above.
+export async function submitReviewComment(
   reply: vscode.CommentReply,
   overviewCache: OverviewCache,
 ): Promise<void> {
@@ -165,10 +167,16 @@ async function submitReviewComment(
   // normalization and the "marker on the line after the anchor" rule live there).
   const commentLine = serializeReviewMarker(author, reply.text, indent);
 
+  // Append below any existing markers stacked on this line so the newest
+  // comment lands LAST in render order — parity with the preview composer
+  // (#1122). markerAppendLine scans the document text past the contiguous
+  // marker run; with no existing markers it equals markerInsertionLine(line),
+  // so the first-comment case is unchanged.
+  const text = document.getText();
   const edit = new vscode.WorkspaceEdit();
   edit.insert(
     thread.uri,
-    new vscode.Position(markerInsertionLine(line), 0),
+    new vscode.Position(markerAppendLine(text, line), 0),
     commentLine + '\n',
   );
   await vscode.workspace.applyEdit(edit);

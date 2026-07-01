@@ -1,0 +1,16 @@
+id: bugfix-1122
+title: vscode-align-editor-comments-a
+protocol: bugfix
+phase: pr
+plan_phases: []
+current_plan_phase: null
+gates:
+  pr:
+    status: pending
+    requested_at: '2026-07-01T23:38:49.596Z'
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-01T23:26:06.527Z'
+updated_at: '2026-07-01T23:38:49.597Z'
+pr_ready_for_human: true
