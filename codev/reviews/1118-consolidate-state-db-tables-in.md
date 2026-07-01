@@ -86,6 +86,17 @@ already captures the headline; this PR is a detailed instance of it, so it belon
 - **Defensive legacy reads** (`consolidate.ts` normalizers) — pre-v11 architect (integer id, no
   `workspace_path`) and legacy builder rows are normalized without running the old migration
   ladder; enum values are clamped to satisfy the new CHECK constraints.
+- **Schema-version tolerance is load-bearing, not incidental.** Because this PR deletes the
+  local migration ladder (v1–v12), consolidation is the *sole* reader of legacy `state.db` files
+  and never brings their schema up to date first — so it must tolerate **every** historical
+  shape. This is why `readRows` uses `SELECT *` (never `SELECT <column>`) and every
+  migration-added column is read as `row.<col> ?? null` (or synthesized). Concretely, a very
+  common field shape is **v11-but-not-v12**: the `architect` table has `workspace_path` (#826)
+  but no `session_id` column (#832 not yet rolled out). An explicit `SELECT session_id` would
+  throw `no such column`; `SELECT *` + `?? null` yields `session_id = null` and migrates cleanly.
+  Same for the builder columns added by v8/v9/v10 (`issue_number`, `spawned_by_architect`,
+  `type` incl. `'pir'`). Pinned by tests: the `pre-v11` case and an explicit **v11-but-not-v12
+  (no `session_id`)** regression test that would fail if any read ever became column-specific.
 - **`db/index.ts` deletion is large** (−≈470) — it's the removed local-migration ladder, folded
   into `GLOBAL_SCHEMA` + v14. Worth a scan that nothing live still referenced it.
 
