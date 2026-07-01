@@ -101,6 +101,15 @@ already captures the headline; this PR is a detailed instance of it, so it belon
   - Live: install from the **main** checkout (not the worktree) → Tower restart auto-migrates;
     then stop-from-A / start-from-B and confirm A's architects are visible (the fragmentation fix)
 
+## Consultation (3-way verify, single advisory pass)
+
+- **claude**: APPROVE — "implementation faithfully follows the approved plan across all dimensions."
+- **codex**: REQUEST_CHANGES — caught **two real issues, both now fixed + regression-tested** (commit `d9828577`):
+  1. **`clearRuntime()` wiped all workspaces' builders** — it did an unscoped `DELETE FROM builders`, and `afx workspace stop` calls it; on the shared `global.db` that deleted *every* workspace's builders, not just the stopping one. Fixed: `clearRuntime(workspacePath)` scopes the delete by `workspace_path` (threaded through `stop.ts`); `utils`/`annotations` (global, vestigial) are left untouched to avoid a cross-workspace wipe. Test: `clearRuntime(A)` leaves B's builders intact.
+  2. **`afx db consolidate` repeat-run wasn't idempotent** — re-running on the renamed source `fatal`ed, and an already-`*.pre-merge-*` archive would re-migrate + double-rename. Fixed: missing source → friendly no-op; archived file → skip. Tests added.
+- gemini/agy: not configured (porch scheduled a 2-way consult).
+- **Env note**: the codex consult initially failed because macOS 26 XProtect flagged the un-notarized `@openai/codex` vendor binary as malware and auto-deleted it (SIGKILL→ENOENT); restoring the binary + ad-hoc `codesign` unblocked it. This is an upstream/packaging issue (a separate follow-up), not a signal about this PR.
+
 ## Notes / Out of Scope
 
 - **Pre-existing suite state**: scaffold tests (adopt/update/cold-tier/hot-tier/consult) and the
