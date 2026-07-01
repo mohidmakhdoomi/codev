@@ -143,7 +143,7 @@ export interface RouteContext {
   hasReactDashboard: boolean;
   getShellperManager: () => SessionManager | null;
   broadcastNotification: (notification: { type: string; title: string; body: string; workspace?: string }) => void;
-  addSseClient: (client: SSEClient) => void;
+  addSseClient: (client: SSEClient) => boolean;
   removeSseClient: (id: string) => void;
 }
 
@@ -1180,19 +1180,33 @@ function handleSSEEvents(
 ): void {
   const clientId = crypto.randomBytes(8).toString('hex');
 
+  // Bugfix #1124: check capacity BEFORE writing 200 headers.
+  // Once headers are sent the client thinks it's connected; rejecting
+  // pre-headers lets us return 503 + Retry-After, which is a dead end
+  // (no reconnect cascade).
+  const client: SSEClient = { res, id: clientId, connectedAt: Date.now() };
+  const accepted = ctx.addSseClient(client);
+  if (!accepted) {
+    res.writeHead(503, {
+      'Content-Type': 'text/plain',
+      'Retry-After': '5',
+    });
+    res.end('SSE capacity reached. Retry later.\n');
+    return;
+  }
+
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
   });
 
+  // Bugfix #1124: send retry directive to space out browser reconnections.
+  // Without this, browsers default to ~3s which amplifies churn.
+  res.write('retry: 5000\n\n');
+
   // Send initial connection event
   res.write(`data: ${JSON.stringify({ type: 'connected', id: clientId })}\n\n`);
-
-  const client: SSEClient = { res, id: clientId, connectedAt: Date.now() };
-  ctx.addSseClient(client);
-
-  ctx.log('INFO', `SSE client connected: ${clientId}`);
 
   // Clean up on disconnect — guard against duplicate cleanup (Bugfix #580)
   let cleaned = false;
@@ -1200,7 +1214,6 @@ function handleSSEEvents(
     if (cleaned) return;
     cleaned = true;
     ctx.removeSseClient(clientId);
-    ctx.log('INFO', `SSE client disconnected: ${clientId}`);
   };
   req.on('close', cleanup);
   res.on('close', cleanup);

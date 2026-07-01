@@ -13,11 +13,14 @@ import type { DashboardState, OverviewData } from '../src/lib/api.js';
 let eventSourceInstances: Array<{ onmessage: ((ev: MessageEvent) => void) | null; close: () => void }> = [];
 
 class MockEventSource {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
   onmessage: ((ev: MessageEvent) => void) | null = null;
   onerror: ((ev: Event) => void) | null = null;
   onopen: ((ev: Event) => void) | null = null;
   readyState = 1;
-  close = vi.fn();
+  close = vi.fn(() => { this.readyState = MockEventSource.CLOSED; });
   constructor(_url: string) {
     eventSourceInstances.push(this);
   }
@@ -174,6 +177,37 @@ describe('SSE reconnect triggers immediate refresh (bugfix #472)', () => {
     });
 
     expect(eventSourceInstances.length).toBeGreaterThan(baseCount);
+    unmount();
+  });
+
+  it('schedules reconnect when EventSource enters CLOSED state (Bugfix #1124)', async () => {
+    const { useSSE } = await import('../src/hooks/useSSE.js');
+    const listener = vi.fn();
+    const { unmount } = renderHook(() => useSSE(listener));
+
+    const baseCount = eventSourceInstances.length;
+    expect(baseCount).toBeGreaterThanOrEqual(1);
+    const currentES = eventSourceInstances[baseCount - 1] as MockEventSource;
+
+    // Simulate a 503 rejection: EventSource transitions to CLOSED
+    currentES.readyState = MockEventSource.CLOSED;
+    act(() => {
+      if (currentES.onerror) {
+        currentES.onerror(new Event('error'));
+      }
+    });
+
+    // Should have disconnected the dead EventSource
+    expect(currentES.close).toHaveBeenCalled();
+
+    // Advance past the jittered reconnect window (max 5s)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+
+    // Should have reconnected (new EventSource instance)
+    expect(eventSourceInstances.length).toBeGreaterThan(baseCount);
+
     unmount();
   });
 

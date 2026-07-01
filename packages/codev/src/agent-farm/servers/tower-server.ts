@@ -242,7 +242,8 @@ function broadcastNotification(notification: { type: string; title: string; body
 // Also evicts connections older than max-age to prevent leaks from
 // tunnel-proxied clients that don't properly close (clients auto-reconnect).
 const SSE_HEARTBEAT_INTERVAL_MS = 30_000;
-const SSE_MAX_AGE_MS = 5 * 60_000; // 5 minutes
+const SSE_MAX_AGE_BASE_MS = 5 * 60_000; // 5 minutes base
+const SSE_MAX_AGE_JITTER_MS = 60_000;    // ±1 minute jitter (Bugfix #1124)
 const sseHeartbeatInterval = setInterval(() => {
   if (sseClients.length === 0) return;
   const now = Date.now();
@@ -252,9 +253,11 @@ const sseHeartbeatInterval = setInterval(() => {
       deadIds.push(client.id);
       continue;
     }
-    // Evict connections older than max-age — tunnel-proxied SSE connections
-    // can leak because both ends are localhost and TCP never detects the close.
-    if (now - client.connectedAt > SSE_MAX_AGE_MS) {
+    // Bugfix #1124: per-client jitter prevents synchronized eviction bursts.
+    // Each client gets a max-age in the range [4min, 6min] instead of a
+    // fixed 5 minutes, so evictions are spread over a 2-minute window.
+    const maxAge = SSE_MAX_AGE_BASE_MS + (client.maxAgeJitterMs ?? 0);
+    if (now - client.connectedAt > maxAge) {
       try { client.res.end(); } catch { /* already dead */ }
       deadIds.push(client.id);
       continue;
@@ -266,9 +269,6 @@ const sseHeartbeatInterval = setInterval(() => {
     }
   }
   if (deadIds.length > 0) removeDeadSseClients(deadIds);
-  if (sseClients.length > 0) {
-    log('INFO', `SSE heartbeat: ${sseClients.length} active client(s)`);
-  }
 }, SSE_HEARTBEAT_INTERVAL_MS);
 sseHeartbeatInterval.unref();
 
@@ -319,18 +319,19 @@ const routeCtx: RouteContext = {
   getShellperManager: () => shellperManager,
   broadcastNotification,
   addSseClient: (client: SSEClient) => {
-    // Hard cap: evict oldest connections when over limit to prevent
-    // unbounded accumulation (tunnel-proxied EventSource reconnects
-    // can leak because TCP close doesn't propagate reliably).
-    const SSE_MAX_CLIENTS = 50;
-    while (sseClients.length >= SSE_MAX_CLIENTS) {
-      const oldest = sseClients.shift();
-      if (oldest) {
-        try { oldest.res.end(); } catch { /* already dead */ }
-        log('WARN', `SSE cap reached (${SSE_MAX_CLIENTS}), evicted oldest client: ${oldest.id}`);
-      }
+    // Bugfix #1124: reject instead of evict to prevent thundering herd.
+    // Eviction causes the evicted client to reconnect, which pushes the
+    // count back to the cap and evicts another — a chain reaction that
+    // exhausts ephemeral ports via TIME_WAIT accumulation.
+    const SSE_MAX_CLIENTS = 200;
+    if (sseClients.length >= SSE_MAX_CLIENTS) {
+      log('WARN', `SSE cap reached (${SSE_MAX_CLIENTS}), rejecting client: ${client.id}`);
+      return false;
     }
+    // Bugfix #1124: assign per-client jitter for max-age eviction
+    client.maxAgeJitterMs = Math.floor(Math.random() * SSE_MAX_AGE_JITTER_MS * 2) - SSE_MAX_AGE_JITTER_MS;
     sseClients.push(client);
+    return true;
   },
   removeSseClient: (id: string) => {
     const index = sseClients.findIndex(c => c.id === id);

@@ -21,6 +21,7 @@ type Listener = () => void;
 let eventSource: EventSource | null = null;
 const listeners = new Set<Listener>();
 let visibilityListenerInstalled = false;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 function notify(): void {
   for (const fn of listeners) fn();
@@ -32,11 +33,30 @@ function connect(): void {
   eventSource = new EventSource(getSSEEventsUrl());
   eventSource.onmessage = () => notify();
   eventSource.onerror = () => {
-    // EventSource automatically reconnects on error; no action needed.
+    // Bugfix #1124: EventSource auto-reconnects after a successful 200 stream
+    // drops, but transitions to CLOSED (readyState === 2) on a non-200
+    // response (e.g. 503 at capacity). Schedule a manual retry with jitter.
+    if (eventSource && eventSource.readyState === EventSource.CLOSED) {
+      disconnect();
+      scheduleReconnect();
+    }
   };
 }
 
+function scheduleReconnect(): void {
+  if (reconnectTimer || listeners.size === 0) return;
+  const jitter = 2000 + Math.floor(Math.random() * 3000); // 2-5s
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, jitter);
+}
+
 function disconnect(): void {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   if (eventSource) {
     eventSource.close();
     eventSource = null;
