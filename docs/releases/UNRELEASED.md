@@ -33,6 +33,17 @@
     6. Re-cp the template back to UNRELEASED.md to start the next cycle
 -->
 
+## Edit and delete review comments from the Markdown Preview — the reviewer is now fully functional (#1055, PR #1132)
+
+The Codev Markdown Preview could add review comments but not change them. This completes the loop: rendered comment cards now carry per-card **edit** and **delete** affordances, and comments are also editable from the editor's Comments-API thread via a pencil on each comment. Edit reopens the comment body in the same inline composer shipped earlier this cycle (pre-filled with the current text); preview-side delete removes the marker in place. You can now author, edit, and remove feedback entirely from the rendered preview.
+
+Comments are stored as `<!-- REVIEW(...): body -->` marker lines in the markdown, and the identity model is line + content: a comment is located by its recorded line together with its author and a body prefix. Two invariants hold on every mutation:
+
+- **Author preservation.** The author written back is always the one already on the on-disk marker, never the identity of whoever is editing. This holds on both edit surfaces (editor thread and preview).
+- **Optimistic concurrency.** Before any edit or delete writes, the target marker at the recorded line is re-verified against its expected author and body. If the file changed since the surface last rendered — the comment moved, or a *different* comment stacked on the same block was edited — the write is refused and the preview refreshes rather than mutating the wrong marker. Stacked comments on a single block are therefore addressed individually, never confused for one another. The prefix comparison is whitespace-insensitive on both sides, so a hand-authored marker with irregular internal spacing still matches its rendered card.
+
+The preview auto-refreshes on file changes, so an edit or delete applied from one surface reconciles the other without a manual reload.
+
 ## Builder worktree write-guard: deterministic protection against main-checkout pollution (#1018, PR #1098)
 
 Strict-mode builders run in isolated git worktrees nested inside the main checkout. The `Write` / `Edit` tools require absolute paths, so the builder model must synthesize one; the current runtime sometimes anchors that path at the inferred canonical repo root instead of the worktree `cwd`, dropping the `.builders/<id>/` segment. The wrong path is a real writable directory (the main checkout's working tree), so the mis-write succeeds silently. Byte-identical trees at branch base mean wrong-rooted reads succeed silently too, so nothing corrects the model until a later `git add` in the worktree fails with a pathspec error. The polluted file just sits in main's working tree.
