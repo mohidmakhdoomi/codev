@@ -27,4 +27,16 @@ Three issues raised while testing the running worktree:
 2. **Card icons looked odd** — were raw emoji glyphs (✎/🗑) that render inconsistently and can't use VS Code codicons in a host-agnostic webview. Replaced with inline stroke SVGs (pencil/trash, currentColor, hover bg) via createElementNS. Fixed + committed.
 3. **Editor-gutter delete no-op** — investigated: delete command + menu are byte-identical to main (purely additive diff). Symptom was "trash visible, click does nothing." Turned out to be a **stale-build artifact — no longer reproducible after reload**. Briefly moved delete to per-comment placement speculatively, then **reverted** once confirmed environmental; editor delete stays unchanged on the thread header. No code change.
 
+### Review phase → PR #1132 → PR-stage consult
+Wrote review + retrospective; arch.md/lessons-learned.md cold-tier updates. Opened PR #1132 (Fixes #1055), recorded with porch.
+
+**Consult env issue (codex):** macOS XProtect deleted the un-notarized @openai/codex vendor binary (SIGKILL→ENOENT) — identical to #1118. Fix: user reinstalled globally (step 1), I ran ad-hoc `codesign --force --sign -` + cleared quarantine (step 2). Codex consult then ran clean.
+
+**Consult verdicts (2-of-2):** Claude=APPROVE (HIGH, no issues); Codex-lens=REQUEST_CHANGES with TWO real correctness bugs — both ACCEPTED + FIXED + regression-tested:
+1. `matchesExpectedMarker` normalized only the expected side vs raw body → hand-authored markers with internal double-space/tab spuriously failed edit/delete verify. (Architect's own zen gpt-5.1-codex lens independently flagged this same one.) Fixed: normalize both sides.
+2. `CommentComposer` stale text on same-block re-edit (shared `composingLine` → no remount) → save could write wrong body to a stacked marker. Fixed: `key` the composer on the edit target to force remount.
+
+Green after fixes: core 41, canvas 73, vscode 543. Rebuttal/dispositions in `codev/projects/1055-*/1055-review-iter1-rebuttals.md`. **`pr` gate pending** — architect notified, leading with the RC disposition (PIR single-pass → not model-re-reviewed; human verifies at pr gate). Waiting for gate approval to merge.
+
+
 
