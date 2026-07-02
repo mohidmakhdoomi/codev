@@ -309,12 +309,18 @@
   border: none;
   background: transparent;
   color: var(--codev-canvas-muted);
-  padding: 0 3px;
-  font-size: 0.9em;
-  line-height: 1;
+  padding: 2px;
+  line-height: 0;
   border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-.codev-canvas-marker-card-action:hover { color: var(--codev-canvas-foreground); }
+.codev-canvas-marker-card-action svg { display: block; }
+.codev-canvas-marker-card-action:hover {
+  color: var(--codev-canvas-foreground);
+  background: var(--codev-canvas-border);
+}
 .codev-canvas-marker-card-action:focus-visible {
   outline: 1px solid var(--codev-canvas-comment-marker);
   outline-offset: 1px;

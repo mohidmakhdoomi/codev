@@ -64,10 +64,10 @@ function buildMarkerCards(
       const actions = document.createElement('span');
       actions.className = 'codev-canvas-marker-card-actions';
       if (canEdit) {
-        actions.append(makeCardAction('edit', m.markerLine, '✎', `Edit comment by ${m.author}`));
+        actions.append(makeCardAction('edit', m.markerLine, `Edit comment by ${m.author}`));
       }
       if (canDelete) {
-        actions.append(makeCardAction('delete', m.markerLine, '🗑', `Delete comment by ${m.author}`));
+        actions.append(makeCardAction('delete', m.markerLine, `Delete comment by ${m.author}`));
       }
       card.append(actions);
     }
@@ -77,12 +77,51 @@ function buildMarkerCards(
   return stack;
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * A 16-grid stroke icon built from static path data (no user input, so no injection surface). We
+ * draw our own SVGs rather than reuse a font glyph or the host's icon set: the package is
+ * host-agnostic (it can't assume VS Code's codicon font is present in the webview), and emoji
+ * render inconsistently across platforms. `currentColor` lets the button's CSS drive the tint.
+ */
+function svgIcon(paths: string[]): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('width', '13');
+  svg.setAttribute('height', '13');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.3');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  for (const d of paths) {
+    const p = document.createElementNS(SVG_NS, 'path');
+    p.setAttribute('d', d);
+    svg.append(p);
+  }
+  return svg;
+}
+
+// Pencil (edit) and trash-can (delete) — plain line icons matching a codicon-ish weight.
+const CARD_ICONS: Record<'edit' | 'delete', () => SVGSVGElement> = {
+  edit: () => svgIcon(['M10.8 2.9l2.3 2.3', 'M11.5 2.2a1 1 0 0 1 1.4 0l.9.9a1 1 0 0 1 0 1.4l-7.6 7.6-2.7.6.6-2.7 7.4-7.4z']),
+  delete: () =>
+    svgIcon([
+      'M3 4.5h10',
+      'M6.4 4.5V3.1a.6.6 0 0 1 .6-.6h2a.6.6 0 0 1 .6.6v1.4',
+      'M4.6 4.5l.5 8.4a1 1 0 0 0 1 .95h3.8a1 1 0 0 0 1-.95l.5-8.4',
+      'M6.8 6.8v4.4',
+      'M9.2 6.8v4.4',
+    ]),
+};
+
 /** One card action button (edit/delete). Identity travels on `data-marker-line`; the delegated
  * handler resolves author + body from the marker list, so the button carries no user text. */
 function makeCardAction(
   action: 'edit' | 'delete',
   markerLine: number,
-  glyph: string,
   label: string,
 ): HTMLButtonElement {
   const btn = document.createElement('button');
@@ -92,7 +131,7 @@ function makeCardAction(
   btn.dataset.markerLine = String(markerLine);
   btn.setAttribute('aria-label', label);
   btn.title = label;
-  btn.textContent = glyph;
+  btn.append(CARD_ICONS[action]());
   return btn;
 }
 
