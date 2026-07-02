@@ -233,6 +233,11 @@ Projects currently in development (conceived through committed), sorted by prior
 
 ```yaml
 releases:
+  - version: "v3.2.2"
+    name: "Karnak"
+    status: released
+    target_date: "2026-07-02"
+    notes: "Second patch on the Karnak (v3.2.x) line, a feature-heavy cycle shipped as a patch. VS Code: Agents view gains a three-way group-by axis (stage/area/architect) plus conversational Add Architect routed through the main orchestrator (#1106); the Codev Markdown Preview review workflow is now fully functional via an inline composer (#1121) plus per-card edit and preview-side delete with author-preservation and optimistic concurrency (#1132); Open Issue by ID across GitHub/GitLab/Gitea/Linear (#1123); activity hooks publish window-focus/builder-active events to declared URLs (#1105) and a Tower command relay drives the focused editor (#1091). Orchestration/infra: per-architect conversation resume across restarts via a persisted session id (#1116); Codex as a selectable first-class architect harness (#1059); state.db retired into the single user-global global.db with an automatic once-ever boot migration (#1127); Tower SSE reject-on-cap ends a port-exhausting reconnect cascade (#1126); gemini/agy consult lane on-task preamble + no-verdict scoring fixes (#1085). No breaking changes; the state.db consolidation upgrades transparently on first Tower start. Contributors: @mohidmakhdoomi (#1059), @amustafa (first contribution, #1126), @waleedkadous (#1085/#1095/#1114/#1120)."
   - version: "v3.2.1"
     name: "Karnak"
     status: released
