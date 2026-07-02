@@ -160,8 +160,12 @@ export function matchesExpectedMarker(
   const m = REVIEW_MARKER_RE.exec(lineText);
   if (!m) { return false; }
   if (m[2] !== expectedAuthor) { return false; }
-  const normalizedExpected = expectedBodyPrefix.replace(/\s+/g, ' ').trim();
-  return m[3].startsWith(normalizedExpected);
+  // Normalize BOTH the on-disk body and the expected prefix the same way, so the prefix compare is
+  // whitespace-insensitive on both sides. The parser tolerates internal whitespace runs in a body
+  // (a hand-authored marker), so normalizing only the expected side would falsely reject a marker
+  // whose raw body carries extra internal spaces.
+  const normalize = (s: string): string => s.replace(/\s+/g, ' ').trim();
+  return normalize(m[3]).startsWith(normalize(expectedBodyPrefix));
 }
 
 /**

@@ -89,6 +89,28 @@ describe('preview card edit/delete affordances (#1055)', () => {
     expect(onEditComment).toHaveBeenCalledWith(2, 'carol', 'second', 'second (edited)');
   });
 
+  it('re-seeds the composer when switching to a DIFFERENT card on the SAME block (no stale text — #1055 codex finding)', async () => {
+    const onEditComment = vi.fn();
+    renderCanvas({ onEditComment });
+    await waitFor(() => expect(screen.getByLabelText('Edit comment by bob')).toBeTruthy());
+
+    // Open the composer on the first card (bob/"first"), without saving.
+    fireEvent.click(screen.getByLabelText('Edit comment by bob'));
+    let textarea = (await screen.findByLabelText('Edit comment on line 1')) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('first');
+
+    // Now click edit on the SECOND card (carol/"second") — same block (line 0), so composingLine is
+    // unchanged. Without the remount fix the textarea would still show "first".
+    fireEvent.click(screen.getByLabelText('Edit comment by carol'));
+    textarea = (await screen.findByLabelText('Edit comment on line 1')) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('second');
+
+    // Editing + saving targets carol's marker (#2) with carol's text, not bob's stale "first".
+    fireEvent.change(textarea, { target: { value: 'second (edited)' } });
+    fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true });
+    expect(onEditComment).toHaveBeenCalledWith(2, 'carol', 'second', 'second (edited)');
+  });
+
   it('renders NO affordances when the host provides no edit/delete callbacks (read-only host)', async () => {
     renderCanvas({});
     await waitFor(() => expect(screen.getByLabelText(/comments on line/i)).toBeTruthy());

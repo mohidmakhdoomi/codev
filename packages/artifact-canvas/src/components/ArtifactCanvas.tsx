@@ -458,6 +458,12 @@ export function ArtifactCanvas(props: ArtifactCanvasProps): React.ReactElement {
       {composingLine !== null && composerHost
         ? createPortal(
             <CommentComposer
+              // Key on the edit target so switching cards remounts the composer and re-seeds its
+              // textarea from `initialText`. Two comments stacked on ONE block share `composingLine`,
+              // so without this a click on a second card leaves the first card's text in the box and a
+              // save would write it to the wrong marker (#1055 codex finding). `useState(initialText)`
+              // only reads its arg on mount, so a fresh mount is what refreshes the seed.
+              key={`composer-${editingMarker?.markerLine ?? 'add'}-${composingLine}`}
               line={composingLine}
               onSubmit={submitComposer}
               onCancel={cancelComposer}

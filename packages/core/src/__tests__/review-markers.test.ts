@@ -97,6 +97,16 @@ describe('matchesExpectedMarker (#1055 optimistic-concurrency check)', () => {
     expect(matchesExpectedMarker(line, 'amr', '  one   two  three  ')).toBe(true);
   });
 
+  it('normalizes the ON-DISK body too, so a hand-authored marker with irregular internal whitespace still matches (#1055 codex/architect finding)', () => {
+    // Markers are human-writable; a hand-authored body can carry a double-space or tab run that the
+    // parser tolerates. The verify path must not spuriously reject it: normalizing only the expected
+    // side (comparing against the raw body) would make startsWith() false and refuse a real edit/delete.
+    expect(matchesExpectedMarker('<!-- REVIEW(@amr): foo  bar -->', 'amr', 'foo bar')).toBe(true);
+    expect(matchesExpectedMarker('<!-- REVIEW(@amr): foo\tbar -->', 'amr', 'foo bar')).toBe(true);
+    // And still rejects a genuinely different body.
+    expect(matchesExpectedMarker('<!-- REVIEW(@amr): foo  bar -->', 'amr', 'baz')).toBe(false);
+  });
+
   it('rejects on author mismatch, body mismatch, or a non-marker line', () => {
     const line = '<!-- REVIEW(@amr): hello world -->';
     expect(matchesExpectedMarker(line, 'bob', 'hello world')).toBe(false);
