@@ -8,11 +8,11 @@ plan_phases:
     status: complete
   - id: phase_2
     title: arch-init skill in both trees + tests
-    status: in_progress
+    status: complete
   - id: phase_3
     title: CLI reference and afx-skill docs sync
-    status: pending
-current_plan_phase: phase_2
+    status: in_progress
+current_plan_phase: phase_3
 gates:
   spec-approval:
     status: approved
@@ -27,7 +27,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history: []
 started_at: '2026-07-03T14:44:55.927Z'
-updated_at: '2026-07-03T17:14:01.037Z'
+updated_at: '2026-07-03T17:17:21.962Z'
