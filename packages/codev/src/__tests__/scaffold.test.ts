@@ -13,6 +13,7 @@ import {
   copyResourceTemplates,
   copyRoles,
   copyRootFiles,
+  copySkills,
 } from '../lib/scaffold.js';
 
 describe('Scaffold Utilities', () => {
@@ -288,6 +289,55 @@ describe('Scaffold Utilities', () => {
       );
       expect(scaffoldSource).not.toContain('copyProjectlist');
       expect(scaffoldSource).not.toContain('copyProjectlistArchive');
+    });
+  });
+
+  // Spec 1134 — copySkills() is the install path for .claude/skills/ (used by
+  // init/adopt/update). First regression tests for it: the dynamic directory
+  // enumeration must pick up new skills (arch-init), and skipExisting must
+  // preserve a user's customized copy.
+  describe('copySkills (Spec 1134)', () => {
+    // The REAL repo skeleton — proves the shipped arch-init skill installs,
+    // not just a mock (spec 1134 test scenario 9).
+    const realSkeletonDir = path.resolve(__dirname, '..', '..', '..', '..', 'codev-skeleton');
+
+    it('installs arch-init/SKILL.md from the real skeleton into a fresh target', () => {
+      const result = copySkills(tempDir, realSkeletonDir);
+      expect(result.copied).toContain('arch-init');
+      expect(
+        fs.existsSync(path.join(tempDir, '.claude', 'skills', 'arch-init', 'SKILL.md'))
+      ).toBe(true);
+    });
+
+    it('enumerates skill directories dynamically (copies every skeleton skill)', () => {
+      const result = copySkills(tempDir, realSkeletonDir);
+      const skeletonSkills = fs
+        .readdirSync(path.join(realSkeletonDir, '.claude', 'skills'), { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name);
+      expect(result.copied.sort()).toEqual(skeletonSkills.sort());
+    });
+
+    it('skipExisting: true preserves an existing customized copy', () => {
+      const customized = path.join(tempDir, '.claude', 'skills', 'arch-init');
+      fs.mkdirSync(customized, { recursive: true });
+      fs.writeFileSync(path.join(customized, 'SKILL.md'), 'user-customized content');
+
+      const result = copySkills(tempDir, realSkeletonDir, { skipExisting: true });
+      expect(result.skipped).toContain('arch-init');
+      expect(fs.readFileSync(path.join(customized, 'SKILL.md'), 'utf-8')).toBe(
+        'user-customized content'
+      );
+    });
+
+    it('overwrites by default (skipExisting omitted) so update refreshes skills', () => {
+      const existing = path.join(tempDir, '.claude', 'skills', 'arch-init');
+      fs.mkdirSync(existing, { recursive: true });
+      fs.writeFileSync(path.join(existing, 'SKILL.md'), 'stale content');
+
+      const result = copySkills(tempDir, realSkeletonDir);
+      expect(result.copied).toContain('arch-init');
+      expect(fs.readFileSync(path.join(existing, 'SKILL.md'), 'utf-8')).not.toBe('stale content');
     });
   });
 });
