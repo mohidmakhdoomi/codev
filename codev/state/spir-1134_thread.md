@@ -85,3 +85,10 @@
   "skill text is a testable artifact" lesson. Both HOT files unchanged
   (nothing cross-cutting enough to displace capped entries).
 - PR next, then porch done → pr gate.
+
+## PR gate
+
+- PR #1136 created: https://github.com/cluesmith/codev/pull/1136
+- PR-level CMAP: Gemini APPROVE (HIGH), Codex APPROVE (MEDIUM), Claude APPROVE
+  (HIGH) — no key issues anywhere in the project after spec/plan iterations.
+- **Gate reached: pr.** Architect notified. Waiting for human approval to merge.
