@@ -237,6 +237,65 @@ Status values:
 
 ---
 
+### afx whoami
+
+Report this terminal's agent identity — workspace, type, and name — from
+Tower/global.db's perspective.
+
+```bash
+afx whoami
+afx whoami --json
+```
+
+**Description:**
+
+Resolves who the current terminal's agent is. Identity precedence:
+
+1. **Builder worktree** — when CWD is inside `.builders/<id>/`, the canonical
+   builder id is verified against `global.db` (the same resolution `afx send`
+   uses). An unverifiable worktree identity is an error, never a fallthrough
+   to the next signal.
+2. **`CODEV_ARCHITECT_NAME`** — the env var Tower injects into architect
+   terminals.
+3. **Unknown** — exits non-zero with an explanation. There is no implicit
+   fallback to `main` (issue #1094: unverified identities misroute messages).
+
+Works without Tower running (reads `global.db` read-only).
+
+**Example output (architect terminal):**
+
+```
+workspace: codev
+type: architect
+name: main
+```
+
+**Example output (builder worktree):**
+
+```
+workspace: codev
+type: builder
+name: builder-spir-984
+architect: main
+```
+
+The `architect:` line is the builder's spawning architect; it is omitted when
+not recorded (legacy rows).
+
+**JSON output:**
+
+```bash
+afx whoami --json
+# {"workspace":"codev","type":"builder","name":"builder-spir-984","architect":"main"}
+```
+
+On failure, `--json` prints `{"error":"..."}` to stdout (the human-readable
+explanation still goes to stderr) and exits 1.
+
+**Exit codes:** `0` identity resolved; `1` identity unknown or unverifiable.
+
+---
+
 ### afx cleanup
 
 Clean up a builder worktree and branch.
