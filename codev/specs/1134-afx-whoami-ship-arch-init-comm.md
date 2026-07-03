@@ -108,12 +108,15 @@ A new `afx whoami` command in `packages/codev/src/agent-farm/` that:
    was checked, likely causes: plain shell, terminal not started by Tower,
    pre-#786 architect terminal) and exit non-zero.
 
-Workspace field: the workspace root is the cwd for architects, or the path
-prefix before `/.builders/` for builders. The display name is resolved from the
-`known_workspaces` registry in global.db when present, else the directory
-basename. (The workspace name is informational context, not identity — a
-basename fallback here does not violate the fail-loud rule, which applies to
-type/name.)
+Workspace field: the workspace root is resolved via the existing
+`detectWorkspaceRoot()` (send.ts) — it extracts the prefix before
+`/.builders/` for builders and otherwise walks up from cwd to the nearest
+directory containing `.codev/config.json` or `.git`. This handles an architect
+running `whoami` from a subdirectory (cwd is NOT assumed to be the root). The
+display name is resolved from the `known_workspaces` registry in global.db
+when present, else the directory basename. (The workspace name is
+informational context, not identity — a basename fallback here does not
+violate the fail-loud rule, which applies to type/name.)
 
 - **Pros**: single source of truth; inherits #1094 fail-loud semantics for
   free; works offline (no Tower dependency); minimal new code.
@@ -169,8 +172,17 @@ architect: main
 `architect` is omitted (not `null`) when unknown, keeping the schema minimal.
 
 On failure (identity unknown): exit code 1; human mode prints the explanation
-to stderr; `--json` mode prints `{ "error": "<message>" }` to stdout and still
-exits 1, so scripted callers get structured output on both paths.
+to stderr; `--json` mode prints `{ "error": "<message>" }` to stdout AND the
+human-readable explanation to stderr, still exiting 1 — scripted callers get
+structured stdout on both paths while humans keep an informative stderr
+(consultation feedback, Gemini).
+
+Architect-row cross-check: when identity resolves via `CODEV_ARCHITECT_NAME`,
+`whoami` SHOULD best-effort check the `architect` table for a matching
+`(workspace_path, id)` row and emit a warning to stderr when none is found
+(e.g. after a Tower crash). The warning never changes the output or exit code
+— rows being absent is expected in exactly the recovery scenarios `/arch-init`
+serves, so this is diagnostics, not gating.
 
 ### Deliverable 2: ship `/arch-init`
 
@@ -190,16 +202,26 @@ Workspace-agnostic rewrite of the existing personal command, with the identity
 step replaced:
 
 1. **Resolve the architect name.** Precedence:
-   1. Explicit `[name]` argument → use verbatim (normal path; human named you).
+   1. Explicit `[name]` argument → use it (normal path; human named you), but
+      only after validating its shape (below).
    2. Else run `afx whoami`. If it resolves `type: architect`, adopt that
       `name`. If it resolves `type: builder`, STOP — this command is for
       architect terminals; report the mismatch. If it fails (non-zero), STOP
       and ask the human which architect this terminal is — never guess.
 
+   **Name validation** (consultation feedback, Codex): before the name is used
+   to build any file path, it must match the established architect-name rule
+   (`[a-z][a-z0-9-]*`, max 64 chars — the `validateArchitectName` rule in
+   `packages/codev/src/agent-farm/utils/architect-name.ts`). Anything else —
+   slashes, `..`, uppercase, spaces — is rejected with the rule spelled out.
+   This closes the `/arch-init ../../foo` path-traversal hole.
+
    The old `ps -p $PPID` / `afx status` ancestry matching is removed entirely.
 2. **Read `codev/state/<name>.md`** (relative to the workspace root). If
-   missing: list `codev/state/*.md`, tell the human, and ask whether to start a
-   fresh state file — do not fabricate state.
+   missing: list the architect state files in `codev/state/` — excluding
+   builder thread files, which share the directory and are named
+   `<builder-id>_thread.md` — tell the human the file is missing, and ask
+   whether to start a fresh state file — do not fabricate state.
 3. **Confirm identity + orient**: report adopted name, the state file read, and
    the current-state/open-loops summary; then follow the state file's resume
    instructions.
@@ -211,6 +233,27 @@ step replaced:
 
 All Shannon-specific wording (workspace name, roster references, example
 architect names beyond generic ones) is removed.
+
+#### Architect state files: minimum contract
+
+`codev/state/` is a shared directory: builder threads live at
+`codev/state/<builder-id>_thread.md`, and architect state files live at
+`codev/state/<name>.md` where `<name>` is a valid architect name. This spec
+does not impose a schema on architect state files — they are free-form
+markdown owned by each architect — but `/arch-init` assumes this minimum
+contract so its behavior is well-defined:
+
+- The file is **authoritative free text**: whatever it says about resuming
+  (role banner, "read FIRST on resume" notes, open loops) is followed as-is.
+- The "resume summary" `/arch-init` reports is: the file's opening role/banner
+  line (if any) plus the most recent dated section (or, absent dated sections,
+  the file's leading content). No parsing beyond that is required or promised.
+- Absence of the file is a normal, first-run condition — handled by the
+  missing-file flow above, never by fabricating content.
+
+Creating/maintaining these files remains out of scope; this contract exists
+only so the skill's read-and-summarize behavior is implementable and
+reviewable (consultation feedback, Codex).
 
 ## Out of Scope
 
@@ -225,17 +268,19 @@ architect names beyond generic ones) is removed.
 
 ## Open Questions
 
-- **Important — cross-check architect env against the `architect` table?**
-  `CODEV_ARCHITECT_NAME` only exists because Tower injected it, so trusting it
-  satisfies "from Tower's perspective". `whoami` COULD additionally verify a
-  matching row in the `architect` table (keyed `workspace_path, id`) and warn —
-  not fail — on mismatch (rows may be absent after crashes; pid matching is
-  the fragility we're removing). Default: trust env, no cross-check, unless
-  reviewers argue otherwise.
-- **Nice-to-know — should `whoami` print `--json` errors to stderr instead?**
-  Proposed: stdout `{ "error": ... }` + exit 1 (structured for scripts).
-- **Nice-to-know — top-level `codev whoami` alias?** Not proposed; `afx` is
-  the agent-farm surface and the issue asks for `afx whoami`.
+All resolved during the iteration-1 consultation:
+
+- **Cross-check architect env against the `architect` table?** RESOLVED:
+  trust `CODEV_ARCHITECT_NAME` (it exists only because Tower injected it), but
+  emit a best-effort stderr **warning** when no matching `architect` row is
+  found — never failing, never changing output/exit code (Gemini's
+  recommendation; rows are legitimately absent in crash-recovery scenarios).
+- **`--json` errors to stdout or stderr?** RESOLVED: both — structured
+  `{ "error": ... }` on stdout for scripts, human-readable explanation on
+  stderr, exit 1 (Gemini's recommendation).
+- **Top-level `codev whoami` alias?** RESOLVED: declined for this spec. The
+  issue asks for `afx whoami`; agents are the primary consumers and use `afx`.
+  An alias can be a follow-up if humans ask for it.
 
 ## Success Criteria
 
@@ -255,15 +300,23 @@ architect names beyond generic ones) is removed.
    check or the bare directory name.
 5. `afx whoami --json` emits the documented JSON schema on success and
    `{ "error": ... }` + exit 1 on failure.
-6. `/arch-init [name]` uses the explicit argument when given; otherwise
-   resolves identity via `afx whoami`; otherwise stops and asks the human.
-7. `/arch-init` reads `codev/state/<name>.md` and reports the resume summary;
-   when the file is missing it lists available state files and asks before
-   creating anything.
+6. The `/arch-init` skill text instructs: explicit `[name]` argument wins
+   (after `[a-z][a-z0-9-]*`/64-char validation, rejecting path-traversal
+   shapes); otherwise identity comes from `afx whoami`; otherwise STOP and ask
+   the human. It contains no `ps`/`$PPID`/process-ancestry instructions.
+7. The `/arch-init` skill text instructs reading `codev/state/<name>.md` and
+   reporting the resume summary per the minimum contract; the missing-file
+   flow lists architect state files (excluding `*_thread.md` builder threads)
+   and asks before creating anything.
 8. `/arch-init` ships in `codev-skeleton/.claude/skills/arch-init/` and is
    installed by `codev init` (and offered by `codev update`); it is mirrored
-   in this repo's `.claude/skills/arch-init/`.
+   in this repo's `.claude/skills/arch-init/` with identical content.
 9. `whoami` requires no running Tower.
+
+(6–7 are phrased as assertions about the shipped skill text — that is the
+testable artifact; the runtime behavior it produces is exercised manually,
+since a skill is instructions to an agent, not code. Consultation feedback,
+Codex.)
 
 ### Non-functional
 
@@ -288,7 +341,38 @@ architect names beyond generic ones) is removed.
 8. Workspace registered in `known_workspaces` → its `name`; unregistered →
    directory basename.
 9. Fresh `codev init` project contains `.claude/skills/arch-init/SKILL.md`.
+10. Architect terminal, cwd in a subdirectory of the workspace (e.g.
+    `packages/codev/src/`) → workspace root still resolved correctly via
+    `detectWorkspaceRoot()`.
+11. Env resolves an architect name but no matching `architect` row exists →
+    success output unchanged, warning on stderr, exit 0.
+12. Skill-text assertions: `codev-skeleton/.claude/skills/arch-init/SKILL.md`
+    and `.claude/skills/arch-init/SKILL.md` are identical; text references
+    `afx whoami` and the name-validation rule; text contains no `ps `/`$PPID`
+    ancestry matching and no Shannon-specific wording.
 
 ## Consultation Log
 
-*(To be filled by porch-driven 3-way review.)*
+### Iteration 1 (spec review): Gemini APPROVE, Codex REQUEST_CHANGES, Claude APPROVE
+
+Changes made in response:
+
+- **Codex**: defined a minimum contract for architect state files (free-form
+  markdown, authoritative; resume summary = banner + latest dated section) and
+  disambiguated them from builder `*_thread.md` files sharing `codev/state/`;
+  added `[name]` validation via the `validateArchitectName` rule to close the
+  path-traversal hole; replaced "workspace root is cwd for architects" with
+  `detectWorkspaceRoot()` cwd-to-root walking; rephrased `/arch-init` MUST
+  criteria as assertions about the shipped skill text (the testable artifact)
+  and added skill-text/scaffold test scenarios (10–12).
+- **Gemini**: adopted stderr warning when env-resolved architect has no
+  `architect` table row (non-gating); adopted dual-output `--json` failure
+  (JSON stdout + human stderr). Declined the `codev whoami` alias (scope:
+  issue asks for `afx whoami`; agents are the consumers).
+- **Claude**: same workspace-root gap as Codex (fixed above). Noted for the
+  plan: `describeStateDbOpenFailure()`'s message text still says "state.db"
+  post-#1118; the implementation MAY do that one-line wording drive-by (or
+  file a follow-up issue) since `whoami` will surface these messages.
+
+Full reviews: `codev/projects/1134-afx-whoami-ship-arch-init-comm/1134-specify-iter1-{gemini,codex,claude}.txt`;
+rebuttal: `1134-specify-iter1-rebuttals.md`.
