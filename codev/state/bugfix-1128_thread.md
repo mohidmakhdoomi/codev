@@ -65,3 +65,26 @@ The failure mode (XProtect trashing an unsigned vendor binary) is environmental
 (macOS + XProtect definitions + signing state of a third-party binary), not
 reachable from unit tests. Verification is manual: codesign/spctl on the
 resolved vendor binary + launching it, recorded in the PR body.
+
+Verification results (macOS 26, darwin-arm64, worktree):
+- codesign --verify --strict passes; full Developer ID chain, hardened runtime.
+- spctl "rejected (the code is valid but does not seem to be an app)" is the
+  standard response for any signed non-app-bundle CLI (identical output for the
+  known-good standalone codex used daily on this machine), not a failure.
+- Binary launches (codex-cli 0.142.5, exit 0), no SIGKILL, survives on disk.
+- End-to-end: worktree `consult -m codex` round-trips in 7s.
+- Root `pnpm build` clean; 3432 tests pass; porch phase checks green.
+
+## PR phase (2026-07-06)
+
+PR #1141: https://github.com/cluesmith/codev/pull/1141 (Fixes #1128).
+
+CMAP (all three lanes run through the worktree build; the codex lane ran on the
+fixed SDK, which doubles as live validation of the fix):
+- gemini: APPROVE (HIGH confidence, no key issues)
+- codex: APPROVE (HIGH confidence, no key issues)
+- claude: APPROVE (HIGH confidence; non-blocking note that "Fixes #1128"
+  auto-closes the issue while the architect plans follow-on scope, (a)
+  conditional fixup and (c) legible error, on that same issue)
+
+Requested the pr gate via porch done; waiting for human approval.
