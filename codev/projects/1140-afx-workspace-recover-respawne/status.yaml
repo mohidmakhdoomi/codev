@@ -1,0 +1,18 @@
+id: '1140'
+title: afx-workspace-recover-respawne
+protocol: pir
+phase: plan
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: pending
+  dev-approval:
+    status: pending
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-06T04:15:05.820Z'
+updated_at: '2026-07-06T04:15:05.821Z'
