@@ -13,6 +13,9 @@
  *   4. extension.ts registers `codev.referencePRInArchitect` and calls
  *      `buildArchitectReferenceInjection` for the injection text.
  *   5. The injection format for a PR with title matches `#<id> "<title>" `.
+ *   6. The injection targets the architect resolved by
+ *      `codev.openArchitectTerminal` and is skipped when the open is
+ *      cancelled (Issue 1139).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -92,6 +95,22 @@ describe('codev.referencePRInArchitect — extension.ts', () => {
   it('guards on PullRequestTreeItem instanceof before extracting fields', () => {
     const block = EXT_SRC.split("regCli('codev.referencePRInArchitect'")[1] ?? '';
     expect(block).toMatch(/instanceof PullRequestTreeItem/);
+  });
+
+  it('injects into the architect resolved by the open command (Issue 1139)', () => {
+    // Mirror of the codev.referenceIssueInArchitect fix: capture the name
+    // resolved by codev.openArchitectTerminal (QuickPick choice in
+    // multi-architect workspaces) and pass it to injectArchitectText.
+    const block = EXT_SRC.split("regCli('codev.referencePRInArchitect'")[1] ?? '';
+    expect(block).toMatch(
+      /const resolvedName = await vscode\.commands\.executeCommand<string \| undefined>\('codev\.openArchitectTerminal'\)/
+    );
+    expect(block).toMatch(/injectArchitectText\(buildArchitectReferenceInjection\([^)]*\), resolvedName\)/);
+  });
+
+  it('skips injection when the open is cancelled or fails (Issue 1139)', () => {
+    const block = EXT_SRC.split("regCli('codev.referencePRInArchitect'")[1] ?? '';
+    expect(block).toMatch(/if \(!resolvedName\) \{ return; \}/);
   });
 });
 

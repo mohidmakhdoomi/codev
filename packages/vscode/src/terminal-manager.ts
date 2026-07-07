@@ -136,12 +136,12 @@ export class TerminalManager {
    * registered in this window — callers should ensure it's open first (via
    * `codev.openArchitectTerminal`) before injecting.
    *
-   * Spec 786 Phase 6: defaults `architectName` to `'main'` so existing
-   * callers (notably `codev.referenceIssueInArchitect` — the Backlog inline
-   * button) keep targeting main without modification. This is the
-   * conservative call documented in the Phase 6 plan deliverable: the
-   * Backlog button always targets `main` regardless of how many sibling
-   * architects exist.
+   * `architectName` defaults to `'main'` (Spec 786 Phase 6) for name-less
+   * callers. The reference-injection commands (`codev.referenceIssueInArchitect`
+   * and `codev.referencePRInArchitect`) pass the name resolved by
+   * `codev.openArchitectTerminal` (explicit arg, QuickPick choice in
+   * multi-architect workspaces, or the single-architect default), so the
+   * injection lands in the terminal the user actually picked (Issue 1139).
    */
   injectArchitectText(text: string, architectName: string = 'main'): boolean {
     const key = `architect:${architectName}`;
