@@ -62,7 +62,8 @@ import { BuilderFileDecorationProvider } from './views/builder-file-decoration.j
 import { BacklogGroupTreeItem, BacklogTreeItem } from './views/backlog-tree-item.js';
 import { persistAreaGroupExpansion } from './views/area-group-expansion.js';
 import { buildArchitectReferenceInjection } from './architect-reference-injection.js';
-import { runPreflight, recheckCli, isCliReady, showPreflightFeedback, probeTowerVersion } from './preflight/preflight.js';
+import { runPreflight, recheckCli, isCliReady, showPreflightFeedback, probeTowerVersion, openWalkthrough, maybeOpenWalkthrough } from './preflight/preflight.js';
+import { detectIdeMode, decideActivationTier, activationPolicy, IDE_SIMULATION_ENV_VAR } from './ide-mode.js';
 import { detectWorkspacePath } from './workspace-detector.js';
 import { loadWorktreeConfig, hasRunnableDevCommand } from './load-worktree-config.js';
 
@@ -74,6 +75,11 @@ let statusBarItem: vscode.StatusBarItem | null = null;
 // Created lazily on dev start, disposed on stop — distinct from the connection
 // status item above.
 let devChipItem: vscode.StatusBarItem | null = null;
+
+// globalState key gating the one-time IDE first-run surface (#1144 Part 3):
+// welcome notification + walkthrough, fired only on the very first
+// empty-window launch of the Codev IDE.
+const IDE_FIRST_RUN_KEY = 'codev.ideFirstRunShown';
 
 /**
  * Resolve a builder id from a command argument.
@@ -134,6 +140,40 @@ function extractIssueTitle(arg: IssueCommandArg): string | undefined {
 }
 
 export async function activate(context: vscode.ExtensionContext) {
+	// Layer model (#1144): compute the activation tier before ANY side effect.
+	// `onStartupFinished` fires this in every window of every install, so the
+	// tier decides which side effects below may run at all. `dormant` (guest
+	// mode, no codev workspace) must stay exactly as inert as if activation
+	// had never fired: no Tower process, no UI mutation, no state writes.
+	// Everything still *registers* (commands, providers, subscriptions) so
+	// palette invocations degrade gracefully instead of erroring.
+	const ideMode = detectIdeMode({
+		appName: vscode.env.appName,
+		isDevelopment: context.extensionMode === vscode.ExtensionMode.Development,
+		simulationSeam: process.env[IDE_SIMULATION_ENV_VAR],
+	});
+	const tier = decideActivationTier({
+		ideMode,
+		hasCodevWorkspace: detectWorkspacePath() !== null,
+	});
+	const policy = activationPolicy(tier);
+
+	// The two layer-model context keys (#1144). `codev.ideMode` is immutable
+	// for the window's lifetime (appName can't change in-process).
+	// `codev.hasWorkspace` is folder-presence (per the issue's matrix), not
+	// codev-project-presence: it gates the workspace-bound views and the
+	// viewsWelcome quadrants in package.json. Kept live on folder changes;
+	// tier recomputation isn't needed because opening a folder from an empty
+	// window restarts the extension host anyway.
+	vscode.commands.executeCommand('setContext', 'codev.ideMode', ideMode);
+	const syncHasWorkspaceContext = () =>
+		vscode.commands.executeCommand(
+			'setContext', 'codev.hasWorkspace',
+			(vscode.workspace.workspaceFolders?.length ?? 0) > 0);
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeWorkspaceFolders(syncHasWorkspaceContext));
+	syncHasWorkspaceContext(); // seed initial state
+
 	// Output Channel for diagnostics
 	outputChannel = vscode.window.createOutputChannel('Codev');
 	context.subscriptions.push(outputChannel);
@@ -147,7 +187,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	statusBarItem.text = '$(circle-slash) Codev: Offline';
 	statusBarItem.command = 'codev.reconnect';
 	statusBarItem.tooltip = 'Click to reconnect to Tower';
-	statusBarItem.show();
+	// Dormant windows get no status-bar item (#1144): a "Codev: Offline" chip
+	// in every vanilla VS Code window is exactly the UI mutation the
+	// marketplace-inertness contract forbids.
+	if (policy.showStatusBar) {
+		statusBarItem.show();
+	}
 	context.subscriptions.push(statusBarItem);
 
 	connectionManager.onStateChange((state) => {
@@ -410,9 +455,13 @@ export async function activate(context: vscode.ExtensionContext) {
 	// ephemeral nav state — default expanded each session). Delete any value left
 	// by a prior install so the dead state doesn't linger; updating to `undefined`
 	// removes the key and is idempotent across activations. Both axis keys are
-	// cleared (#952 added the stage axis after #913 was filed).
-	context.workspaceState.update('codev.buildersGroupExpansion', undefined);
-	context.workspaceState.update('codev.buildersStageGroupExpansion', undefined);
+	// cleared (#952 added the stage axis after #913 was filed). Skipped in
+	// dormant windows (#1144): a window that never ran the old code has nothing
+	// to clean, and dormant means no state writes at all.
+	if (policy.writeCleanupState) {
+		context.workspaceState.update('codev.buildersGroupExpansion', undefined);
+		context.workspaceState.update('codev.buildersStageGroupExpansion', undefined);
+	}
 
 	// List views use createTreeView so their title can carry a live item
 	// count; the rest stay on registerTreeDataProvider.
@@ -512,8 +561,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Reveal it exactly once (per profile) so the user discovers the tab; the
 	// globalState flag makes this a one-time nudge, not an every-launch
 	// interruption. After the reveal VSCode persists the tab as shown.
+	// Gated by tier (#1144): a dormant window must neither steal focus nor
+	// write globalState — and must not consume the one-time flag, so the
+	// nudge still fires on the user's first *codev* window.
 	const PANEL_REVEALED_KEY = 'codev.panelRevealedOnce';
-	if (!context.globalState.get(PANEL_REVEALED_KEY)) {
+	if (policy.revealPanelOnce && !context.globalState.get(PANEL_REVEALED_KEY)) {
 		vscode.commands.executeCommand('workbench.view.extension.codevPanel');
 		context.globalState.update(PANEL_REVEALED_KEY, true);
 	}
@@ -1214,6 +1266,11 @@ export async function activate(context: vscode.ExtensionContext) {
 		reg('codev.agentsCycleGroupFromStage', () => setGroupBy('area')),
 		reg('codev.agentsCycleGroupFromArea', () => setGroupBy('architect')),
 		reg('codev.agentsCycleGroupFromArchitect', () => setGroupBy('stage')),
+		// Welcome-content entry point (#1144): the IDE empty-window welcome
+		// links here to open the Getting Started walkthrough. Registered but
+		// (like codev.forwardToBuilder) deliberately NOT declared in
+		// `contributes.commands`, so it stays out of the Command Palette.
+		reg('codev.openGettingStarted', () => openWalkthrough()),
 		reg('codev.reconnect', () => connectionManager?.reconnect()),
 		regCli('codev.connectTunnel', () => connectTunnel(connectionManager!)),
 		regCli('codev.disconnectTunnel', () => disconnectTunnel(connectionManager!)),
@@ -1296,16 +1353,49 @@ export async function activate(context: vscode.ExtensionContext) {
 		),
 	);
 
+	// IDE empty-window surface (#1144 Part 3). Runtime code by hard
+	// constraint: extension-contributed configurationDefaults register
+	// asynchronously and race whatever renders at startup, so nothing
+	// first-launch-visible may ride on them. In the IDE fork this surface is
+	// the product's ONLY first-run UX (core onboarding is removed there).
+	if (policy.focusCodevContainer) {
+		vscode.commands.executeCommand('workbench.view.extension.codev');
+	}
+	if (policy.ideFirstRun && !context.globalState.get(IDE_FIRST_RUN_KEY)) {
+		context.globalState.update(IDE_FIRST_RUN_KEY, true);
+		vscode.window.showInformationMessage(
+			'Welcome to Codev. Open a project to spawn your first builder, or start with the CLI setup guide.',
+			'Get Started',
+		).then((choice) => {
+			if (choice === 'Get Started') {
+				openWalkthrough();
+			}
+		});
+		// The CLI-preflight walkthrough IS the first-run path. Routed through
+		// the same once-per-workspace gate the preflight uses, so a `missing`
+		// preflight result landing later can't open it a second time.
+		maybeOpenWalkthrough(context);
+	}
+
 	// CLI preflight (#791): verify the codev CLI is installed and >= this
 	// extension's version. Fire-and-forget so activation isn't blocked — the
 	// probe self-bounds at the `codev.cliVersionTimeoutMs` budget (#1024) and
 	// caches its result for the session. Uses
 	// detectWorkspacePath() directly (connectionManager.getWorkspacePath() isn't
 	// populated until initialize() resolves, which may wait on Tower auto-start).
-	runPreflight(context, detectWorkspacePath(), outputChannel);
+	// Skipped in dormant windows (#1144): the probe spawns a child process and
+	// on a missing CLI opens the walkthrough — a focus steal in a window that
+	// has nothing to do with Codev.
+	if (policy.runPreflight) {
+		runPreflight(context, detectWorkspacePath(), outputChannel);
+	}
 
-	// Connect
-	await connectionManager.initialize();
+	// Connect. THE headline inertness gate (#1144): initialize() connects to
+	// Tower and auto-starts it even when no codev workspace is detected, so a
+	// dormant window must never reach it.
+	if (policy.initializeConnection) {
+		await connectionManager.initialize();
+	}
 }
 
 export function deactivate() {

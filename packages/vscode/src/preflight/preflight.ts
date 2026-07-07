@@ -199,8 +199,13 @@ export async function recheckCli(): Promise<void> {
   }
 }
 
-/** Open the walkthrough automatically, but only once per workspace. */
-function maybeOpenWalkthrough(context: vscode.ExtensionContext): void {
+/**
+ * Open the walkthrough automatically, but only once per workspace. Exported
+ * (#1144) so the IDE first-run path shares this gate with the missing-CLI
+ * preflight outcome: whichever fires first opens the walkthrough, the other
+ * no-ops.
+ */
+export function maybeOpenWalkthrough(context: vscode.ExtensionContext): void {
   if (context.workspaceState.get<boolean>(WALKTHROUGH_SHOWN_KEY, false)) {
     return;
   }
@@ -208,7 +213,8 @@ function maybeOpenWalkthrough(context: vscode.ExtensionContext): void {
   openWalkthrough();
 }
 
-function openWalkthrough(): void {
+/** Exported (#1144) for `codev.openGettingStarted` (welcome-content links). */
+export function openWalkthrough(): void {
   vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH_ID, false);
 }
 

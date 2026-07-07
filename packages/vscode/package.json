@@ -41,7 +41,8 @@
   ],
   "activationEvents": [
     "workspaceContains:.codev",
-    "workspaceContains:codev"
+    "workspaceContains:codev",
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -860,19 +861,31 @@
     },
     "views": {
       "codev": [
-        { "id": "codev.workspace", "name": "Workspace" },
+        { "id": "codev.workspace", "name": "Workspace", "when": "codev.hasWorkspace" },
         { "id": "codev.agents", "name": "Agents" },
-        { "id": "codev.backlog", "name": "Backlog" },
-        { "id": "codev.pullRequests", "name": "Pull Requests" },
-        { "id": "codev.recentlyClosed", "name": "Recently Closed" },
-        { "id": "codev.team", "name": "Team", "when": "codev.teamEnabled" },
-        { "id": "codev.status", "name": "Status" }
+        { "id": "codev.backlog", "name": "Backlog", "when": "codev.hasWorkspace" },
+        { "id": "codev.pullRequests", "name": "Pull Requests", "when": "codev.hasWorkspace" },
+        { "id": "codev.recentlyClosed", "name": "Recently Closed", "when": "codev.hasWorkspace" },
+        { "id": "codev.team", "name": "Team", "when": "codev.teamEnabled && codev.hasWorkspace" },
+        { "id": "codev.status", "name": "Status", "when": "codev.hasWorkspace || codev.ideMode" }
       ],
       "codevPanel": [
         { "id": "codev.placeholder", "name": "Codev", "when": "codev.panelContainerEmpty", "visibility": "collapsed" },
         { "id": "codev.devServer", "name": "Codev Dev" }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "codev.agents",
+        "contents": "Open a folder to use Codev.\n[Open Folder](command:workbench.action.files.openFolder)",
+        "when": "!codev.hasWorkspace && !codev.ideMode"
+      },
+      {
+        "view": "codev.agents",
+        "contents": "Welcome to Codev.\nOpen a project to spawn your first builder.\n[Open Folder](command:workbench.action.files.openFolder)\n[Open Recent](command:workbench.action.openRecent)\nNew here? Install the Codev CLI and learn the spawn flow.\n[Get Started](command:codev.openGettingStarted)",
+        "when": "!codev.hasWorkspace && codev.ideMode"
+      }
+    ],
     "configuration": {
       "title": "Codev",
       "properties": {
