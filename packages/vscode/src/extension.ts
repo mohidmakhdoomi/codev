@@ -160,16 +160,21 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// The two layer-model context keys (#1144). `codev.ideMode` is immutable
 	// for the window's lifetime (appName can't change in-process).
-	// `codev.hasWorkspace` is folder-presence (per the issue's matrix), not
-	// codev-project-presence: it gates the workspace-bound views and the
-	// viewsWelcome quadrants in package.json. Kept live on folder changes;
-	// tier recomputation isn't needed because opening a folder from an empty
-	// window restarts the extension host anyway.
+	// `codev.hasWorkspace` is codev-workspace-presence: the opened folder is
+	// a codev root (or the `codev.workspacePath` override points at one). It
+	// gates the workspace-bound views and the viewsWelcome quadrants in
+	// package.json. This deliberately deviates from the issue's literal
+	// folder-presence definition (agreed at the dev-approval gate): a folder
+	// window WITHOUT a codev project must not render Spawn Builder / New
+	// Shell rows it can't execute — the original Part 1 bug, one level up.
+	// Kept live on folder changes; tier recomputation isn't needed because
+	// opening a folder from an empty window restarts the extension host
+	// anyway.
 	vscode.commands.executeCommand('setContext', 'codev.ideMode', ideMode);
 	const syncHasWorkspaceContext = () =>
 		vscode.commands.executeCommand(
 			'setContext', 'codev.hasWorkspace',
-			(vscode.workspace.workspaceFolders?.length ?? 0) > 0);
+			detectWorkspacePath() !== null);
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeWorkspaceFolders(syncHasWorkspaceContext));
 	syncHasWorkspaceContext(); // seed initial state
