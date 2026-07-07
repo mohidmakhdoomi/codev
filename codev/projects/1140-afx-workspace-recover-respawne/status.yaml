@@ -1,7 +1,7 @@
 id: '1140'
 title: afx-workspace-recover-respawne
 protocol: pir
-phase: plan
+phase: implement
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -17,4 +17,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-06T04:15:05.820Z'
-updated_at: '2026-07-07T02:55:40.945Z'
+updated_at: '2026-07-07T02:55:58.209Z'
