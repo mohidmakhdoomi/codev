@@ -73,6 +73,8 @@ describe('workspace-bound views are gated on codev.hasWorkspace', () => {
 });
 
 describe('viewsWelcome (empty-window surfaces)', () => {
+  const loadingWelcome = viewsWelcome.find(w => w.when === '!codev.stateKnown');
+  const quadrantWelcomes = viewsWelcome.filter(w => w !== loadingWelcome);
   const guestWelcome = viewsWelcome.find(
     w => w.when === 'codev.stateKnown && !codev.hasWorkspace && !codev.ideMode',
   );
@@ -80,12 +82,24 @@ describe('viewsWelcome (empty-window surfaces)', () => {
     w => w.when === 'codev.stateKnown && !codev.hasWorkspace && codev.ideMode',
   );
 
+  it('covers the pre-activation gap with a loading placeholder', () => {
+    // viewsWelcome content also renders while the view has no registered
+    // provider yet, so this entry replaces VS Code's raw "There is no data
+    // provider registered that can provide view data." during the
+    // workbench-restore → activation gap. No command links: nothing is
+    // actionable while state is unknown.
+    expect(loadingWelcome).toBeDefined();
+    expect(loadingWelcome!.view).toBe('codev.agents');
+    expect(loadingWelcome!.contents).not.toContain('command:');
+  });
+
   it('contributes exactly the two no-workspace quadrants, both on codev.agents', () => {
     expect(guestWelcome).toBeDefined();
     expect(ideWelcome).toBeDefined();
-    for (const w of viewsWelcome) {
+    expect(quadrantWelcomes).toHaveLength(2);
+    for (const w of quadrantWelcomes) {
       expect(w.view).toBe('codev.agents');
-      // Every welcome entry belongs to a no-workspace quadrant; a workspace
+      // Every quadrant entry belongs to a no-workspace state; a workspace
       // window must never show onboarding over its real trees.
       expect(w.when).toContain('!codev.hasWorkspace');
       // And every entry waits for activation to have computed the keys:
@@ -116,7 +130,7 @@ describe('viewsWelcome (empty-window surfaces)', () => {
     const declared: string[] = PKG.contributes.commands.map(
       (c: { command: string }) => c.command,
     );
-    for (const w of viewsWelcome) {
+    for (const w of quadrantWelcomes) {
       const links = [...w.contents.matchAll(/command:([\w.]+)/g)].map(m => m[1]);
       expect(links.length).toBeGreaterThan(0);
       for (const cmd of links) {

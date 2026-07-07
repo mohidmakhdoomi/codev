@@ -877,6 +877,11 @@
     "viewsWelcome": [
       {
         "view": "codev.agents",
+        "contents": "Loading Codev…",
+        "when": "!codev.stateKnown"
+      },
+      {
+        "view": "codev.agents",
         "contents": "Open a folder to use Codev.\n[Open Folder](command:workbench.action.files.openFolder)",
         "when": "codev.stateKnown && !codev.hasWorkspace && !codev.ideMode"
       },
