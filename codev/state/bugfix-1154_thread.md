@@ -37,3 +37,11 @@ Investigation results:
   accepts the topological filter form; if the script reverts to an explicit
   `--filter` list, asserts the list covers every `workspace:*` dep.
   Verified red without the fix, green with it.
+
+## PR
+
+- Porch fix-phase checks passed (build 5.9s, tests 20.6s).
+- PR #1155 opened with Summary / Root Cause / Fix / Test Plan, `Fixes #1154`.
+- CMAP (3-way, `--issue 1154`): gemini=APPROVE, codex=APPROVE, claude=APPROVE,
+  all HIGH confidence, no key issues raised.
+- Requested `pr` gate via `porch done`; waiting on human approval.
