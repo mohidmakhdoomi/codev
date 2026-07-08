@@ -14,9 +14,10 @@
  *      with a fallback to the scalar `state.architect` for older Tower.
  *   3. `codev.removeArchitect` is registered, refuses 'main', shows a modal
  *      confirmation, and calls `workspaceProvider.refresh()` on success.
- *   4. `codev.referenceIssueInArchitect` still calls `injectArchitectText`
- *      with no name arg → defaults to 'main' (the explicit Phase 6 decision
- *      to keep the Backlog button targeting main regardless of N).
+ *   4. `codev.openArchitectTerminal` returns the resolved architect name and
+ *      `codev.referenceIssueInArchitect` passes it to `injectArchitectText`,
+ *      so the Backlog button honors the multi-architect QuickPick selection
+ *      (Issue 1139) instead of always targeting main.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -142,20 +143,36 @@ describe('Spec 786 Phase 6 — extension.ts architect commands', () => {
     expect(removeBlock).toMatch(/workspaceProvider\.refresh\(\)/);
   });
 
-  it("codev.referenceIssueInArchitect calls injectArchitectText with no name → defaults to 'main'", () => {
-    // The Backlog inline button's documented Phase 6 behaviour: always
-    // targets main, regardless of how many sibling architects exist. The
-    // signature default (`architectName: string = 'main'`) makes the no-arg
-    // call route to main.
+  it('codev.openArchitectTerminal returns the resolved architect name on success', () => {
+    // Issue 1139: callers (the reference-injection commands) depend on the
+    // command returning the name that was actually opened, whether it came
+    // from an explicit arg, the multi-architect QuickPick, or the
+    // single-architect 'main' default.
+    const openBlock = EXT_SRC.split("reg('codev.openArchitectTerminal'")[1] ?? '';
+    expect(openBlock).toMatch(/Promise<string \| undefined>/);
+    expect(openBlock).toMatch(/return targetName/);
+  });
+
+  it('codev.referenceIssueInArchitect injects into the architect resolved by the open command', () => {
+    // Issue 1139: the Backlog inline button previously called
+    // injectArchitectText with no name, so the QuickPick selection made in
+    // codev.openArchitectTerminal was ignored and the text always landed in
+    // architect:main. The command now captures the open command's resolved
+    // name and passes it through to the injection.
     //
-    // Post-#808 the injection text comes from buildArchitectReferenceInjection
-    // (so the call is `injectArchitectText(buildArchitectReferenceInjection(...))`
-    // instead of an inline template literal). The assertion now anchors on the
-    // helper call rather than the literal `#${issueId} ` template — the
-    // architect-name default behaviour is still the point of this test.
+    // Post-#808 the injection text comes from buildArchitectReferenceInjection.
     const refBlock = EXT_SRC.split("regCli('codev.referenceIssueInArchitect'")[1] ?? '';
-    // The injection call passes only the text — no architect name.
-    expect(refBlock).toMatch(/injectArchitectText\(buildArchitectReferenceInjection\(/);
+    expect(refBlock).toMatch(
+      /const resolvedName = await vscode\.commands\.executeCommand<string \| undefined>\('codev\.openArchitectTerminal'\)/
+    );
+    expect(refBlock).toMatch(/injectArchitectText\(buildArchitectReferenceInjection\([^)]*\), resolvedName\)/);
+  });
+
+  it('codev.referenceIssueInArchitect skips injection when the open is cancelled or fails', () => {
+    // A dismissed picker (or a failed open) resolves to undefined; the
+    // command must not fall back to injecting into main.
+    const refBlock = EXT_SRC.split("regCli('codev.referenceIssueInArchitect'")[1] ?? '';
+    expect(refBlock).toMatch(/if \(!resolvedName\) \{ return; \}/);
   });
 
   it('workspaceProvider is held in a const so commands can call .refresh()', () => {

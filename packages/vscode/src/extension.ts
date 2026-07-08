@@ -814,14 +814,20 @@ export async function activate(context: vscode.ExtensionContext) {
 			const workspace = connectionManager?.getWorkspacePath() ?? 'none';
 			vscode.window.showInformationMessage(`Codev: ${state} | Workspace: ${workspace}`);
 		}),
-		reg('codev.openArchitectTerminal', async (architectName?: string) => {
+		reg('codev.openArchitectTerminal', async (architectName?: string): Promise<string | undefined> => {
 			// Spec 786 Phase 6: the command accepts an optional architect name.
 			// Sidebar children pass their architect name via `command.arguments`.
+			//
+			// Issue 1139: returns the architect name that was actually opened
+			// (arg, picker choice, or the single-architect default) so callers
+			// like `codev.referenceIssueInArchitect` can inject into the same
+			// terminal the user picked. Every failure path (not connected,
+			// picker dismissed, architect not found) returns undefined.
 			const client = connectionManager?.getClient();
 			const workspacePath = connectionManager?.getWorkspacePath();
 			if (!client || !workspacePath || connectionManager?.getState() !== 'connected') {
 				vscode.window.showErrorMessage('Codev: Not connected to Tower');
-				return;
+				return undefined;
 			}
 			try {
 				const state = await client.getWorkspaceState(workspacePath);
@@ -848,7 +854,7 @@ export async function activate(context: vscode.ExtensionContext) {
 						const picked = await vscode.window.showQuickPick(items, {
 							placeHolder: 'Select an architect terminal to open',
 						});
-						if (!picked) { return; } // user dismissed the picker
+						if (!picked) { return undefined; } // user dismissed the picker
 						targetName = picked.name;
 					} else {
 						targetName = 'main';
@@ -860,11 +866,13 @@ export async function activate(context: vscode.ExtensionContext) {
 				const target = match ?? fallback;
 				if (target?.terminalId) {
 					await terminalManager?.openArchitect(target.terminalId, targetName, true);
-				} else {
-					vscode.window.showWarningMessage(`Codev: No '${targetName}' architect found — is the workspace activated?`);
+					return targetName;
 				}
+				vscode.window.showWarningMessage(`Codev: No '${targetName}' architect found — is the workspace activated?`);
+				return undefined;
 			} catch {
 				vscode.window.showErrorMessage('Codev: Failed to get workspace state');
+				return undefined;
 			}
 		}),
 		// Issue 1104: architect creation is now CONVERSATIONAL, not a direct
@@ -1091,8 +1099,14 @@ export async function activate(context: vscode.ExtensionContext) {
 			const issueId = extractIssueId(arg);
 			if (!issueId) { return; }
 			const title = extractIssueTitle(arg);
-			await vscode.commands.executeCommand('codev.openArchitectTerminal');
-			const ok = terminalManager?.injectArchitectText(buildArchitectReferenceInjection(issueId, title));
+			// Issue 1139: the open command resolves the target architect (arg,
+			// QuickPick in multi-architect workspaces, or the 'main' default)
+			// and returns the resolved name; inject into that same terminal.
+			// Undefined means the open failed or the user dismissed the picker,
+			// so skip the injection (a cancel is deliberate, stay silent).
+			const resolvedName = await vscode.commands.executeCommand<string | undefined>('codev.openArchitectTerminal');
+			if (!resolvedName) { return; }
+			const ok = terminalManager?.injectArchitectText(buildArchitectReferenceInjection(issueId, title), resolvedName);
 			if (!ok) {
 				vscode.window.showWarningMessage('Codev: Architect terminal not available');
 			}
@@ -1101,8 +1115,11 @@ export async function activate(context: vscode.ExtensionContext) {
 			// Inline-button action on a PR row in the Pull Requests sidebar:
 			// mirror of codev.referenceIssueInArchitect for PR rows (#1043).
 			if (!(arg instanceof PullRequestTreeItem)) { return; }
-			await vscode.commands.executeCommand('codev.openArchitectTerminal');
-			const ok = terminalManager?.injectArchitectText(buildArchitectReferenceInjection(arg.prId, arg.prTitle));
+			// Issue 1139: same resolved-name pass-through as
+			// codev.referenceIssueInArchitect above.
+			const resolvedName = await vscode.commands.executeCommand<string | undefined>('codev.openArchitectTerminal');
+			if (!resolvedName) { return; }
+			const ok = terminalManager?.injectArchitectText(buildArchitectReferenceInjection(arg.prId, arg.prTitle), resolvedName);
 			if (!ok) {
 				vscode.window.showWarningMessage('Codev: Architect terminal not available');
 			}
