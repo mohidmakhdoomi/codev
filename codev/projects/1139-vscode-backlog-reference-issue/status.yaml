@@ -1,7 +1,7 @@
 id: '1139'
 title: vscode-backlog-reference-issue
 protocol: pir
-phase: implement
+phase: review
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -19,4 +19,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-06T04:14:56.991Z'
-updated_at: '2026-07-08T05:39:22.972Z'
+updated_at: '2026-07-08T05:47:31.556Z'
