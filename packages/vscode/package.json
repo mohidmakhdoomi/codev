@@ -41,7 +41,8 @@
   ],
   "activationEvents": [
     "workspaceContains:.codev",
-    "workspaceContains:codev"
+    "workspaceContains:codev",
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -860,19 +861,36 @@
     },
     "views": {
       "codev": [
-        { "id": "codev.workspace", "name": "Workspace" },
+        { "id": "codev.workspace", "name": "Workspace", "when": "codev.hasWorkspace" },
         { "id": "codev.agents", "name": "Agents" },
-        { "id": "codev.backlog", "name": "Backlog" },
-        { "id": "codev.pullRequests", "name": "Pull Requests" },
-        { "id": "codev.recentlyClosed", "name": "Recently Closed" },
-        { "id": "codev.team", "name": "Team", "when": "codev.teamEnabled" },
-        { "id": "codev.status", "name": "Status" }
+        { "id": "codev.backlog", "name": "Backlog", "when": "codev.hasWorkspace" },
+        { "id": "codev.pullRequests", "name": "Pull Requests", "when": "codev.hasWorkspace" },
+        { "id": "codev.recentlyClosed", "name": "Recently Closed", "when": "codev.hasWorkspace" },
+        { "id": "codev.team", "name": "Team", "when": "codev.teamEnabled && codev.hasWorkspace" },
+        { "id": "codev.status", "name": "Status", "when": "codev.hasWorkspace || codev.ideMode" }
       ],
       "codevPanel": [
         { "id": "codev.placeholder", "name": "Codev", "when": "codev.panelContainerEmpty", "visibility": "collapsed" },
         { "id": "codev.devServer", "name": "Codev Dev" }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "codev.agents",
+        "contents": "Loading Codev…",
+        "when": "!codev.stateKnown"
+      },
+      {
+        "view": "codev.agents",
+        "contents": "Open a folder containing a Codev project to get started.\n[Open Folder](command:workbench.action.files.openFolder)\nTo set up Codev in a project, run `codev init` in its root.",
+        "when": "codev.stateKnown && !codev.hasWorkspace && !codev.ideMode"
+      },
+      {
+        "view": "codev.agents",
+        "contents": "Welcome to Codev.\nOpen a project to spawn your first builder.\n[Open Folder](command:workbench.action.files.openFolder)\n[Open Recent](command:workbench.action.openRecent)\nNew here? Install the Codev CLI and learn the spawn flow.\n[Get Started](command:codev.openGettingStarted)",
+        "when": "codev.stateKnown && !codev.hasWorkspace && codev.ideMode"
+      }
+    ],
     "configuration": {
       "title": "Codev",
       "properties": {
@@ -1020,7 +1038,7 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "pnpm --filter @cluesmith/codev-core --filter @cluesmith/codev-types build && pnpm package",
+    "vscode:prepublish": "pnpm --filter 'codev-vscode^...' build && pnpm package",
     "compile": "pnpm check-types && pnpm lint && node esbuild.js",
     "watch": "pnpm run --parallel '/^watch:/'",
     "watch:esbuild": "node esbuild.js --watch",
