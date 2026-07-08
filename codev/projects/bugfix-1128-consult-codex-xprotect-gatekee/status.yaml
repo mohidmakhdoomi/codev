@@ -1,7 +1,7 @@
 id: bugfix-1128
 title: consult-codex-xprotect-gatekee
 protocol: bugfix
-phase: pr
+phase: verified
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -13,5 +13,5 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-06T04:10:10.979Z'
-updated_at: '2026-07-08T04:18:18.891Z'
+updated_at: '2026-07-08T04:18:30.434Z'
 pr_ready_for_human: false
