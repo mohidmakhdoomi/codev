@@ -45,10 +45,22 @@ Nothing HOT-tier: the rule is narrow to command-composition inside the extension
 - Every early-out of `codev.openArchitectTerminal` now explicitly `return undefined` (not connected, picker dismissed, architect not found, workspace-state fetch failure) so callers get a uniform contract.
 - The tests are source-level sentinels (the suite's established pattern, since activating the extension requires mocking the whole `vscode` module); they anchor on the new source shape rather than executing handlers.
 
+## Consultation Findings and Dispositions (single advisory pass)
+
+PIR runs one consultation pass with no automated re-review, so both codex findings are recorded here for the human at the `pr` gate:
+
+- **codex REQUEST_CHANGES: plan file lacks `approved`/`validated` YAML frontmatter.** Rebutted, no change made. The frontmatter rule (CLAUDE.md, "Approved specs/plans need YAML frontmatter") applies to artifacts the architect creates and approves on `main` *before spawning a builder*, so porch can no-op the corresponding phase. This plan was authored inside the porch-driven PIR flow; its approval is structured porch state (`plan-approval` gate approved, commit `684f32dd`, recorded in `status.yaml` history). Adding `validated: [gemini, codex, claude]` would be factually wrong: PIR's plan phase is human-only review by design.
+- **codex REQUEST_CHANGES: "How to Test Locally" didn't explain how to load the modified extension.** Accepted, documentation fix applied below (this is a review-file correction, not a code defect, so no regression test applies). The claude consult returned APPROVE with no findings.
+
 ## How to Test Locally
 
+This is a VS Code extension change, so the dev server alone does not load the modified bundle. To exercise the fix:
+
+1. Open the worktree as its own window: VSCode sidebar, right-click builder pir-1139, **Open Worktree as Workspace** (or `code .builders/pir-1139`).
+2. In that window, press F5 ("Run Codev Extension", the repo's `.vscode/launch.json` config). The pre-launch task builds the extension and an Extension Development Host window opens running the modified extension.
+3. Alternative without the dev host: `cd packages/vscode && pnpm vsix`, then install the generated `.vsix` via the Extensions view ("Install from VSIX...") in your normal window, and reload.
+
 - **View diff**: VSCode sidebar, right-click builder pir-1139, **View Diff**
-- **Run dev server**: VSCode sidebar **Run Dev Server**, or `afx dev pir-1139`
 - **What to verify** (needs a workspace with 2+ architects):
   - Backlog row mention button: pick a non-main architect in the QuickPick; `#<id> "<title>" ` lands in that architect's terminal, focused, not submitted
   - Same flow picking `main`: text lands in main
