@@ -1,0 +1,14 @@
+id: bugfix-1154
+title: vscode-prepublish-filter-misse
+protocol: bugfix
+phase: investigate
+plan_phases: []
+current_plan_phase: null
+gates:
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-08T04:55:47.036Z'
+updated_at: '2026-07-08T04:55:47.037Z'
