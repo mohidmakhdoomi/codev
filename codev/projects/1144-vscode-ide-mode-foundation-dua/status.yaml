@@ -14,16 +14,17 @@ gates:
     requested_at: '2026-07-07T03:18:36.542Z'
     approved_at: '2026-07-07T12:02:40.227Z'
   pr:
-    status: pending
+    status: approved
     requested_at: '2026-07-07T12:10:10.134Z'
+    approved_at: '2026-07-08T04:09:33.858Z'
 iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-07T02:59:29.747Z'
-updated_at: '2026-07-07T12:10:10.135Z'
+updated_at: '2026-07-08T04:09:33.858Z'
 pr_history:
   - phase: review
     pr_number: 1148
     branch: builder/pir-1144
     created_at: '2026-07-07T12:07:25.588Z'
-pr_ready_for_human: true
+pr_ready_for_human: false
