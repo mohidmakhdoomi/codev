@@ -1,0 +1,30 @@
+id: '1140'
+title: afx-workspace-recover-respawne
+protocol: pir
+phase: verified
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: approved
+    requested_at: '2026-07-06T04:18:30.795Z'
+    approved_at: '2026-07-07T02:55:40.944Z'
+  dev-approval:
+    status: approved
+    requested_at: '2026-07-07T03:01:57.654Z'
+    approved_at: '2026-07-08T05:07:25.136Z'
+  pr:
+    status: approved
+    requested_at: '2026-07-08T05:19:54.862Z'
+    approved_at: '2026-07-08T05:26:05.719Z'
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-06T04:15:05.820Z'
+updated_at: '2026-07-08T05:26:15.876Z'
+pr_history:
+  - phase: review
+    pr_number: 1156
+    branch: builder/pir-1140
+    created_at: '2026-07-08T05:17:31.553Z'
+pr_ready_for_human: false
