@@ -22,21 +22,23 @@ Note: we never pass a bare `--resume` (the "most recent global session" form hyp
 
 Two surgical changes, matching the issue's fix sketch:
 
-### 1. Gate the discovery fallback on a pre-existing legacy architect row (tower-instances.ts)
+### 1. Remove the architect discovery fallback entirely (tower-instances.ts)
 
-The fallback exists solely to bridge legacy rows (pre-#832: row present, `session_id` NULL). Make the gate express that:
+The fallback exists to bridge legacy rows (pre-#832: row present, `session_id` NULL). But even gated on row existence it cannot be made safe: mtime discovery picks *the newest session in the cwd*, and a row only proves an architect once ran there — not that the newest jsonl is the architect's. A personal Claude conversation held in the workspace directory after the architect's last run would still be hijacked, and cwd ownership verification (change 2) cannot catch it because the personal session's cwd genuinely matches.
 
-- Read the `main` row once. If it has a `sessionId`, use it (unchanged).
-- Run jsonl discovery **only when the `main` row exists** (legacy row with no stored id) **and** it is the sole architect (the existing ambiguity guard).
-- No row at all (fresh workspace, the `codev adopt` case) → always spawn fresh with a newly minted session id and role injection.
+So `launchInstance`'s session resolution becomes: read `storedSessionId` from the `main` row; resume it if present (after ownership verification, change 2); otherwise spawn fresh with a newly minted session id and role injection. No jsonl discovery on the architect path, ever.
 
-Degradation note: today the two reads have independent `try` blocks so a `global.db` read failure still allows discovery. With row-existence gating, an unreadable DB means we cannot prove a legacy row exists, so we spawn fresh. That trades a rare resume-miss (context loss on a corrupted DB) for never hijacking — the safe direction.
+Consequences:
 
-This does not regress normal stop/start resume: `afx workspace stop` preserves architect rows (`commands/stop.ts:42,98`), so a restarted workspace resumes via the stored-UUID path, not via discovery.
+- Fresh workspace (`codev adopt` / first touch): always fresh — the issue's fix.
+- Legacy pre-#832 row without a stored id: spawns fresh, loses at most one conversation's context, mints and persists an id, and is on the stored-UUID path forever after. Exposure is limited to workspaces untouched since #832 shipped.
+- `global.db` read failure: fresh spawn (unchanged in spirit — never hijack on uncertainty).
+- Normal stop/start resume is unaffected: `afx workspace stop` preserves architect rows (`commands/stop.ts:42,98`), so restarts resume via the stored-UUID path, which never depended on discovery.
+- `buildResume` / `findLatestSessionId` remain in place for **builder** resume (#831/#929), where the worktree cwd is effectively private to the builder so mtime discovery stays sound. The `buildResume` doc comment in `harness.ts:75-93` (which names the architect legacy fallback as a consumer) is updated to reflect builders as the sole remaining consumer.
 
 ### 2. Verify session ownership before attach (claude-session-discovery.ts + harness.ts + tower-utils.ts)
 
-**Discovery side** — teach `findLatestSessionId` to verify ownership: iterate candidate jsonls newest-first and return the first whose recorded `cwd` matches the requested path. Implementation: read the file's first ~64KB, scan lines for the first record carrying a `cwd` field, compare after `realpath`-canonicalizing both sides. Candidates with a mismatched `cwd` are skipped (encoding collision → not ours); candidates with *no* `cwd` record in the sample (e.g. a session that never got a user message) are skipped too — there is nothing worth resuming in them and skipping is the safe default. This hardens every `buildResume` consumer: the architect legacy fallback and builder resume (#831/#929) alike.
+**Discovery side** — teach `findLatestSessionId` to verify ownership: iterate candidate jsonls newest-first and return the first whose recorded `cwd` matches the requested path. Implementation: read the file's first ~64KB, scan lines for the first record carrying a `cwd` field, compare after `realpath`-canonicalizing both sides. Candidates with a mismatched `cwd` are skipped (encoding collision → not ours); candidates with *no* `cwd` record in the sample (e.g. a session that never got a user message) are skipped too — there is nothing worth resuming in them and skipping is the safe default. With the architect fallback removed (change 1), builder resume (#831/#929) is `buildResume`'s sole consumer, and this protects it from encoding-collision pickups.
 
 **Stored-id side** — the issue also asks that a passed session id be cross-checked. Add an optional, harness-gated capability alongside the existing `session` block in `HarnessProvider`:
 
@@ -56,18 +58,19 @@ Side benefit: a stored id whose jsonl was deleted (stale-id class, cousin of #92
 ## Files to Change
 
 - `packages/codev/src/agent-farm/utils/claude-session-discovery.ts` — add `sessionFileCwd`-style helper (scan first lines for `cwd`), make `findLatestSessionId` filter candidates by ownership (newest-first, first match wins); export a `verifySessionOwnership(absolutePath, sessionId, opts?)` for the harness.
-- `packages/codev/src/agent-farm/utils/harness.ts:68-73,132-135` — add optional `session.verifyOwnership` to the `HarnessProvider` interface; implement it on `CLAUDE_HARNESS` using the discovery helper.
+- `packages/codev/src/agent-farm/utils/harness.ts:68-73,132-135` — add optional `session.verifyOwnership` to the `HarnessProvider` interface; implement it on `CLAUDE_HARNESS` using the discovery helper. Update the `buildResume` doc comment (`harness.ts:75-93`) to name builder resume as its sole remaining consumer.
 - `packages/codev/src/agent-farm/servers/tower-utils.ts:208-236` — in `resolveArchitectLaunch`, verify `storedSessionId` ownership (when the harness offers it) before the resume branch; on failure log-worthy fall-through to fresh (return `resumed: false`, fresh minted id).
-- `packages/codev/src/agent-farm/servers/tower-instances.ts:489-499` — restructure the fallback gate: discovery only when a legacy `main` row exists without a session id and is the sole architect; update the long #832 comment block to document the new gate and the fresh-workspace guarantee.
+- `packages/codev/src/agent-farm/servers/tower-instances.ts:469-499` — delete the discovery fallback block (`getArchitects().length <= 1` + `buildResume`); keep only the stored-id read. Replace the long #832 comment block with the new invariant: architect resume comes exclusively from the stored session id on the workspace-scoped row; no row → fresh.
 - `packages/codev/src/agent-farm/__tests__/claude-session-discovery.test.ts` — new cases: mismatched-cwd jsonl skipped; falls back to next-newest matching; no matching candidate → null; cwd-less jsonl skipped; `verifySessionOwnership` true/false paths.
 - `packages/codev/src/agent-farm/__tests__/tower-utils.test.ts` — `resolveArchitectLaunch`: stored id failing ownership → fresh spawn with role injection and a *new* session id.
-- `packages/codev/src/agent-farm/__tests__/tower-instances.test.ts` — `launchInstance` on a fresh workspace (no architect row) with a decoy jsonl in the encoded project dir → spawn args contain no `--resume`; legacy row without session id + owned jsonl → still resumes (bridge preserved).
+- `packages/codev/src/agent-farm/__tests__/tower-instances.test.ts` — `launchInstance` on a fresh workspace (no architect row) with a decoy jsonl in the encoded project dir → spawn args contain no `--resume`; legacy row without session id → also spawns fresh (fallback removed); row with stored id → resumes.
 
 No `codev/` ↔ `codev-skeleton/` mirroring needed — all changes are package source (`packages/codev/src`), not framework files.
 
 ## Risks & Alternatives Considered
 
-- **Risk: breaking the legacy bridge.** Pre-#832 rows must still self-migrate to stored-UUID resume. Mitigated by keeping discovery for the row-exists-without-id case and adding a regression test for it.
+- **Risk: context loss for dormant pre-#832 workspaces.** A legacy `main` row without a stored id now spawns fresh instead of resuming via discovery — a one-time loss of at most one conversation, after which the workspace self-heals onto the stored-UUID path. Accepted: fresh-not-hijacked is the right default, and even a row-gated fallback would still hijack when a personal session in the same cwd is newer than the architect's last one (mtime cannot distinguish them, and cwd verification passes trivially in the same directory).
+- **Alternative: keep the discovery fallback but gate it on a legacy row existing.** Rejected per the above — it narrows but does not close the hijack window in single-architect workspaces.
 - **Risk: over-strict ownership check drops valid resumes.** A jsonl whose first 64KB lacks a `cwd` line would be skipped. Sampled real session files show `cwd` appears on the first user message (line ~5); sessions with no user message carry no resumable value. Accepted.
 - **Risk: realpath comparison surprises with symlinked workspace paths.** Canonicalize both sides with `fs.realpathSync` (falling back to the raw string if realpath throws) so symlink vs. resolved-path launches compare equal.
 - **Alternative: only fix the gate (change `<= 1` to row-exists), skip ownership verification.** Rejected: leaves the encoding-collision cross-project vector and the issue explicitly asks for the ownership check.
