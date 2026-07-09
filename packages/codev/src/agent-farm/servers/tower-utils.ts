@@ -14,6 +14,7 @@ import type { RateLimitEntry } from './tower-types.js';
 import crypto from 'node:crypto';
 import { loadRolePrompt, type RoleConfig } from '../utils/roles.js';
 import { getArchitectHarness } from '../utils/config.js';
+import type { HarnessProvider } from '../utils/harness.js';
 import { getArchitectByName } from '../state.js';
 
 // ============================================================================
@@ -189,6 +190,27 @@ export function buildArchitectArgs(baseArgs: string[], workspacePath: string): {
 }
 
 /**
+ * Issue #1145: true when the stored session may be resumed. Harnesses that
+ * expose `session.verifyOwnership` get the final say; ones that don't are
+ * trusted (their stored ids are minted by us and have no on-disk store to
+ * cross-check). A throwing check counts as "not ours".
+ */
+function sessionIsOwned(
+  harness: HarnessProvider,
+  sessionId: string,
+  workspacePath: string,
+  homeDir?: string,
+): boolean {
+  const verify = harness.session?.verifyOwnership;
+  if (!verify) return true;
+  try {
+    return verify(sessionId, workspacePath, { homeDir });
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Issue #832: resolve the args/env to launch (or revive) an architect, choosing
  * between resuming its persisted conversation and starting a fresh one. The
  * session mechanics are agent-neutral — they come from the resolved harness's
@@ -197,10 +219,15 @@ export function buildArchitectArgs(baseArgs: string[], workspacePath: string): {
  * Decision order:
  *   1. Harness has no `session` capability (e.g. Codex/Gemini today) → plain fresh
  *      spawn, `sessionId: null` (nothing to resume next time).
- *   2. `storedSessionId` present → resume it (no role injection — the saved
- *      conversation already holds the role/system prompt); echo the same id back.
+ *   2. `storedSessionId` present AND the harness confirms the session on disk
+ *      belongs to this workspace (Issue #1145: harnesses without a
+ *      `verifyOwnership` capability are trusted as-is) → resume it (no role
+ *      injection — the saved conversation already holds the role/system
+ *      prompt); echo the same id back.
  *   3. Else fresh → generate a new id, pin the session to it (with role injection),
- *      and return it for the caller to persist.
+ *      and return it for the caller to persist. A stored id that fails
+ *      ownership verification (stale jsonl, foreign project scope) lands here,
+ *      and the fresh id the caller persists replaces it.
  *
  * The returned `sessionId` is the value the caller writes onto the architect row,
  * so the column is populated correctly on every spawn.
@@ -210,8 +237,10 @@ export function resolveArchitectLaunch(opts: {
   name: string;
   baseArgs: string[];
   storedSessionId?: string | null;
+  /** Test seam: pins the home dir the ownership check resolves the session store under. */
+  homeDir?: string;
 }): { args: string[]; env: Record<string, string>; sessionId: string | null; resumed: boolean } {
-  const { workspacePath, baseArgs, storedSessionId } = opts;
+  const { workspacePath, baseArgs, storedSessionId, homeDir } = opts;
   const harness = getArchitectHarness(workspacePath);
 
   // 1. No resumable-session support → plain fresh, nothing to persist.
@@ -219,8 +248,11 @@ export function resolveArchitectLaunch(opts: {
     return { ...buildArchitectArgs(baseArgs, workspacePath), sessionId: null, resumed: false };
   }
 
-  // 2. Resume the persisted conversation (role injection skipped).
-  if (storedSessionId) {
+  // 2. Resume the persisted conversation (role injection skipped) — but only
+  // when the session on disk verifiably belongs to this workspace. A failed or
+  // throwing check falls through to a fresh spawn (Issue #1145: never attach
+  // to a conversation we cannot prove is ours).
+  if (storedSessionId && sessionIsOwned(harness, storedSessionId, workspacePath, homeDir)) {
     return {
       args: [...baseArgs, ...harness.session.resumeArgs(storedSessionId)],
       env: {},
@@ -253,9 +285,12 @@ export function resolveArchitectRestart(
   workspacePath: string,
   architectName: string,
   baseArgs: string[],
+  opts?: { homeDir?: string },
 ): { args: string[]; env: Record<string, string>; sessionId: string | null; resumed: boolean; storedSessionId: string | null } {
   const storedSessionId = getArchitectByName(workspacePath, architectName)?.sessionId ?? null;
-  const resolved = resolveArchitectLaunch({ workspacePath, name: architectName, baseArgs, storedSessionId });
+  const resolved = resolveArchitectLaunch({
+    workspacePath, name: architectName, baseArgs, storedSessionId, homeDir: opts?.homeDir,
+  });
   return { ...resolved, storedSessionId };
 }
 
