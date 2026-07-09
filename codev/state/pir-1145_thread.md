@@ -11,3 +11,17 @@ Investigated issue #1145 (main architect hijacks unrelated Claude session on fre
 2. Ownership verification: jsonl candidates must record a `cwd` matching the requested path (discovery side), plus an optional harness-gated `session.verifyOwnership` checked in `resolveArchitectLaunch` before any stored-id resume.
 
 Confirmed `afx workspace stop` preserves architect rows, so normal stop/start resume is unaffected. Sitting at plan-approval gate.
+
+## 2026-07-09 — Plan revised, approved; implement phase
+
+Reviewer challenged the row-gated fallback: even gated, mtime discovery can't distinguish the architect's last session from a *newer personal session in the same cwd* (and the cwd ownership check passes trivially there). Revised plan to drop the architect discovery fallback entirely; approved.
+
+Implementation:
+- `claude-session-discovery.ts`: candidates now verified against the cwd recorded inside the jsonl (realpath-canonicalized both sides); new `readSessionCwd` + `verifySessionOwnership` (checks both logical and physical path encodings — macOS /tmp symlinks).
+- `harness.ts`: optional `session.verifyOwnership` capability; Claude implements it. `buildResume` doc updated: builder resume is its sole consumer now.
+- `tower-utils.ts`: `resolveArchitectLaunch` verifies stored-id ownership before the resume branch; failure falls through to fresh (new minted id replaces the stale one on persist). `homeDir` test seam threaded through.
+- `tower-instances.ts`: discovery fallback deleted; stored row id is the only architect resume source.
+
+Test gotcha worth remembering: asserting `JSON.stringify(spawnCall).not.toContain('--resume')` false-fails because the injected architect role prompt *text* contains `--resume` in its CLI examples. Assert on argv tokens instead.
+
+115 tests green on the four touched files; full suite + push next, then dev-approval gate.
