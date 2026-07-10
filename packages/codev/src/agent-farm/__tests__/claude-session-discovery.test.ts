@@ -162,6 +162,25 @@ describe('claude session discovery', () => {
     it('returns null for a missing file', () => {
       expect(readSessionCwd(join(fakeHome, 'nope.jsonl'))).toBeNull();
     });
+
+    it('finds a cwd record sitting beyond the first read chunk (large metadata prefix)', () => {
+      // The scan is semantic, not positional: a session whose first user
+      // record is pushed past 64KB by e.g. a fat file-history-snapshot must
+      // still verify. Build the file by hand with a ~200KB cwd-less record
+      // ahead of the user line.
+      const worktree = '/Users/x/repo/.builders/pir-8';
+      const dir = join(projectsRoot, encodeClaudeProjectDir(worktree));
+      mkdirSync(dir, { recursive: true });
+      const bigSnapshot = JSON.stringify({ type: 'file-history-snapshot', blob: 'x'.repeat(200 * 1024) });
+      const file = join(dir, 'uuid-8.jsonl');
+      writeFileSync(
+        file,
+        `${bigSnapshot}\n{"type":"user","cwd":"${worktree}","sessionId":"uuid-8"}\n`,
+        'utf-8',
+      );
+      expect(readSessionCwd(file)).toBe(worktree);
+      expect(findLatestSessionId(worktree, { homeDir: fakeHome })).toBe('uuid-8');
+    });
   });
 
   describe('verifySessionOwnership', () => {

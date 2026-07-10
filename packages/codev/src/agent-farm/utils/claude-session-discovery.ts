@@ -24,13 +24,20 @@ import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 
 const JSONL_EXT = '.jsonl';
 
-// How much of a session file we are willing to read while looking for the
-// first record that carries a `cwd`. Real sessions record it on the first
-// user message, within the first handful of lines.
-const CWD_SCAN_BYTES = 64 * 1024;
+// Chunk size for the streaming cwd scan. The scan is semantic, not positional:
+// it reads chunk by chunk until the first record carrying a `cwd` (or EOF), so
+// ownership never depends on the byte offset the record happens to sit at.
+// Real sessions record cwd on the first user message, so one chunk suffices.
+const CWD_SCAN_CHUNK_BYTES = 64 * 1024;
+
+// A single buffered line larger than this is dropped un-parsed (scanning
+// continues on later records). Only guards runaway memory on pathological
+// files; every user record carries a cwd, so a later one still qualifies.
+const CWD_SCAN_MAX_LINE_BYTES = 8 * 1024 * 1024;
 
 /**
  * Encode an absolute path to the directory name Claude uses under
@@ -55,11 +62,26 @@ function realpathOrSelf(p: string): string {
   }
 }
 
+/** Parse one jsonl line and return its top-level `cwd`, or null. */
+function parseCwdLine(line: string): string | null {
+  if (!line.includes('"cwd"')) return null;
+  try {
+    const record = JSON.parse(line) as { cwd?: unknown };
+    if (typeof record.cwd === 'string' && record.cwd.length > 0) {
+      return record.cwd;
+    }
+  } catch {
+    // Malformed or fragmentary line — skip.
+  }
+  return null;
+}
+
 /**
- * Read the `cwd` a session jsonl recorded, or null if none is found within the
- * first CWD_SCAN_BYTES. Session files interleave metadata records (mode,
- * file-history-snapshot, ...) with message records; the first user/assistant
- * record carries the launch cwd.
+ * Read the `cwd` a session jsonl recorded, or null if the session never
+ * recorded one. Session files interleave metadata records (mode,
+ * file-history-snapshot, ...) with message records; the first user record
+ * carries the launch cwd. Streams the file chunk by chunk with early exit,
+ * so the result depends only on the file's records, never on their offsets.
  */
 export function readSessionCwd(filePath: string): string | null {
   let fd: number;
@@ -69,29 +91,41 @@ export function readSessionCwd(filePath: string): string | null {
     return null;
   }
 
-  let text: string;
   try {
-    const buf = Buffer.alloc(CWD_SCAN_BYTES);
-    const bytesRead = readSync(fd, buf, 0, CWD_SCAN_BYTES, 0);
-    text = buf.toString('utf8', 0, bytesRead);
+    const chunk = Buffer.alloc(CWD_SCAN_CHUNK_BYTES);
+    const decoder = new StringDecoder('utf8');
+    let carry = '';
+    let position = 0;
+
+    for (;;) {
+      const bytesRead = readSync(fd, chunk, 0, CWD_SCAN_CHUNK_BYTES, position);
+      if (bytesRead <= 0) break;
+      position += bytesRead;
+      carry += decoder.write(chunk.subarray(0, bytesRead));
+
+      let newlineIdx = carry.indexOf('\n');
+      while (newlineIdx !== -1) {
+        const cwd = parseCwdLine(carry.slice(0, newlineIdx));
+        if (cwd) return cwd;
+        carry = carry.slice(newlineIdx + 1);
+        newlineIdx = carry.indexOf('\n');
+      }
+
+      if (carry.length > CWD_SCAN_MAX_LINE_BYTES) {
+        // Oversized record: drop the buffered prefix and keep scanning. The
+        // remainder of this line arrives in later chunks and fails JSON.parse
+        // as a fragment, which parseCwdLine skips harmlessly.
+        carry = '';
+      }
+    }
+
+    // Final line without a trailing newline.
+    return parseCwdLine(carry + decoder.end());
   } catch {
     return null;
   } finally {
     closeSync(fd);
   }
-
-  for (const line of text.split('\n')) {
-    if (!line.includes('"cwd"')) continue;
-    try {
-      const record = JSON.parse(line) as { cwd?: unknown };
-      if (typeof record.cwd === 'string' && record.cwd.length > 0) {
-        return record.cwd;
-      }
-    } catch {
-      // Partial or malformed line (e.g. truncated by the scan cap) — skip.
-    }
-  }
-  return null;
 }
 
 /**
