@@ -19,3 +19,11 @@ Plan written to `codev/plans/1150-afx-removed-sibling-architect-.md`. Sitting at
 Reviewer questioned whether the silent try/catch was really the cause (SQLite write failures are rare) and asked whether a backup mechanism could be recovering architects. Investigation confirmed the hunch: the #1118 state.db consolidation (shipped ~2026-07-01, one week before the reports) is a deterministic resurrection vector. Pre-#1118 `getDb()` was cwd-dependent, so removals could delete from the wrong state.db file; the #1118 boot one-off and the prescribed satellite sweep (`afx db consolidate --apply`) then merge those stale snapshots into global.db, and `upsertArchitect`'s upsert-if-newer treats a deleted row (absent from global.db) as a plain insert. No tombstones.
 
 Plan updated: Understanding now ranks the three injection paths by probability (consolidation > WAL loss > swallowed delete), Risks now states honestly that the liveness gate cannot stop a resurrected row whose jsonl still exists (retryable purge is the remedy there) and flags consolidation's missing tombstone concept as a possible follow-up issue. The fix parts themselves are unchanged: gate the consumer, make removal loud and retryable, close the WAL window.
+
+## 2026-07-11 — Rebased on main; plan rechecked against #1145
+
+Rebased onto origin/main, picking up PR #1160 (Issue #1145), which landed in the same code area:
+
+- #1145 added `verifySessionOwnership()` (claude-session-discovery.ts) and `session.verifyOwnership?()` (harness.ts), and wired `resolveArchitectLaunch` to verify a stored id before resuming; stale ids degrade to a fresh spawn. It also removed the architect jsonl-discovery fallback in launchInstance.
+- Consequences: the RC2 crash-loop half of #1150's symptom is already fixed; the resurrection half is not (the reconcile loop still respawns every persisted row, and a dead registration now self-heals into a fresh-id registration on every launch, so pruning is still needed).
+- Plan simplified: Part 2 reuses #1145's primitives instead of adding `sessionFileExists` / `session.sessionExists?`; the liveness helper goes in tower-utils.ts next to `sessionIsOwned` (harness resolution stays out of tower-instances.ts, which #1145 de-imported). Line references refreshed post-rebase. Parts 1 and 3 unchanged.
