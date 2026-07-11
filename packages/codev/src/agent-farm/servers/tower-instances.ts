@@ -1176,6 +1176,27 @@ export async function removeArchitect(
 
   const terminalId = entry.architects.get(name);
   if (!terminalId) {
+    // Issue #1150: no live terminal, but a persisted registration may still
+    // exist (a prior removal whose DB delete never stuck, or a stale snapshot
+    // row re-inserted by the #1118 consolidation). Purge it so this command
+    // stays retryable after a partial removal and doubles as the recovery
+    // tool for zombie registrations.
+    let hasStaleRow = false;
+    try {
+      hasStaleRow = getArchitectByName(resolvedPath, name) !== null;
+    } catch { /* registry unreadable: fall through to not-found */ }
+    if (hasStaleRow) {
+      try {
+        setArchitectByName(resolvedPath, name, null);
+      } catch (err) {
+        return {
+          success: false,
+          error: `Architect '${name}' has no live terminal, and deleting its stale registration failed: ${(err as Error).message}. Retry 'afx workspace remove-architect --name ${name}'.`,
+        };
+      }
+      _deps.log('INFO', `Purged stale architect registration '${name}' from workspace ${workspacePath} (no live terminal)`);
+      return { success: true };
+    }
     return { success: false, error: `Architect '${name}' not found in workspace '${workspacePath}'.` };
   }
 
@@ -1205,17 +1226,37 @@ export async function removeArchitect(
     // Explicitly delete persisted rows (the intentional-stop flag suppressed
     // the exit-handler delete; we want the row gone for this remove path).
     // Bugfix #826: scoped by workspace_path.
+    //
+    // Issue #1150: these deletes ARE the removal, not optional cleanup. A
+    // swallowed failure leaves a row that resurrects the architect on the
+    // next workspace launch while the user was told "Removed". Collect
+    // failures and surface them; the terminal teardown still completes, so a
+    // retry lands in the stale-registration purge branch above.
+    const deleteErrors: string[] = [];
     try {
       setArchitectByName(resolvedPath, name, null);
-    } catch { /* best-effort cleanup */ }
+    } catch (err) {
+      deleteErrors.push(`architect registration: ${(err as Error).message}`);
+    }
     try {
       _deps.deleteTerminalSession(terminalId);
-    } catch { /* best-effort cleanup */ }
+    } catch (err) {
+      deleteErrors.push(`terminal session: ${(err as Error).message}`);
+    }
 
     // Wait for the actual 'exit' event before clearing the flag.
     await exitPromise;
     // Issue #832: no session cleanup needed — the row delete above cleared the
     // persisted session_id, so a re-add with the same name starts fresh.
+
+    if (deleteErrors.length > 0) {
+      const errMsg =
+        `Architect '${name}' terminal was stopped, but deleting its persisted state failed ` +
+        `(${deleteErrors.join('; ')}). It may resurrect on the next workspace start. ` +
+        `Retry 'afx workspace remove-architect --name ${name}' to purge it.`;
+      _deps.log('ERROR', errMsg);
+      return { success: false, error: errMsg };
+    }
   } finally {
     intentionallyStopping.delete(resolvedPath);
     if (resolvedPath !== workspacePath) intentionallyStopping.delete(workspacePath);
