@@ -469,7 +469,10 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         // workspace-scoped row carries a session id (which resolveArchitectLaunch
         // additionally ownership-verifies against the on-disk session store);
         // anything else spawns fresh with a newly minted id, persisted on the
-        // architect row below so the next restart resumes it.
+        // architect row below so the next restart resumes it. This block only
+        // handles `main`; sibling architects resume the same way via the
+        // reconciliation loop at the end of launchInstance → addArchitect,
+        // which reads each sibling's own row.
         //
         // The mtime-based jsonl-discovery fallback that used to run here for
         // legacy pre-#832 rows was removed by #1145: on a fresh workspace
