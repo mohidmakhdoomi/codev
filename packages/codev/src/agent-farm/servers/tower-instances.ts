@@ -27,6 +27,7 @@ import {
   getWorkspaceName,
   isTempDirectory,
   resolveArchitectLaunch,
+  siblingRegistrationIsLive,
 } from './tower-utils.js';
 import {
   autoNumberArchitectName,
@@ -384,6 +385,25 @@ export async function getDirectorySuggestions(inputPath: string): Promise<{ path
 // ============================================================================
 
 /**
+ * Issue #1150: liveness evidence for a persisted sibling architect row. A
+ * matching `terminal_sessions` row means the sibling had a real terminal as of
+ * the last Tower run (reconcileTerminalSessions sweeps stale rows at boot, so
+ * survivors are meaningful). Rows are saved under the resolved workspace path,
+ * but accept either form for symlink safety. A read failure returns false and
+ * defers to the session-artifact check.
+ */
+function hasArchitectTerminalSession(name: string, resolvedPath: string, workspacePath: string): boolean {
+  try {
+    const row = getGlobalDb().prepare(
+      "SELECT 1 FROM terminal_sessions WHERE type = 'architect' AND role_id = ? AND workspace_path IN (?, ?) LIMIT 1",
+    ).get(name, resolvedPath, workspacePath);
+    return row !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Launch a new agent-farm instance.
  * Phase 4 (Spec 0090): Tower manages terminals directly, no dashboard-server.
  * Auto-adopts non-codev directories and creates architect terminal.
@@ -677,11 +697,31 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
     //
     // Idempotency: skip names already in `entry.architects` so a re-entrant
     // launch (or a race with `reconcileTerminalSessions`) doesn't double-spawn.
+    //
+    // Issue #1150: a row is only trusted when it carries liveness evidence: a
+    // matching `terminal_sessions` row, or a resumable session artifact per
+    // `siblingRegistrationIsLive` (which exempts session-less harnesses). Rows
+    // with neither are dead registrations, typically left behind by a removal
+    // whose DB delete never stuck (wrong pre-#1118 state.db file, a stale
+    // snapshot re-inserted by consolidation, WAL loss at OS-crash time); prune
+    // them instead of resurrecting an architect the user removed.
     try {
       const persisted = getArchitects(resolvedPath);
       for (const a of persisted) {
         if (a.name === 'main') continue;
         if (entry.architects.has(a.name)) continue;
+        if (
+          !hasArchitectTerminalSession(a.name, resolvedPath, workspacePath) &&
+          !siblingRegistrationIsLive(workspacePath, a.sessionId ?? null)
+        ) {
+          try {
+            setArchitectByName(resolvedPath, a.name, null);
+            _deps.log('INFO', `Pruned dead sibling architect registration '${a.name}': no live terminal and no resumable session`);
+          } catch (pruneErr) {
+            _deps.log('WARN', `Failed to prune dead sibling architect registration '${a.name}': ${(pruneErr as Error).message}`);
+          }
+          continue;
+        }
         const res = await addArchitect(workspacePath, a.name);
         if (!res.success) {
           _deps.log('WARN', `Failed to re-spawn persisted sibling architect '${a.name}': ${res.error}`);
