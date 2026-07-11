@@ -36,8 +36,14 @@ function configurePragmas(db: Database.Database): void {
     console.warn('[warn] WAL mode unavailable, using DELETE mode (concurrency limited)');
   }
 
-  // NORMAL synchronous mode balances safety and performance
-  db.pragma('synchronous = NORMAL');
+  // FULL synchronous mode: fsync the WAL on every commit. Under NORMAL, a
+  // commit is acknowledged before the WAL reaches disk, so an OS crash or
+  // power loss can silently roll back recently committed transactions. For a
+  // registry of desired state (architect rows drive respawn-on-launch, Issue
+  // #1150) a lost delete resurrects an agent the user removed. Write rate on
+  // this DB is lifecycle events only, so the per-commit fsync cost is
+  // negligible next to that durability guarantee.
+  db.pragma('synchronous = FULL');
 
   // 5 second timeout when waiting for locks
   db.pragma('busy_timeout = 5000');
