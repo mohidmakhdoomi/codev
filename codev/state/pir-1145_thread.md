@@ -33,3 +33,7 @@ Reviewer walked the design back in three steps at the gate: (1) why scan file co
 Final shape: architect resume = stored row id + file-*existence* check (both logical/physical path encodings, macOS symlink case); builder discovery = plain newest-by-mtime (pre-#1145 behavior). The #1145 fix proper (no discovery fallback in launchInstance) is untouched. Deviation from the approved plan (which specified cwd-content verification) to be recorded in the review file.
 
 Lesson: when a reviewer asks "why is this here at all", enumerate what each layer actually defends against before defending the layer — two of three protections were against a threat the system's own path conventions already preclude.
+
+## 2026-07-11 — Review phase: PR #1160, consultation, pr gate
+
+dev-approval approved. Retrospective written (arch.md resume paragraph rewritten to the stored-id-only invariant; two lessons routed cold). PR #1160 opened with the review as body. Consultation (single pass): codex=REQUEST_CHANGES (flagged the content-verification deviation — rebutted as human-directed at the gate; frontmatter nit fixed), claude=COMMENT (caught a real lessons-learned.md bullet-merge editing error — fixed in ff9855b3), gemini skipped (agy not installed). Rebuttals in codev/projects/1145-*/1145-review-iter1-rebuttals.md. Architect notified with the REQUEST_CHANGES disposition leading. Sitting at the pr gate.
