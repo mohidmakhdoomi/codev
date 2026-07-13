@@ -1,5 +1,5 @@
 /**
- * Shared core for Codev dev-server commands. There is exactly one underlying
+ * Shared core for Codev dev commands. There is exactly one underlying
  * action — "spawn a Tower dev PTY for a {id, cwd} target and open its tab" —
  * with two front-ends that differ only in how they resolve the target:
  *
@@ -101,7 +101,7 @@ export async function startDevForTarget(
   const existing = terminalManager.listDevTerminals();
   const same = existing.find(d => d.builderId === target.id);
   if (same) {
-    vscode.window.showInformationMessage(`Codev: Dev server is already running for ${target.name}`);
+    vscode.window.showInformationMessage(`Codev: Dev is already running for ${target.name}`);
     await terminalManager.openDevTerminal(same.terminalId, target.id, target.name, true);
     return;
   }
@@ -140,7 +140,7 @@ export async function startDevForTarget(
   }
 
   await terminalManager.openDevTerminal(terminal.id, target.id, target.name, true);
-  vscode.window.showInformationMessage(`Codev: Dev server started for ${target.name}`);
+  vscode.window.showInformationMessage(`Codev: Dev started for ${target.name}`);
 }
 
 /**
@@ -243,10 +243,10 @@ export async function stopDevForTarget(
   }
   const found = terminalManager.listDevTerminals().find(d => d.builderId === targetId);
   if (!found) {
-    vscode.window.showInformationMessage(`Codev: No dev server is running for ${name}`);
+    vscode.window.showInformationMessage(`Codev: No dev is running for ${name}`);
     return;
   }
   await client.killTerminal(found.terminalId);
   terminalManager.closeDevTerminal(targetId);
-  vscode.window.showInformationMessage(`Codev: Dev server stopped for ${name}`);
+  vscode.window.showInformationMessage(`Codev: Dev stopped for ${name}`);
 }

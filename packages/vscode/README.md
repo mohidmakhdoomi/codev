@@ -1,12 +1,12 @@
 # Codev for VS Code
 
-Bring Codev's Agent Farm into VS Code — monitor builders, open terminals, approve gates, run dev servers, and manage your development workflow without leaving the IDE.
+Bring Codev's Agent Farm into VS Code — monitor builders, open terminals, approve gates, run dev commands, and manage your development workflow without leaving the IDE.
 
 ## Features
 
 - **Unified sidebar** — Workspace, Agents, Pull Requests, Backlog, Recently Closed, Team, and Status in a single pane. Blocked builders are flagged inline in Agents; live item counts appear in view titles.
-- **Native terminals** — Architect / builder / shell terminals in the editor area; dev servers in the bottom panel.
-- **One-click dev servers** — Start / Stop the dev server for the current workspace or any builder worktree from the sidebar (`Cmd/Ctrl+Alt+R` / `Cmd/Ctrl+Alt+S`). One runs at a time and swaps on demand. Configurable via `worktree.devCommand` in `.codev/config.json` — see the **Dev servers and runnable worktrees** section below.
+- **Native terminals** — Architect / builder / shell terminals in the editor area; dev processes in the bottom panel.
+- **One-click dev** — Start / Stop the dev process for the current workspace or any builder worktree from the sidebar (`Cmd/Ctrl+Alt+R` / `Cmd/Ctrl+Alt+S`). One runs at a time and swaps on demand. Configurable via `worktree.devCommand` in `.codev/config.json` — see the **Dev and runnable worktrees** section below.
 - **Open Dev URL rows** — surface staging / preview / tunnel links as one-click rows in the Workspace view via `worktree.devUrls`.
 - **Per-engineer config overrides** — `.codev/config.local.json` layers your personal settings (local devCommand, tunnel hostnames, staging URLs) over the shared project config without committing them.
 - **Per-builder changed files** — expand any builder row to see its diff vs main inline with native SCM-style status badges. Toggle between folder tree and flat list.
@@ -26,13 +26,13 @@ Bring Codev's Agent Farm into VS Code — monitor builders, open terminals, appr
 2. Open a Codev project in VS Code
 3. The extension auto-detects the workspace and connects to Tower
 4. Click the Codev icon in the Activity Bar to see your builders, PRs, and backlog
-5. *(Optional)* Add `worktree.devCommand` to `.codev/config.json` to unlock one-click dev servers — see the **Dev servers and runnable worktrees** section below
+5. *(Optional)* Add `worktree.devCommand` to `.codev/config.json` to unlock one-click dev — see the **Dev and runnable worktrees** section below
 
 ## Sidebar tour
 
 The Codev sidebar contains seven collapsible views:
 
-- **Workspace** — Open Architect, Open Web Interface, Spawn Builder, New Shell, and Start / Stop Dev Server rows. Any `worktree.devUrls` you've configured appear here as **Open Dev URL** rows.
+- **Workspace** — Open Architect, Open Web Interface, Spawn Builder, New Shell, and Start / Stop Dev rows. Any `worktree.devUrls` you've configured appear here as **Open Dev URL** rows.
 - **Agents** — every active builder, with status (active / blocked / waiting on input / awaiting). Builders are grouped by one of three axes, switched with the title-bar group-by button (its icon shows the axis you'll switch *to*): lifecycle **stage** (the default action axis), **area** label, or the **architect** that spawned them. In architect mode only architects that own in-flight builders appear as group headers (the full architect roster lives in Workspace > Architects). Click a row to open its terminal *and* expand its changed-files list. Right-click for the full builder action menu (see the **Builder actions (right-click)** section below). The title bar also carries buttons to toggle accordion mode and tree-vs-list file view.
 - **Pull Requests** — open PRs in the repo, with a live count in the title.
 - **Backlog** — open issues without a builder. Inline row actions drop the issue's `#<id>` into the architect input, preview the issue, spawn a builder for it, open it in the browser, or copy the issue number.
@@ -65,22 +65,22 @@ Right-click any builder in the Agents view for three grouped action menus:
 | Action | Description |
 |---|---|
 | Run Worktree Setup | Re-apply `worktree.symlinks` + `worktree.postSpawn` to the existing worktree (idempotent — use when the lockfile changed or config was extended after spawn) |
-| Run Dev Server | Spawn the dev PTY in this builder's worktree; prompts to swap if another dev is running |
-| Stop Dev Server | Kill the running dev PTY and close its tab |
+| Run Dev | Spawn the dev PTY in this builder's worktree; prompts to swap if another dev is running |
+| Stop Dev | Kill the running dev PTY and close its tab |
 
-## Dev servers and runnable worktrees
+## Dev and runnable worktrees
 
-Codev can run a single dev server at a time — either for your main checkout, or for any builder's worktree — and swap between them on demand. The single-slot model is deliberate: dev PTYs reuse main's ports so OAuth callbacks, cookies, and webhooks keep working unchanged.
+Codev can run a single dev process at a time — whatever your `worktree.devCommand` starts (a dev server, `cargo run`, `expo start`, a test watcher, a build script, whatever iterates on your project) — either for your main checkout, or for any builder's worktree, swapping between them on demand. The single-slot model is deliberate: dev PTYs reuse main's ports so OAuth callbacks, cookies, and webhooks keep working unchanged.
 
 ### Starting and stopping
 
-- **For the current workspace** — the **Start Dev Server** row in the Workspace view, or `Cmd/Ctrl+Alt+R`. **Stop Dev Server** (only visible while running) or `Cmd/Ctrl+Alt+S`.
-- **For a builder worktree** — right-click the builder → **Run Dev Server** / **Stop Dev Server**.
+- **For the current workspace** — the **Start Dev** row in the Workspace view, or `Cmd/Ctrl+Alt+R`. **Stop Dev** (only visible while running) or `Cmd/Ctrl+Alt+S`.
+- **For a builder worktree** — right-click the builder → **Run Dev** / **Stop Dev**.
 - Starting one target while another is already running prompts you to swap (the old PTY is killed cleanly, then the new one starts).
 
 ### Configuration: `.codev/config.json`
 
-Add a `worktree` block to your project's `.codev/config.json`. Without `devCommand` configured, the Start Dev Server row stays hidden — it would have nothing to run.
+Add a `worktree` block to your project's `.codev/config.json`. Without `devCommand` configured, the Start Dev row stays hidden — it would have nothing to run.
 
 ```jsonc
 {
@@ -102,7 +102,7 @@ Add a `worktree` block to your project's `.codev/config.json`. Without `devComma
 }
 ```
 
-- **`devCommand`** — the foreground command that starts your dev server. Run by the sidebar Start Dev Server rows and the CLI (`afx dev main`, `afx dev <builder-id>`).
+- **`devCommand`** — the foreground command that starts your dev process. Run by the sidebar Start Dev rows and the CLI (`afx dev main`, `afx dev <builder-id>`).
 - **`symlinks`** — glob patterns of files to symlink from the main checkout into each new builder worktree (env files, generated configs, etc.). Symlinks, not copies — edits in main reflect instantly in any running dev session. Root `.env` and `.codev/config.json` are always symlinked regardless.
 - **`postSpawn`** — shell commands run sequentially inside each new worktree after creation (e.g. `pnpm install --frozen-lockfile`). A non-zero exit aborts the spawn loudly so the half-built worktree stays for inspection.
 - **`devUrls`** — array of `{ label, url }` entries that show up as one-click **Open Dev URL** rows in the Workspace view. Distinct from Open Web Interface, which always points at the Tower dashboard.
@@ -126,7 +126,7 @@ Both files are watched live — every open VS Code window's sidebar re-renders o
 
 ### URLs are load-bearing
 
-Dev PTYs use the same ports as your main checkout intentionally — OAuth callbacks, CORS allowlists, cookie scoping, and webhook URLs are all keyed off origin. Before starting a sidebar dev server, stop any manually-run `pnpm dev` first, or the new PTY will fail to bind with `EADDRINUSE`.
+Dev PTYs use the same ports as your main checkout intentionally — OAuth callbacks, CORS allowlists, cookie scoping, and webhook URLs are all keyed off origin. Before starting a sidebar dev, stop any manually-run `pnpm dev` first, or the new PTY will fail to bind with `EADDRINUSE`.
 
 ### Recipes for other stacks
 
@@ -147,7 +147,7 @@ The pnpm example above adapts directly to npm / yarn / bun / cargo / poetry / go
 | - Team     |                |                |
 | - Status   |                |                |
 +------------+----------------+----------------+
-| Bottom panel: dev server (when running)      |
+| Bottom panel: dev (when running)             |
 +----------------------------------------------+
 ```
 
@@ -159,8 +159,8 @@ The pnpm example above adapts directly to npm / yarn / bun / cargo / poetry / go
 | `Cmd/Ctrl+K D` | Send Message (pick a builder + type a message) |
 | `Cmd/Ctrl+K G` | Approve Gate |
 | `Cmd/Ctrl+Alt+C` | Toggle the Codev sidebar (show & focus, or close if active) |
-| `Cmd/Ctrl+Alt+R` | Start Dev Server (current workspace) |
-| `Cmd/Ctrl+Alt+S` | Stop Dev Server (current workspace) |
+| `Cmd/Ctrl+Alt+R` | Start Dev (current workspace) |
+| `Cmd/Ctrl+Alt+S` | Stop Dev (current workspace) |
 | `Cmd/Ctrl+Alt+V` | Paste clipboard image into the focused Codev terminal — uploads to Tower and injects the saved file path |
 
 ## Commands

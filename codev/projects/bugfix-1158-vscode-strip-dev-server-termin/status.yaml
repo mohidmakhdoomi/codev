@@ -1,0 +1,17 @@
+id: bugfix-1158
+title: vscode-strip-dev-server-termin
+protocol: bugfix
+phase: pr
+plan_phases: []
+current_plan_phase: null
+gates:
+  pr:
+    status: approved
+    requested_at: '2026-07-13T06:43:25.401Z'
+    approved_at: '2026-07-13T08:54:31.542Z'
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-13T06:12:19.993Z'
+updated_at: '2026-07-13T08:54:31.543Z'
+pr_ready_for_human: false
