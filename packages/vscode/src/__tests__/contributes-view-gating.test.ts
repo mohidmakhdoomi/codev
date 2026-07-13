@@ -20,6 +20,7 @@ const PKG = JSON.parse(
 interface ViewContribution {
   id: string;
   when?: string;
+  visibility?: string;
 }
 interface ViewsWelcomeContribution {
   view: string;
@@ -70,6 +71,25 @@ describe('workspace-bound views are gated on codev.hasWorkspace', () => {
   it('codev.agents stays ungated: it anchors the container and carries the welcome content', () => {
     expect(viewById('codev.agents').when).toBeUndefined();
   });
+});
+
+describe('default view visibility (#1169: reclaim sidebar vertical space)', () => {
+  // `visibility` is a first-render-only default string VS Code reads from the
+  // manifest — no compile error catches a dropped "collapsed", and it only
+  // affects fresh installs, so a regression would silently ship. Pin it.
+  it.each(['codev.pullRequests', 'codev.recentlyClosed', 'codev.team', 'codev.status'])(
+    'lower-priority view %s defaults to collapsed',
+    (id) => {
+      expect(viewById(id).visibility).toBe('collapsed');
+    },
+  );
+
+  it.each(['codev.workspace', 'codev.agents', 'codev.backlog'])(
+    'primary view %s stays expanded (no visibility override)',
+    (id) => {
+      expect(viewById(id).visibility).toBeUndefined();
+    },
+  );
 });
 
 describe('viewsWelcome (empty-window surfaces)', () => {
