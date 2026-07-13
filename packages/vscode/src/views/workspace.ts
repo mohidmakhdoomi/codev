@@ -22,8 +22,8 @@ export class WorkspaceProvider implements vscode.TreeDataProvider<vscode.TreeIte
   ) {
     connectionManager.onStateChange(() => this.changeEmitter.fire());
     // Re-render when the dev-terminal set changes (start/stop, a swap that
-    // killed this workspace's dev, or cleanup) so the conditional "Stop Dev
-    // Server" row reflects reality across every path.
+    // killed this workspace's dev, or cleanup) so the conditional "Stop
+    // Dev" row reflects reality across every path.
     terminalManager.onDidChangeDevTerminals(() => this.changeEmitter.fire());
     // Tower fans out a `codev-config-updated` SSE event whenever
     // .codev/config(.local).json changes (server-side file watcher in

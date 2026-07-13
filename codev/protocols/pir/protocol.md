@@ -134,7 +134,7 @@ This means typed input in the builder pane reaches the live Claude session immed
 
 ## Configuration
 
-PIR uses the same `.codev/config.json` configuration as other protocols. The `worktree` block (from Issue 689) enables the at-gate dev-server review flow:
+PIR uses the same `.codev/config.json` configuration as other protocols. The `worktree` block (from Issue 689) enables the at-gate dev review flow:
 
 ```json
 {

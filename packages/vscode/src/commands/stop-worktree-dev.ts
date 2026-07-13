@@ -34,7 +34,7 @@ export async function stopWorktreeDev(
   }
 
   const summary = devs.length === 1
-    ? `Codev: Dev server stopped for ${devs[0]!.builderId}`
+    ? `Codev: Dev stopped for ${devs[0]!.builderId}`
     : `Codev: Stopped ${devs.length} devs`;
   vscode.window.showInformationMessage(summary);
 }

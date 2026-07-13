@@ -104,10 +104,29 @@ describe('#1158: no "dev server" terminology on VS Code surfaces', () => {
     expect(offenders.map((c) => c.command)).toEqual([]);
   });
 
-  it('no view id or menu when-clause references codev.devServer', () => {
+  it('no view id references codev.devServer', () => {
     const allViews = Object.values(views).flat();
     expect(allViews.filter((v) => v.id.includes('devServer')).map((v) => v.id)).toEqual([]);
-    const wheres = titleMenus.map((m) => m.when ?? '').filter((w) => w.includes('devServer'));
-    expect(wheres).toEqual([]);
+  });
+
+  // Scan EVERY contributed menu group (not just view/title) and every keybinding,
+  // so a reintroduced devServer id / when-clause in the command palette,
+  // view/item/context, or a keybinding can't slip past this guard.
+  it('no menu entry (any group) references devServer in its command or when-clause', () => {
+    const allMenus = Object.values(
+      (PKG.contributes.menus ?? {}) as Record<string, Menu[]>,
+    ).flat();
+    const offenders = allMenus.filter(
+      (m) => (m.command ?? '').includes('devServer') || (m.when ?? '').includes('devServer'),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it('no keybinding references a devServer command', () => {
+    const keybindings = (PKG.contributes.keybindings ?? []) as Array<{ command?: string; when?: string }>;
+    const offenders = keybindings.filter(
+      (k) => (k.command ?? '').includes('devServer') || (k.when ?? '').includes('devServer'),
+    );
+    expect(offenders).toEqual([]);
   });
 });

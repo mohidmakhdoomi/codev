@@ -477,7 +477,7 @@ export class TerminalManager {
     const pty = new CodevPseudoterminal(wsUrl, authKey, this.outputChannel);
     const position = vscode.workspace.getConfiguration('codev').get<string>('terminalPosition', 'editor');
 
-    // Dev servers are long-running background logs — always the bottom panel,
+    // Dev processes are long-running background logs — always the bottom panel,
     // regardless of the `codev.terminalPosition` setting (which governs the
     // architect/builder/shell terminals: architect → editor group 1, the
     // rest → group 2).

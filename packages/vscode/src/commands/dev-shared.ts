@@ -101,7 +101,7 @@ export async function startDevForTarget(
   const existing = terminalManager.listDevTerminals();
   const same = existing.find(d => d.builderId === target.id);
   if (same) {
-    vscode.window.showInformationMessage(`Codev: Dev server is already running for ${target.name}`);
+    vscode.window.showInformationMessage(`Codev: Dev is already running for ${target.name}`);
     await terminalManager.openDevTerminal(same.terminalId, target.id, target.name, true);
     return;
   }
@@ -140,7 +140,7 @@ export async function startDevForTarget(
   }
 
   await terminalManager.openDevTerminal(terminal.id, target.id, target.name, true);
-  vscode.window.showInformationMessage(`Codev: Dev server started for ${target.name}`);
+  vscode.window.showInformationMessage(`Codev: Dev started for ${target.name}`);
 }
 
 /**
@@ -248,5 +248,5 @@ export async function stopDevForTarget(
   }
   await client.killTerminal(found.terminalId);
   terminalManager.closeDevTerminal(targetId);
-  vscode.window.showInformationMessage(`Codev: Dev server stopped for ${name}`);
+  vscode.window.showInformationMessage(`Codev: Dev stopped for ${name}`);
 }
