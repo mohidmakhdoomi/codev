@@ -21,3 +21,23 @@ update. The regression home is `packages/vscode/src/__tests__/menu-when-clauses.
 block asserting the 7 builder-scoped regexes reject `group-builder` / `group-backlog`.
 
 Scope: 1-line src change + new regression test. Comfortably within BUGFIX.
+
+## Fix
+
+- `area-group-tree-item.ts:34`: `${kind}-group` → `group-${kind}`. Build + tests green
+  (`porch check`: build 6.2s, tests 21s; 566 tests pass).
+- Regression test `group-header-context-value.test.ts` derives contextValue from the real
+  `AreaGroupTreeItem` and feeds it to the actual package.json menu regexes. Verified it fails
+  without the fix (8 failures) and passes with it.
+- Note: unit tests need `@cluesmith/codev-core` + `@cluesmith/codev-types` built first, else
+  suites fail at import resolution (pre-existing, unrelated). `porch check` runs the build.
+
+## PR
+
+- PR #1172 opened, `Fixes #1170`.
+- CMAP (all three APPROVE, HIGH confidence, zero issues): gemini=APPROVE, codex=APPROVE
+  (couldn't re-run vitest in its sandbox, approved on inspection), claude=APPROVE.
+- Consult snag: `consult --type pr` auto-detect failed from the worktree ("Multiple projects
+  found" — it scanned the full `codev/projects/`). Adding `--issue 1170` disambiguated. Worth
+  a look for other bugfix builders.
+- Requested `pr` gate via `porch done`. Awaiting human approval to merge.
