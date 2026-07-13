@@ -1,0 +1,14 @@
+id: bugfix-1169
+title: vscode-collapse-pull-requests-
+protocol: bugfix
+phase: investigate
+plan_phases: []
+current_plan_phase: null
+gates:
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-13T03:33:32.344Z'
+updated_at: '2026-07-13T03:33:32.344Z'
