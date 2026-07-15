@@ -28,3 +28,16 @@ Plan revisions:
 - Reframed the fix as the runtime complement to #1145's bake-time check. Residual gaps it covers: jsonl vanishing between bake and replay (Claude's cleanupPeriodDays GC), corrupted/truncated jsonl that passes the existence check, any other runtime resume failure.
 - Flipped the persistence decision: onApply now persists the fallback's minted session id instead of clearing to NULL. NULL would trip #1150's dead-registration pruning for siblings, and #1145 makes a never-materialized minted id safe (filtered at next bake). Helper renamed to `setArchitectSessionId`.
 - Refreshed all file:line references; updated the manual repro (bare poisoned id no longer reproduces; corrupt the jsonl in place instead).
+
+## 2026-07-15 Implement phase
+
+Implemented per the approved plan, no deviations:
+
+- `session-manager.ts`: `CrashLoopFallback` on both option types, `failingExitTimes` on the session, pure `isCrashLooping` helper (3 nonzero-code exits in 30s), one-shot swap in `setupAutoRestart` via `maybeApplyCrashLoopFallback`.
+- `tower-utils.ts`: resume branch of `resolveArchitectLaunch` returns the precomputed fresh-launch `fallback`; `CODEV_SKIP_RESUME=1` escape hatch; shared `buildArchitectCrashLoopFallback` (logs once, persists the minted id via new `state.setArchitectSessionId`).
+- Wired at all four bake sites (2 reconcile in tower-terminals, 2 cold-spawn in tower-instances).
+- Tests: pure-helper unit tests, 2 CI-skipped real-shellper integration tests (fallback applied on fast failures; clean exits never trigger), launch/restart fallback-shape tests, escape-hatch test, `setArchitectSessionId` row-targeting tests.
+
+Build green; the 3 affected test files pass (163 tests). Full suite running before porch done.
+
+Commits: fa5c5137 (session manager), 5af6cb95 (tower wiring).
