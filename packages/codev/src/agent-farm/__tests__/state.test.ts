@@ -228,6 +228,50 @@ describe('State Management', () => {
     });
   });
 
+  describe('setArchitectSessionId (Issue #1149)', () => {
+    it('replaces the stored session id, leaving the rest of the row intact', () => {
+      state.setArchitectByName(WS, 'main', {
+        name: 'main', cmd: 'claude', startedAt: '2026-07-15T00:00:00.000Z',
+        terminalId: 'term-1', sessionId: 'poisoned-id',
+      });
+      state.setArchitectSessionId(WS, 'main', 'replacement-id');
+      const row = state.getArchitectByName(WS, 'main');
+      expect(row?.sessionId).toBe('replacement-id');
+      expect(row?.cmd).toBe('claude');
+      expect(row?.terminalId).toBe('term-1');
+      expect(row?.startedAt).toBe('2026-07-15T00:00:00.000Z');
+    });
+
+    it('accepts null to clear the stored id', () => {
+      state.setArchitectByName(WS, 'main', {
+        name: 'main', cmd: 'claude', startedAt: new Date().toISOString(), sessionId: 'poisoned-id',
+      });
+      state.setArchitectSessionId(WS, 'main', null);
+      expect(state.getArchitectByName(WS, 'main')?.sessionId).toBeUndefined();
+    });
+
+    it('updates only the target row (sibling and cross-workspace isolation)', () => {
+      state.setArchitectByName(WS, 'reviewer', {
+        name: 'reviewer', cmd: 'claude', startedAt: new Date().toISOString(), sessionId: 'rev',
+      });
+      state.setArchitectByName(WS, 'casa', {
+        name: 'casa', cmd: 'claude', startedAt: new Date().toISOString(), sessionId: 'casa',
+      });
+      state.setArchitectByName('/workspace/other', 'reviewer', {
+        name: 'reviewer', cmd: 'claude', startedAt: new Date().toISOString(), sessionId: 'other-rev',
+      });
+      state.setArchitectSessionId(WS, 'reviewer', 'rev-2');
+      expect(state.getArchitectByName(WS, 'reviewer')?.sessionId).toBe('rev-2');
+      expect(state.getArchitectByName(WS, 'casa')?.sessionId).toBe('casa');
+      expect(state.getArchitectByName('/workspace/other', 'reviewer')?.sessionId).toBe('other-rev');
+    });
+
+    it('is a no-op when the row does not exist', () => {
+      state.setArchitectSessionId(WS, 'ghost', 'whatever');
+      expect(state.getArchitectByName(WS, 'ghost')).toBeNull();
+    });
+  });
+
   describe('upsertBuilder', () => {
     it('should add new builder', () => {
       const builder = {

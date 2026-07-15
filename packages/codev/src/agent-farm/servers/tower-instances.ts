@@ -28,6 +28,7 @@ import {
   isTempDirectory,
   resolveArchitectLaunch,
   siblingRegistrationIsLive,
+  buildArchitectCrashLoopFallback,
 } from './tower-utils.js';
 import {
   autoNumberArchitectName,
@@ -526,7 +527,7 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         try {
           storedSessionId = getArchitectByName(resolvedPath, DEFAULT_ARCHITECT_NAME)?.sessionId ?? null;
         } catch { /* global.db unreadable — spawn fresh */ }
-        const { args: cmdArgs, env: harnessEnv, sessionId: mainSessionId, resumed } = resolveArchitectLaunch({
+        const { args: cmdArgs, env: harnessEnv, sessionId: mainSessionId, resumed, fallback } = resolveArchitectLaunch({
           workspacePath,
           name: DEFAULT_ARCHITECT_NAME,
           baseArgs: cmdParts.slice(1),
@@ -552,12 +553,27 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         if (_deps.shellperManager) {
           try {
             const sessionId = crypto.randomUUID();
+            // Issue #1149: if the resumed conversation fast-fails at runtime
+            // (jsonl vanished after the bake, or corrupt), degrade to a fresh
+            // launch instead of burning all 50 restarts on identical args.
+            let crashLoopFallback;
+            if (resumed && storedSessionId && fallback) {
+              crashLoopFallback = buildArchitectCrashLoopFallback({
+                workspacePath: resolvedPath,
+                architectName: DEFAULT_ARCHITECT_NAME,
+                storedSessionId,
+                fallback,
+                baseEnv: cleanEnv,
+                log: _deps.log,
+              });
+            }
             const client = await _deps.shellperManager.createSession({
               sessionId,
               command: cmd,
               args: cmdArgs,
               cwd: workspacePath,
               env: cleanEnv,
+              crashLoopFallback,
               ...defaultSessionOptions({ restartOnExit: true, restartDelay: 2000, maxRestarts: 50 }),
             });
 
@@ -991,7 +1007,7 @@ export async function addArchitect(
   try {
     storedSessionId = getArchitectByName(resolvedPath, name)?.sessionId ?? null;
   } catch { /* state.db unreadable — spawn fresh */ }
-  const { args: cmdArgs, env: harnessEnv, sessionId: conversationSessionId, resumed } = resolveArchitectLaunch({
+  const { args: cmdArgs, env: harnessEnv, sessionId: conversationSessionId, resumed, fallback } = resolveArchitectLaunch({
     workspacePath,
     name,
     baseArgs: cmdParts.slice(1),
@@ -1017,12 +1033,26 @@ export async function addArchitect(
   if (_deps.shellperManager) {
     try {
       const shellperSessionId = crypto.randomUUID();
+      // Issue #1149: degrade a fast-failing resume to a fresh launch (see
+      // matching block in launchInstance above).
+      let crashLoopFallback;
+      if (resumed && storedSessionId && fallback) {
+        crashLoopFallback = buildArchitectCrashLoopFallback({
+          workspacePath: resolvedPath,
+          architectName: name,
+          storedSessionId,
+          fallback,
+          baseEnv: cleanEnv,
+          log: _deps.log,
+        });
+      }
       const client = await _deps.shellperManager.createSession({
         sessionId: shellperSessionId,
         command: cmd,
         args: cmdArgs,
         cwd: workspacePath,
         env: cleanEnv,
+        crashLoopFallback,
         ...defaultSessionOptions({ restartOnExit: true, restartDelay: 2000, maxRestarts: 50 }),
       });
 
