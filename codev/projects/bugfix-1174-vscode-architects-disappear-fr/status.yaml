@@ -1,0 +1,14 @@
+id: bugfix-1174
+title: vscode-architects-disappear-fr
+protocol: bugfix
+phase: investigate
+plan_phases: []
+current_plan_phase: null
+gates:
+  pr:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-15T01:30:06.203Z'
+updated_at: '2026-07-15T01:30:06.203Z'
