@@ -9,8 +9,9 @@ import { resolveBuilderTerminal, mainCheckoutRoot } from './terminal-resolve.js'
 
 /**
  * Default per-window terminal cap, overridable via the `codev.maxTerminals`
- * setting. Sized for multi-architect workspaces (~10 architects + ~20 builders),
- * well below Tower's own `maxSessions: 100` backstop. See issue #1180.
+ * setting. Sized for multi-architect workspaces (several architect terminals
+ * plus one per active builder), well below Tower's own `maxSessions: 100`
+ * backstop. See issue #1180.
  */
 const DEFAULT_MAX_TERMINALS = 25;
 

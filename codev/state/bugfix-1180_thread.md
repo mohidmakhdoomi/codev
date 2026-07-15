@@ -38,3 +38,17 @@ Verification: full vscode vitest suite green — 632 tests / 53 files pass.
 built first, else 16 suites fail on module resolution — unrelated to this fix.)
 check-types clean. Net diff ~67 lines across 3 files.
 
+## PR
+
+PR #1181 opened (Fixes #1180).
+
+CMAP verdicts (all HIGH confidence, no REQUEST_CHANGES):
+- gemini: APPROVE
+- codex: COMMENT — non-blocking nit: the "~10 architects + ~20 builders" (=30)
+  rationale in the code comment didn't add up to the default of 25. Addressed by
+  rewording the comment to "several architect terminals plus one per active
+  builder" (no misleading arithmetic).
+- claude: APPROVE
+
+Requested the `pr` gate via `porch done`. Waiting for human approval to merge.
+
