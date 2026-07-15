@@ -56,3 +56,24 @@ Implemented all 3 points. Net ~145 LOC src + ~314 test (well under 300 for src):
 Verification (from worktree): built deps (types/core/artifact-canvas), then
 `pnpm check-types` clean, `pnpm lint` clean, `pnpm vitest run` → 638 pass (54 files),
 `node esbuild.js --production` bundles. 2 commits (fix + tests). Next: push, PR, CMAP.
+
+## PR (in progress)
+
+PR #1183 opened (Fixes #1182). Porch ran its checks (build + tests) at the fix→pr
+transition; both green.
+
+Note: `consult` couldn't auto-detect the project (the worktree carries every project's
+`status.yaml` from main → "Multiple projects found"), so ran CMAP with explicit
+`--project-id bugfix-1182`.
+
+CMAP verdicts — all APPROVE, no changes requested:
+- Gemini: APPROVE (HIGH) — no issues.
+- Codex: APPROVE (MEDIUM) — no issues.
+- Claude: APPROVE (HIGH) — one non-blocking theoretical note: `getParent` returns
+  undefined for `BuilderGroupTreeItem` children of the idle container, so a
+  hypothetical `reveal()` on one would have an incomplete parent chain. Not a change
+  request — `reveal()` only targets `BuilderTreeItem` (accordion) and
+  `BuilderFileTreeItem` (active-file sync), never group headers. Matches my own
+  design analysis; no action taken.
+
+Requesting `pr` gate next; waiting for human approval before merge.
