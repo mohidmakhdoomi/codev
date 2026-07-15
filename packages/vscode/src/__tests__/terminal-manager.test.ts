@@ -168,3 +168,48 @@ describe('PIR #1052 — repaint all terminals on window refocus', () => {
     expect(repaintBody).toMatch(/entry\.pty\.forceRepaint\(\)/);
   });
 });
+
+describe('#1180 — terminal cap is a configurable setting, not a static constant', () => {
+  // The pre-#1180 static `MAX_TERMINALS = 10` silently punished multi-architect
+  // workspaces (each architect consumes a slot). The cap is now the
+  // `codev.maxTerminals` setting (default 25). Source-level guards per this
+  // file's harness rationale (constructing TerminalManager needs heavy vscode
+  // mocking); the config schema itself is asserted in package.json below.
+  const openBody = TM_SRC.split('private async openTerminal')[1] ?? '';
+
+  it('reads the cap from the codev.maxTerminals setting', () => {
+    expect(openBody).toMatch(
+      /getConfiguration\('codev'\)[\s\S]*\.get<number>\('maxTerminals', DEFAULT_MAX_TERMINALS\)/,
+    );
+  });
+
+  it('enforces the configured value (not a hardcoded 10)', () => {
+    expect(openBody).toMatch(/if \(this\.terminals\.size >= maxTerminals\)/);
+  });
+
+  it('toast points users at the setting they can raise', () => {
+    expect(openBody).toMatch(/raise codev\.maxTerminals/);
+  });
+
+  it('no longer defines the pre-#1180 static MAX_TERMINALS = 10 constant', () => {
+    // Regression guard: the fix must replace the constant, not shadow it.
+    expect(TM_SRC).not.toMatch(/const MAX_TERMINALS = 10/);
+    expect(TM_SRC).toMatch(/const DEFAULT_MAX_TERMINALS = 25/);
+  });
+});
+
+describe('#1180 — package.json exposes codev.maxTerminals', () => {
+  const PKG = JSON.parse(
+    readFileSync(resolve(__dirname, '../../package.json'), 'utf8'),
+  );
+  const prop =
+    PKG.contributes?.configuration?.properties?.['codev.maxTerminals'];
+
+  it('declares the setting with the documented default/min/max', () => {
+    expect(prop).toBeDefined();
+    expect(prop.type).toBe('number');
+    expect(prop.default).toBe(25);
+    expect(prop.minimum).toBe(5);
+    expect(prop.maximum).toBe(100);
+  });
+});
