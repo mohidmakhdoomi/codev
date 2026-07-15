@@ -915,6 +915,13 @@
           "default": "editor",
           "description": "Where to open Codev terminals (editor area or bottom panel)"
         },
+        "codev.maxTerminals": {
+          "type": "number",
+          "default": 25,
+          "minimum": 5,
+          "maximum": 100,
+          "markdownDescription": "Maximum number of concurrent Codev terminals per window. Each terminal is a live PTY + browser-style render surface, so a higher cap costs more memory. Sized for multi-architect workspaces (several architect terminals plus one per active builder); raise it if you routinely run more, lower it if memory is tight. The ceiling of `100` matches Tower's own server-side session backstop."
+        },
         "codev.autoConnect": {
           "type": "boolean",
           "default": true,

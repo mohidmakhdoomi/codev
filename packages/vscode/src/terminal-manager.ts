@@ -7,7 +7,13 @@ import { resolveAgentName } from '@cluesmith/codev-core/agent-names';
 import type { TerminalType } from '@cluesmith/codev-core/tower-client';
 import { resolveBuilderTerminal, mainCheckoutRoot } from './terminal-resolve.js';
 
-const MAX_TERMINALS = 10;
+/**
+ * Default per-window terminal cap, overridable via the `codev.maxTerminals`
+ * setting. Sized for multi-architect workspaces (several architect terminals
+ * plus one per active builder), well below Tower's own `maxSessions: 100`
+ * backstop. See issue #1180.
+ */
+const DEFAULT_MAX_TERMINALS = 25;
 
 interface ManagedTerminal {
   terminal: vscode.Terminal;
@@ -419,7 +425,7 @@ export class TerminalManager {
   /**
    * Resolve the currently-focused VSCode terminal to its Codev PTY, or null
    * if the active terminal is not a Codev-managed one. Linear scan over the
-   * (≤ MAX_TERMINALS) map — no reverse index to keep in sync. Used by the
+   * (≤ codev.maxTerminals) map — no reverse index to keep in sync. Used by the
    * image-paste command (#736) and the `codev.terminalFocused` context key.
    */
   getActiveManagedPty(): CodevPseudoterminal | null {
@@ -462,8 +468,13 @@ export class TerminalManager {
     key?: string,
     focus = false,
   ): Promise<void> {
-    if (this.terminals.size >= MAX_TERMINALS) {
-      vscode.window.showWarningMessage(`Too many terminals (${MAX_TERMINALS} max) — close unused terminals`);
+    const maxTerminals = vscode.workspace
+      .getConfiguration('codev')
+      .get<number>('maxTerminals', DEFAULT_MAX_TERMINALS);
+    if (this.terminals.size >= maxTerminals) {
+      vscode.window.showWarningMessage(
+        `Too many terminals (${maxTerminals} max) — close unused terminals or raise codev.maxTerminals`,
+      );
       return;
     }
 
@@ -556,7 +567,7 @@ export class TerminalManager {
    * `codev.terminal.repaintOnRefocus` (see extension.ts). The initial-render fix
    * (replay buffer-and-flush) covers the confirmed corruption; this path is only
    * for setups that still report stale content after refocus. It nudges *all*
-   * managed terminals (≤ MAX_TERMINALS) rather than just the active one — a
+   * managed terminals (≤ codev.maxTerminals) rather than just the active one — a
    * coarse choice, acceptable because it's off by default and `forceRepaint`
    * no-ops on a disconnected/replaying adapter. If it ever ships on by default,
    * narrow this to the visible/active terminal(s) first.
