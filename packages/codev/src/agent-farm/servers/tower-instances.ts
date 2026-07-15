@@ -27,6 +27,7 @@ import {
   getWorkspaceName,
   isTempDirectory,
   resolveArchitectLaunch,
+  siblingRegistrationIsLive,
 } from './tower-utils.js';
 import {
   autoNumberArchitectName,
@@ -384,6 +385,41 @@ export async function getDirectorySuggestions(inputPath: string): Promise<{ path
 // ============================================================================
 
 /**
+ * Issue #1150: liveness evidence for a persisted sibling architect row. A
+ * matching `terminal_sessions` row means the sibling had a real terminal as of
+ * the last Tower run (reconcileTerminalSessions sweeps stale rows at boot, so
+ * survivors are meaningful). Rows are saved under the resolved workspace path,
+ * but accept either form for symlink safety. A read failure returns false and
+ * defers to the session-artifact check.
+ */
+function hasArchitectTerminalSession(name: string, resolvedPath: string, workspacePath: string): boolean {
+  try {
+    const row = getGlobalDb().prepare(
+      "SELECT 1 FROM terminal_sessions WHERE type = 'architect' AND role_id = ? AND workspace_path IN (?, ?) LIMIT 1",
+    ).get(name, resolvedPath, workspacePath);
+    return row !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Issue #1150: ids of this architect's persisted terminal_sessions rows, for
+ * the removeArchitect stale-state purge. A read failure returns [] — the purge
+ * then covers whatever it can see.
+ */
+function findArchitectTerminalSessionIds(name: string, resolvedPath: string, workspacePath: string): string[] {
+  try {
+    const rows = getGlobalDb().prepare(
+      "SELECT id FROM terminal_sessions WHERE type = 'architect' AND role_id = ? AND workspace_path IN (?, ?)",
+    ).all(name, resolvedPath, workspacePath) as Array<{ id: string }>;
+    return rows.map((r) => r.id);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Launch a new agent-farm instance.
  * Phase 4 (Spec 0090): Tower manages terminals directly, no dashboard-server.
  * Auto-adopts non-codev directories and creates architect terminal.
@@ -677,11 +713,31 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
     //
     // Idempotency: skip names already in `entry.architects` so a re-entrant
     // launch (or a race with `reconcileTerminalSessions`) doesn't double-spawn.
+    //
+    // Issue #1150: a row is only trusted when it carries liveness evidence: a
+    // matching `terminal_sessions` row, or a resumable session artifact per
+    // `siblingRegistrationIsLive` (which exempts session-less harnesses). Rows
+    // with neither are dead registrations, typically left behind by a removal
+    // whose DB delete never stuck (wrong pre-#1118 state.db file, a stale
+    // snapshot re-inserted by consolidation, WAL loss at OS-crash time); prune
+    // them instead of resurrecting an architect the user removed.
     try {
       const persisted = getArchitects(resolvedPath);
       for (const a of persisted) {
         if (a.name === 'main') continue;
         if (entry.architects.has(a.name)) continue;
+        if (
+          !hasArchitectTerminalSession(a.name, resolvedPath, workspacePath) &&
+          !siblingRegistrationIsLive(workspacePath, a.sessionId ?? null)
+        ) {
+          try {
+            setArchitectByName(resolvedPath, a.name, null);
+            _deps.log('INFO', `Pruned dead sibling architect registration '${a.name}': no live terminal and no resumable session`);
+          } catch (pruneErr) {
+            _deps.log('WARN', `Failed to prune dead sibling architect registration '${a.name}': ${(pruneErr as Error).message}`);
+          }
+          continue;
+        }
         const res = await addArchitect(workspacePath, a.name);
         if (!res.success) {
           _deps.log('WARN', `Failed to re-spawn persisted sibling architect '${a.name}': ${res.error}`);
@@ -1136,6 +1192,35 @@ export async function removeArchitect(
 
   const terminalId = entry.architects.get(name);
   if (!terminalId) {
+    // Issue #1150: no live terminal, but persisted state may still exist in
+    // EITHER table (a prior removal whose DB delete never stuck, or a stale
+    // snapshot row re-inserted by the #1118 consolidation). Purge both the
+    // registration row and any leftover terminal_sessions rows so this
+    // command stays retryable after any partial removal — including the case
+    // where only the terminal-session delete failed — and doubles as the
+    // recovery tool for zombie state.
+    let hasStaleRow = false;
+    try {
+      hasStaleRow = getArchitectByName(resolvedPath, name) !== null;
+    } catch { /* registry unreadable: fall through to not-found */ }
+    const staleTerminalIds = findArchitectTerminalSessionIds(name, resolvedPath, workspacePath);
+    if (hasStaleRow || staleTerminalIds.length > 0) {
+      try {
+        if (hasStaleRow) {
+          setArchitectByName(resolvedPath, name, null);
+        }
+        for (const staleId of staleTerminalIds) {
+          _deps.deleteTerminalSession(staleId);
+        }
+      } catch (err) {
+        return {
+          success: false,
+          error: `Architect '${name}' has no live terminal, and deleting its stale state failed: ${(err as Error).message}. Retry 'afx workspace remove-architect --name ${name}'.`,
+        };
+      }
+      _deps.log('INFO', `Purged stale architect state for '${name}' from workspace ${workspacePath} (no live terminal; registration=${hasStaleRow}, terminal rows=${staleTerminalIds.length})`);
+      return { success: true };
+    }
     return { success: false, error: `Architect '${name}' not found in workspace '${workspacePath}'.` };
   }
 
@@ -1165,17 +1250,37 @@ export async function removeArchitect(
     // Explicitly delete persisted rows (the intentional-stop flag suppressed
     // the exit-handler delete; we want the row gone for this remove path).
     // Bugfix #826: scoped by workspace_path.
+    //
+    // Issue #1150: these deletes ARE the removal, not optional cleanup. A
+    // swallowed failure leaves a row that resurrects the architect on the
+    // next workspace launch while the user was told "Removed". Collect
+    // failures and surface them; the terminal teardown still completes, so a
+    // retry lands in the stale-registration purge branch above.
+    const deleteErrors: string[] = [];
     try {
       setArchitectByName(resolvedPath, name, null);
-    } catch { /* best-effort cleanup */ }
+    } catch (err) {
+      deleteErrors.push(`architect registration: ${(err as Error).message}`);
+    }
     try {
       _deps.deleteTerminalSession(terminalId);
-    } catch { /* best-effort cleanup */ }
+    } catch (err) {
+      deleteErrors.push(`terminal session: ${(err as Error).message}`);
+    }
 
     // Wait for the actual 'exit' event before clearing the flag.
     await exitPromise;
     // Issue #832: no session cleanup needed — the row delete above cleared the
     // persisted session_id, so a re-add with the same name starts fresh.
+
+    if (deleteErrors.length > 0) {
+      const errMsg =
+        `Architect '${name}' terminal was stopped, but deleting its persisted state failed ` +
+        `(${deleteErrors.join('; ')}). It may resurrect on the next workspace start. ` +
+        `Retry 'afx workspace remove-architect --name ${name}' to purge it.`;
+      _deps.log('ERROR', errMsg);
+      return { success: false, error: errMsg };
+    }
   } finally {
     intentionallyStopping.delete(resolvedPath);
     if (resolvedPath !== workspacePath) intentionallyStopping.delete(workspacePath);

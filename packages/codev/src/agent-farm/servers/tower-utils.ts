@@ -211,6 +211,35 @@ function sessionIsOwned(
 }
 
 /**
+ * Issue #1150: decide whether a persisted sibling architect row still deserves
+ * a respawn, absent any live-terminal evidence (the caller checks
+ * `terminal_sessions` first; this covers the session-artifact half).
+ *
+ * A row is live when:
+ *   1. The harness has no `session` capability (Codex/Gemini): such rows can
+ *      never carry resumable-session evidence, and their respawn is always a
+ *      fresh spawn, so pruning them would break Spec 786 stop/start
+ *      persistence while preventing nothing (no conversation can resurrect).
+ *   2. The row's stored session id passes the harness ownership check
+ *      (`sessionIsOwned`, which also trusts harnesses lacking
+ *      `verifyOwnership`: never prune without positive evidence of staleness).
+ *
+ * A session-capable harness row with no stored id, or an id whose session
+ * artifact is gone, is a dead registration: the reconcile loop prunes it
+ * instead of resurrecting a removed architect (the #1150 bug class).
+ */
+export function siblingRegistrationIsLive(
+  workspacePath: string,
+  sessionId: string | null,
+  opts?: { homeDir?: string },
+): boolean {
+  const harness = getArchitectHarness(workspacePath);
+  if (!harness.session) return true;
+  if (!sessionId) return false;
+  return sessionIsOwned(harness, sessionId, workspacePath, opts?.homeDir);
+}
+
+/**
  * Issue #832: resolve the args/env to launch (or revive) an architect, choosing
  * between resuming its persisted conversation and starting a fresh one. The
  * session mechanics are agent-neutral — they come from the resolved harness's
