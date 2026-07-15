@@ -15,3 +15,16 @@ Key design decisions in the plan:
 - `CODEV_SKIP_RESUME=1` escape hatch in `resolveArchitectLaunch`.
 
 Plan written to `codev/plans/1149-tower-recovery-claude-architec.md`. Sitting at the plan-approval gate.
+
+## 2026-07-15 Rebase + plan recheck
+
+Rebased onto main (103 commits, clean). Two related PRs merged in the interim and changed the plan materially:
+
+- #1145: resolve-time ownership check (`verifyOwnership`, jsonl file-existence) now gates the resume branch in `resolveArchitectLaunch`; architect mtime-discovery fallback removed.
+- #1150: sibling rows with no resumable-session evidence are pruned at reconcile.
+
+Plan revisions:
+
+- Reframed the fix as the runtime complement to #1145's bake-time check. Residual gaps it covers: jsonl vanishing between bake and replay (Claude's cleanupPeriodDays GC), corrupted/truncated jsonl that passes the existence check, any other runtime resume failure.
+- Flipped the persistence decision: onApply now persists the fallback's minted session id instead of clearing to NULL. NULL would trip #1150's dead-registration pruning for siblings, and #1145 makes a never-materialized minted id safe (filtered at next bake). Helper renamed to `setArchitectSessionId`.
+- Refreshed all file:line references; updated the manual repro (bare poisoned id no longer reproduces; corrupt the jsonl in place instead).
