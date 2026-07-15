@@ -1,7 +1,7 @@
 id: '1150'
 title: afx-removed-sibling-architect-
 protocol: pir
-phase: implement
+phase: review
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -19,4 +19,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-08T06:31:03.692Z'
-updated_at: '2026-07-15T03:46:17.291Z'
+updated_at: '2026-07-15T03:47:29.489Z'
