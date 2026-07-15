@@ -35,3 +35,24 @@ No `extension.ts` change needed: the accordion `onDidExpandElement` only acts on
 `BuilderTreeItem`; the idle group toggles natively (VSCode persists per-id).
 No `package.json` menu change: no menu `when`-clause targets `group-builder` in the
 Agents view.
+
+## Fix (done)
+
+Implemented all 3 points. Net ~145 LOC src + ~314 test (well under 300 for src):
+- `builder-tree-item.ts`: new `IdleArchitectsGroupTreeItem` — "Idle Architects (N)",
+  Collapsed, `id='idle-architects-group'` (persistence), `contextValue='group-idle-architects'`,
+  neutral `circle-outline`/`disabledForeground` glyph, NO command (toggle-only).
+- `builders.ts`: extracted `makeGroupRow(g, now, isArchitectAxis)` from the old inline
+  map; new `architectRootChildren(groups, now)` partitions main/populated/idle-siblings
+  and emits the container only when idle ≥ 2; new `idleArchitectRows(now)` recomputes the
+  container's children on expansion; `getChildren` dispatches on the new item type.
+- Tests: new `builders-idle-architects-group.test.ts` (11 cases: 0/1/≥2 siblings,
+  main-always-separate, ordering, glyph/command, expansion children, both transitions,
+  stage-axis unaffected). Updated one #1174 test in
+  `builders-childless-architect-header.test.ts` that pinned the pre-#1182 behavior
+  (3 childless → all top-level) to the lone-idle-sibling case (its interaction is now
+  covered by the #1182 file).
+
+Verification (from worktree): built deps (types/core/artifact-canvas), then
+`pnpm check-types` clean, `pnpm lint` clean, `pnpm vitest run` → 638 pass (54 files),
+`node esbuild.js --production` bundles. 2 commits (fix + tests). Next: push, PR, CMAP.
