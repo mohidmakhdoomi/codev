@@ -1,7 +1,7 @@
 id: bugfix-1180
 title: vscode-raise-per-window-termin
 protocol: bugfix
-phase: fix
+phase: pr
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -11,4 +11,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-15T06:18:14.337Z'
-updated_at: '2026-07-15T06:19:38.359Z'
+updated_at: '2026-07-15T06:26:48.299Z'
