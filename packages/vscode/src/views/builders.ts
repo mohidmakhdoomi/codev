@@ -318,9 +318,12 @@ export class BuildersProvider implements vscode.TreeDataProvider<vscode.TreeItem
       // The click-to-open-terminal command below still fires on the row body.
       // Populated groups stay Expanded (#913). Only the architect axis ever
       // yields an empty group; stage/area groups always hold ≥1 builder.
-      const collapsibleState = g.items.length === 0
-        ? vscode.TreeItemCollapsibleState.None
-        : vscode.TreeItemCollapsibleState.Expanded;
+      let collapsibleState: vscode.TreeItemCollapsibleState;
+      if (g.items.length === 0) {
+        collapsibleState = vscode.TreeItemCollapsibleState.None;
+      } else {
+        collapsibleState = vscode.TreeItemCollapsibleState.Expanded;
+      }
       const groupItem = new BuilderGroupTreeItem(
         g.key,
         g.items.length,
