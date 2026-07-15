@@ -38,3 +38,11 @@ Plan approved; implemented in four commits:
 - Tests: 6 new in tower-instances.test.ts (prune vs respawn x3, removal failure surfacing x2, stale purge + not-found), 5 new in tower-utils.test.ts for the liveness helper.
 
 Build gotcha worth remembering: `pnpm --filter @cluesmith/codev build | tail` masked a real build failure (pipeline exit code is tail's). Core must be built first; root `pnpm build` orders it correctly. A first full-suite run also showed 32 failures across 7 files that all traced to the missing skeleton copy (fresh worktree, failed build), not to the diff; consolidate.test.ts passes in isolation.
+
+## 2026-07-15 — Review phase
+
+dev-approval approved after discussion covering: bug walkthrough and blast radius, why respawn can't require a terminal_sessions row (desired-state vs runtime-state table semantics), verification that `afx workspace stop` does kill terminals (CLI → deactivate route → stopInstance), measured `synchronous = FULL` cost (~26µs/commit on SSD), and the orphaned-terminal mirror case. That last discussion produced follow-up #1176 (filed by the architect): reconcile self-repair for architect terminals whose registry row is missing.
+
+Review file written with the corrected root-cause narrative (consolidation ranked first). Governance routing: arch.md multi-architect lifecycle + persistence-layers + tech-stack updates (also fixed the stale schema line missing `session_id`); lessons-learned.md gained three entries (desired-state/tombstone fragility, correlate-with-what-shipped debugging, pipeline exit-code masking). Hot tier untouched (nothing displaces the current top-10).
+
+PR #1178 opened; consultation pass pending.
