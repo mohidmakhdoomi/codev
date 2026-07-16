@@ -145,7 +145,7 @@ Projects currently in development (conceived through committed), sorted by prior
   - id: "0061"
     title: "STL Viewer Support"
     summary: "Add 3D STL file viewing to dashboard annotation viewer for OpenSCAD and CAD tool output"
-    status: implemented
+    status: integrated
     priority: medium
     release: null
     files:
