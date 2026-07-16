@@ -40,3 +40,21 @@ as it "drives monorepo restructuring." Finding: **keep separate apps — reinfor
   types already shared) — separate future workstream, #855 enables it.
 
 Decisions 3 (keep Dashboard word) + 4 (keep separate apps) now CONFIRMED in plan.
+
+## Implement phase (2026-07-16)
+
+Executed the move. Steps done:
+- `git mv packages/vscode → apps/vscode`, `packages/dashboard → apps/web` (renames, history preserved).
+- `pnpm-workspace.yaml`: added `apps/*`.
+- `packages/codev/package.json`: build:dashboard/dev:dashboard `cd ../dashboard` → `cd ../../apps/web` (copy targets unchanged, both dirs depth-2 from root).
+- Package rename (Decision 2): apps/web name → `@cluesmith/codev-web`; codev devDep; 3 test import specifiers.
+- apps/vscode tsconfig.json + tsconfig.webview.json `extends` `../config` → `../../packages/config`.
+- apps/vscode/package.json repository.directory → apps/vscode.
+- CI test.yml working-directories.
+- Release scripts bump-vscode.sh (real paths) + bump-all.sh (comments).
+- .vscode/{launch,tasks,settings}.json.
+- .gitignore build-output patterns (NOT in original plan — caught by post-rename grep sweep).
+- Docs: arch.md (Monorepo table now shows apps/ vs packages/ + artifact-canvas row; tree; diagrams; dashboard-dist source path); CLAUDE.md+AGENTS.md area/dashboard label package-name citation (kept byte-identical).
+- projectlist.md line 250 left as historical release-notes prose (not live structure).
+
+Running `pnpm install` to regenerate lockfile, then build + tests.
