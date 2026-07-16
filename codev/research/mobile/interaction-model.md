@@ -214,52 +214,38 @@ Rejected. Reasons:
 - **Rewriting the dashboard** as RN Web is a rewrite, not a refactor. Weeks of work with regression surface, blocking mobile from shipping while the migration lands.
 - **Build tooling complexity** — Metro + Expo Router + web adapter vs. clean per-platform toolchains (Vite for web, Expo for mobile).
 
-### 7.2 DO share the state / data layer
+### 7.2 DO share the client layer — via `codev-sdk` (#1189), not the original tower-sdk
 
-Extract a framework-agnostic package with React hooks that both apps (and the VS Code extension) consume. Each platform owns its view layer natively.
+**Superseded (2026-07-16).** This section originally proposed `packages/tower-sdk`: a React-hooks state layer extracted from the dashboard, consumed by web, mobile, and VS Code. That design was retired after review with Amr, for three reasons:
 
-**Proposed**: `packages/tower-sdk`
+- The VS Code extension host is not React — hooks fit at most two of the three claimed consumers.
+- The dashboard would need migrating onto the extracted layer to get any sharing benefit: a refactor of a working surface for the benefit of an app that doesn't exist yet.
+- It contradicted the repo's own extract-on-committed-need precedent (#1029).
 
-Exports hooks like:
+**The replacement is issue #1189: `packages/codev-sdk`** — a dependency-isolation split of `codev-core` rather than a dashboard extraction. Taxonomy: `codev-types` is the only package both sides share (wire contracts); `codev-core` becomes server-side implementation only; `codev-sdk` is the single client implementation of "how anything talks to Tower" (evolved `tower-client` with injected auth/transport, WS/message-bus client, and the client-side pure helpers). Its consumers exist today: the web dashboard, the VS Code extension, and the CLI's Tower-facing commands — mobile joins as the fourth. The sdk is framework-free in v1 (no React hooks; the extension host and CLI can't use them); an optional `/react` subpath may come later if web and mobile demonstrably duplicate hook logic.
 
-- `useBuilderList()` — real-time builder roster
-- `useSendMessage(target)` — send to architect / builder
-- `useArchitectActivity(name)` — event stream for a given architect
-- `useOverview(baseUrl, workspacePath)` — same shape the dashboard consumes today
-- `useGateApproval(gateId)` — approve / reject flow
-- `usePendingQuestion()` — active `AskUserQuestion` awaiting response
+The knots identified in the 2026-07-07 dashboard audit remain the sdk's design requirements (validated from the consuming side by the Expo spike, `spikes/expo-lan-reachability-2026-07.md`):
 
-Framework-agnostic (no DOM, no RN specifics). Same hook, three different view renderings:
-
-- **web** — resizable table with sortable columns
-- **mobile** — swipeable card feed with pull-to-refresh
-- **vscode** — sidebar tree items with context menus
-
-Bug fixes in message routing, schema changes in `packages/types`, new WebSocket events — all land in `packages/tower-sdk` once, every surface picks them up.
-
-**Extraction feasibility (audited 2026-07-07)** — favorable, with three known knots:
-
-- The dashboard has no state library (no React Query/Zustand): plain `useState` + fetch + `setInterval` polling + SSE-triggered refetch, snapshot-deduped. ~70-75% of the data layer is portable as-is; **all wire contracts already live in `@cluesmith/codev-types`** (the dashboard defines none of its own), which is the single biggest asset.
-- **Knot 1 — implicit workspace scoping.** The dashboard's API base is `'./'`; workspace identity rides the browser URL (reverse-proxy prefix `/workspace/<base64>/`), and WS/SSE URLs are built from `window.location`. RN has no URL context — the SDK must take explicit `baseUrl` + `workspacePath` (the hook signature above reflects this).
-- **Knot 2 — the SSE singleton.** `useSSE` is a module-global `EventSource` with `document.visibilitychange` lifecycle (browser 6-connection-limit workaround). RN has no `EventSource`; the transport must be an injected adapter, with RN `AppState` replacing visibility.
-- **Knot 3 — divergent auth/persistence.** Browser reads `localStorage['codev-web-key']`; the Node `TowerClient` in `packages/core` reads `~/.agent-farm/local-key` via `node:fs`; neither is RN-usable. The SDK needs injected `getToken()` + storage interfaces, unifying all three environments.
+- **Explicit scoping.** The dashboard's API base is `'./'`; workspace identity rides the browser URL. RN has no URL context — the sdk takes explicit `baseUrl` + `workspacePath`.
+- **Injected transport.** The dashboard's `useSSE` is a module-global `EventSource` with `document.visibilitychange` lifecycle. RN has no `EventSource` — transport arrives as an adapter, with `AppState` replacing visibility on RN.
+- **Injected auth/storage.** Browser reads `localStorage['codev-web-key']`; the Node client reads `~/.agent-farm/local-key` via `node:fs`; neither is RN-usable. The sdk takes `getToken()` + storage interfaces.
 
 ### 7.3 Resulting monorepo layout
 
-Aligned with issue #855 (introduce `apps/*`):
+`apps/*` landed via #855 (merged 2026-07-16, PR #1188); `codev-sdk` is proposed in #1189:
 
 ```
 apps/
-  web/         Vite + React DOM. xterm.js, multi-panel, keyboard shortcuts.
-  mobile/      Expo + React Native. Chat, feed, actions, push notifications.
-  vscode/      Existing extension.
+  web/         Vite + React DOM. xterm.js, multi-panel, keyboard shortcuts. (was packages/dashboard)
+  mobile/      Expo + React Native. Chat, feed, actions, push notifications. (future)
+  vscode/      Extension. (was packages/vscode)
 
 packages/
-  codev/       CLI + orchestration (unchanged per #855)
-  core/        Forge / VCS abstraction
-  types/       Wire contracts
+  codev/       CLI + orchestration (Tower-facing commands consume codev-sdk)
+  core/        Server-side implementation (post-#1189)
+  codev-sdk/   PROPOSED (#1189). Tower API client + WS/message-bus client + client pure helpers. Framework-free.
+  types/       Wire contracts — the only package shared by server and client
   config/      Workspace config
-  tower-sdk/   NEW. React-hooks-based state layer + WebSocket + API client.
 ```
 
 ---
@@ -284,7 +270,7 @@ Consumed by:
 - Web dashboard → renders inline picker in the relevant terminal / chat view
 - VS Code extension → surface as a notification or sidebar prompt
 
-All three consume through `packages/tower-sdk`'s `usePendingQuestion()` hook.
+All three consume through `codev-sdk`'s pending-question client (#1189; framework-free — each surface wraps it in its own state idiom).
 
 ### 8.3 Response routing
 
