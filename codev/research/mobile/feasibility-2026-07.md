@@ -14,7 +14,7 @@
 - **The defining use case is unchanged**: run your AI dev team during the 30-second attention windows of your day. Approval inbox, glanceable status, structured question-answering. Replicating the desktop UI on a smaller screen remains the failure mode.
 - **The terminal-substrate/interface split stands**: the PTY remains the source of truth; mobile renders projections (chat bubbles, feed rows, decision cards) with the raw terminal one tap away. New ground truth strengthens this: Tower today does *zero* PTY content parsing, so the projection layer is genuinely new plumbing — and it benefits web and VS Code equally, which changes who should design it (main, not mobile alone).
 - **The security posture is unchanged and the warning stands**: `isRequestAllowed` still returns `true` unconditionally; there is no in-tower defense in depth. Closing this gap remains a hard prerequisite for any credential living on a phone. Verified current, not just a May snapshot.
-- **Recommended path (updated):** spike-driven LAN PoC first (`packages/tower-sdk` extraction → `apps/mobile` scaffold → feed/chat/question flows against a LAN Tower), with cloud/push as a separately-specced phase coordinated with issue #655. Do not let mobile silently become "build Tower Cloud."
+- **Recommended path (updated 2026-07-16):** spike-driven LAN PoC. The `apps/mobile` scaffold + LAN reachability spike is complete and green (`spikes/expo-lan-reachability-2026-07.md`); feed/chat/question flows against a LAN Tower come next. The shared client layer arrives via the `codev-sdk` split (#1189), not a dashboard extraction. Cloud/push stays a separately-specced phase coordinated with issue #655. Do not let mobile silently become "build Tower Cloud."
 
 ---
 
@@ -48,7 +48,7 @@ Six weeks of platform evolution that the May doc predates, each with a mobile co
 
 The May analysis of RN vs PWA vs Capacitor vs native vs Flutter stands; nothing in six weeks moved it. RN + Expo (managed workflow, EAS) remains the recommendation. Three updates:
 
-1. **The code-sharing story is now concrete.** The `packages/tower-sdk` extraction was audited (2026-07-07): the dashboard's data layer is plain React hooks (no Redux/React Query/Zustand), snapshot-polling + SSE-refetch, with **all wire contracts in `@cluesmith/codev-types`**. ~70-75% ports as-is. The three knots are all transport/glue, not business logic: (a) workspace identity implied by browser URL (`getApiBase() = './'`, reverse-proxy prefix) — SDK must take explicit `baseUrl` + `workspacePath`; (b) the module-global `EventSource` singleton with `document.visibilitychange` lifecycle — needs an injected transport + RN `AppState`; (c) three divergent auth/storage paths (browser `localStorage`, Node `~/.agent-farm/local-key`, and nothing for RN) — needs injected `getToken()`/storage interfaces.
+1. **The code-sharing story is now concrete.** The client data layer was audited (2026-07-07; the findings now drive the `codev-sdk` design in #1189, which superseded the tower-sdk extraction idea — see `interaction-model.md` §7.2): the dashboard's data layer is plain React hooks (no Redux/React Query/Zustand), snapshot-polling + SSE-refetch, with **all wire contracts in `@cluesmith/codev-types`**. ~70-75% ports as-is. The three knots are all transport/glue, not business logic: (a) workspace identity implied by browser URL (`getApiBase() = './'`, reverse-proxy prefix) — SDK must take explicit `baseUrl` + `workspacePath`; (b) the module-global `EventSource` singleton with `document.visibilitychange` lifecycle — needs an injected transport + RN `AppState`; (c) three divergent auth/storage paths (browser `localStorage`, Node `~/.agent-farm/local-key`, and nothing for RN) — needs injected `getToken()`/storage interfaces.
 2. **Terminal rendering is settled by decision, not by WebView benchmarking.** v0 ships a read-only monospace snapshot (the `/ws/terminal/:id` byte bridge exists; rendering read-only is a client choice) and no interactive terminal. The May doc's §5.5 substrate-vs-interface argument is preserved in `interaction-model.md` §2/§5 as the design principle.
 3. **Markdown/code rendering has a fork in it** (#1029): RN-native markdown vs WebView-hosted artifact-canvas. Spike question, not a blocker.
 
@@ -57,10 +57,10 @@ The May analysis of RN vs PWA vs Capacitor vs native vs Flutter stands; nothing 
 ### 4.1 The three-layer split is the whole game
 
 - `apps/mobile` (Expo/RN, view layer) — new
-- `packages/tower-sdk` (framework-agnostic hooks + API/WS clients) — extracted from the dashboard; consumed by web, mobile, and eventually VS Code
+- `packages/codev-sdk` (#1189) — the single Tower client implementation (API + WS/message-bus, injected transport/auth, framework-free); consumed by `apps/web`, `apps/vscode`, the CLI's Tower-facing commands, and mobile. Replaces the earlier tower-sdk extraction idea (see `interaction-model.md` §7.2 for the supersession rationale)
 - Tower plumbing (structured events, question detection, gate-approval endpoint) — new, **shared with web**, designed with main
 
-Issue #855 (`apps/*` split: `packages/dashboard` → `apps/web`, `packages/vscode` → `apps/vscode`, `apps/mobile` lands fresh) is the layout this assumes. Sequencing (before first mobile PR vs bundled with it) is main's call.
+Issue #855 (`apps/*` split) **merged 2026-07-16** (PR #1188): `apps/web` and `apps/vscode` exist; `apps/mobile` lands fresh into the established layout.
 
 ### 4.2 Backend changes — reframed by what exists
 
@@ -116,9 +116,9 @@ The May doc's four narrative use-case flows (8am decision sweep, commute spec, c
 
 ## 8. Phasing (updated for the spike-first reality)
 
-**Phase S — spikes (EXPERIMENT protocol, LAN-only, no shipped code).** Priority order per the mobile workstream mandate: tower-sdk extraction; apps/mobile Expo scaffold + LAN WS/SSE reachability; AskUserQuestion detection design (with main); push wiring sandbox (APNs/FCM feasibility only); RN real-time feed; native diff viewer eval; chat/card rendering (RN-native vs WebView artifact-canvas, feeds #1029). Output: research notes in `codev/research/mobile/spikes/`.
+**Phase S — spikes (LAN-only, no shipped code).** Status as of 2026-07-16: ~~tower-sdk extraction~~ (retired; replaced by the #1189 codev-sdk split, which is scheduled implementation work, not a spike); **apps/mobile Expo scaffold + LAN reachability — DONE, green** (`spikes/expo-lan-reachability-2026-07.md`; device-verification half pending a BRIDGE_MODE Tower session). Remaining, in order: AskUserQuestion detection design (with main); RN real-time feed; chat/card rendering (RN-native vs WebView artifact-canvas, feeds #1029); native diff viewer eval; push wiring sandbox (APNs/FCM feasibility only). Output: research notes in `codev/research/mobile/spikes/`.
 
-**Phase 1 — LAN PoC** (PIR specs, real implementation): feed + chat + question cards + gate approval against a LAN Tower. Cold-tester round (3 testers, timed tasks) mirroring the IDE PoC pattern. #855 lands before or with the first PR — main's call.
+**Phase 1 — LAN PoC** (PIR specs, real implementation): feed + chat + question cards + gate approval against a LAN Tower. Cold-tester round (3 testers, timed tasks) mirroring the IDE PoC pattern. #855 merged 2026-07-16, so `apps/mobile` has its home.
 
 **Phase 2 — cloud-connected mobile**: per-device auth, push, offline semantics, handoff at distance. Gated on Tower Cloud work (its own spec; seeded by #655 and the security-profile mitigations). This phase's timeline is owned by the cloud workstream, not mobile.
 
@@ -136,7 +136,7 @@ Of the May doc's seven strategic questions:
 4. **Self-host story** — the `--service <url>` override already exists in `afx tower connect`; mobile should honor arbitrary cloud URLs from day one of Phase 2. Affirmed.
 5. **Store distribution** — Phase 2 concern; v0 is Expo dev builds.
 6. **iOS-first vs simultaneous** — RN keeps both open; v0 PoC targets whatever device is on the desk (pragmatically iOS); no store commitment implied.
-7. **Separate codebase vs shared with web** — **decided**: separate view layers, shared `packages/tower-sdk` + `packages/types`. See `interaction-model.md` §7.
+7. **Separate codebase vs shared with web** — **decided**: separate view layers; sharing happens through `codev-types` (contracts) and `codev-sdk` (#1189, the single Tower client). See `interaction-model.md` §7.
 
 The seven *interaction-design* open questions from the interaction-model draft are separately answered in `codev/research/mobile/decisions/` (q1–q7).
 

@@ -18,9 +18,9 @@
 2. **Feed and chat are workspace-scoped**, behind a workspace switcher (current-workspace context persisted per device). Rationale: an interleaved multi-workspace activity feed is noise — activity volume is high (every phase change, spawn, message) and cross-workspace interleaving destroys glanceability. Chat targets (`architect:main`) are only meaningful within a workspace.
 3. **Multi-tower is Phase 2** and composes the same way: tower switcher above workspace switcher, inbox unified across both. v0 (LAN PoC) is single-Tower by construction.
 
-## Consequence for tower-sdk
+## Consequence for codev-sdk (#1189)
 
-Hooks take explicit `workspacePath` (already required by the extraction — the dashboard's implicit-URL-scoping knot), and the inbox hook is the one deliberately cross-workspace query (`usePendingAttention()` aggregating across `GET /api/workspaces`).
+Client calls take explicit `baseUrl` + `workspacePath` (the dashboard's implicit-URL-scoping knot, now a #1189 design requirement), and the inbox is the one deliberately cross-workspace query: a pending-attention client aggregating across `GET /api/workspaces`. (The sdk is framework-free; each surface wraps this in its own state idiom — a hook on web/mobile, a tree provider in vscode.)
 
 ## Related
 
