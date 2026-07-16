@@ -1,7 +1,7 @@
 id: '855'
 title: monorepo-layout-introduce-apps
 protocol: pir
-phase: plan
+phase: implement
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -17,4 +17,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-16T02:32:45.222Z'
-updated_at: '2026-07-16T05:09:50.068Z'
+updated_at: '2026-07-16T05:20:58.586Z'
