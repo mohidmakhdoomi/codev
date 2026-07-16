@@ -1,7 +1,7 @@
 id: '1187'
 title: chore-upgrade-typescript-to-6-
 protocol: pir
-phase: plan
+phase: implement
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -17,4 +17,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-16T08:08:57.884Z'
-updated_at: '2026-07-16T08:45:09.029Z'
+updated_at: '2026-07-16T08:46:22.137Z'
