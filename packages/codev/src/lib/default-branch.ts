@@ -4,7 +4,7 @@
  * the remote doesn't exist.
  *
  * Sync mirror of the async pattern at
- * `packages/vscode/src/commands/view-diff.ts:261-272`; consult is sync
+ * `apps/vscode/src/commands/view-diff.ts:261-272`; consult is sync
  * everywhere so the helper is too.
  */
 

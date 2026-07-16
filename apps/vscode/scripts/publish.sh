@@ -6,7 +6,7 @@
 #   pnpm vscode:publish        # stable, both registries
 #   pnpm vscode:publish:pre    # pre-release channel, both registries
 #
-# (Or invoke directly: `sh packages/vscode/scripts/publish.sh [--pre-release]`.)
+# (Or invoke directly: `sh apps/vscode/scripts/publish.sh [--pre-release]`.)
 #
 # Auth:
 #   VSCE_PAT  — VS Code Marketplace token, or run `vsce login cluesmith` once
@@ -17,7 +17,7 @@
 # Failure recovery:
 #   Both registries reject duplicate-version uploads. If Marketplace succeeds
 #   and Open VSX fails, the .vsix is still on disk — retry just the failed one:
-#       ovsx publish packages/vscode/codev-vscode-X.Y.Z.vsix
+#       ovsx publish apps/vscode/codev-vscode-X.Y.Z.vsix
 #
 # Why one script instead of two separate publishes:
 #   Running `vsce publish` then `ovsx publish` would each rebuild + repackage,
