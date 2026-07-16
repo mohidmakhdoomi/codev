@@ -77,10 +77,16 @@ then `pnpm build` + tests to confirm the wiring.
      "web-first React DOM for the desktop management console, lightweight RN views
      for on-the-go mobile" — the codev split precisely. RNW adds an emulation-layer
      runtime/hydration cost that Vite avoids for the DOM-heavy console.
-   - The load-bearing blocker is concrete: the web surface's live **xterm.js
-     terminal attach** is DOM-only and has no React Native path (RN has no DOM).
-     Unifying would force either a lowest-common-denominator UX or per-platform
-     branches everywhere (defeating the merge's premise).
+   - On the terminal specifically: xterm.js *can* run on RNW's **web** target
+     (real browser DOM, via a `.web.tsx` escape hatch), but **not** on the native
+     targets (no DOM). So even in a unified app the terminal is a mandatory
+     platform branch (`.web` xterm vs `.native` read-only projection) — unification
+     yields *zero* sharing for the web surface's flagship feature. This generalizes:
+     the desktop-heavy screens (multi-panel, keyboard, diff, file browse) each need
+     either `.web` escape hatches (= web-specific code anyway, inside a heavier
+     Metro/Expo toolchain + RNW emulation/hydration runtime cost) or native
+     branches. Unifying forces lowest-common-denominator UX or per-platform
+     branches everywhere — defeating the merge's premise.
    - The *correct* code-sharing lever is not a unified app but extracting the
      framework-agnostic data layer into `packages/tower-sdk` (~70-75% of `apps/web`'s
      hooks are portable; wire contracts already in `@cluesmith/codev-types`). That
