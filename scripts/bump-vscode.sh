@@ -1,7 +1,7 @@
 #!/bin/sh
-# Bump the VS Code extension — version field in packages/vscode/package.json
+# Bump the VS Code extension — version field in apps/vscode/package.json
 # AND promote `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD` in
-# packages/vscode/CHANGELOG.md so the Marketplace listing reflects the new
+# apps/vscode/CHANGELOG.md so the Marketplace listing reflects the new
 # version.
 #
 # Standalone: anchors on vscode's OWN current version. When called from
@@ -26,8 +26,8 @@ INPUT="${1:-patch}"
 
 CURRENT="$(node -e '
   const fs = require("fs");
-  const p = JSON.parse(fs.readFileSync("packages/vscode/package.json", "utf8"));
-  if (!p.version) { console.error("packages/vscode/package.json has no version field"); process.exit(1); }
+  const p = JSON.parse(fs.readFileSync("apps/vscode/package.json", "utf8"));
+  if (!p.version) { console.error("apps/vscode/package.json has no version field"); process.exit(1); }
   console.log(p.version);
 ')"
 
@@ -60,8 +60,8 @@ case "$VERSION" in
     ;;
 esac
 
-# Bump packages/vscode/package.json (byte-preserving regex on the version line).
-PKG_FILE="packages/vscode/package.json" VERSION="$VERSION" node -e '
+# Bump apps/vscode/package.json (byte-preserving regex on the version line).
+PKG_FILE="apps/vscode/package.json" VERSION="$VERSION" node -e '
   const fs = require("fs");
   const p = process.env.PKG_FILE;
   const content = fs.readFileSync(p, "utf8");
@@ -79,7 +79,7 @@ PKG_FILE="packages/vscode/package.json" VERSION="$VERSION" node -e '
 # Promote Keep-a-Changelog `## [Unreleased]` → `## [X.Y.Z] - DATE`.
 # No fresh [Unreleased] heading is inserted — the next PR with notes adds one
 # back. Keeps the published Marketplace changelog free of empty sections.
-FILE="packages/vscode/CHANGELOG.md" VERSION="$VERSION" DATE="$(date +%Y-%m-%d)" node -e '
+FILE="apps/vscode/CHANGELOG.md" VERSION="$VERSION" DATE="$(date +%Y-%m-%d)" node -e '
   const fs = require("fs");
   const f = process.env.FILE;
   if (!fs.existsSync(f)) {

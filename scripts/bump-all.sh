@@ -15,12 +15,12 @@
 # NOT commit or tag (so no `--no-git-tag-version` passthrough is needed,
 # unlike `pnpm version` which auto-commits by default). It also does NOT
 # reformat the JSON: the version line is patched in place so hand-formatted
-# files (e.g. packages/vscode/package.json with compact view arrays) are
+# files (e.g. apps/vscode/package.json with compact view arrays) are
 # preserved byte-for-byte outside the version field. Stage, commit, and tag
 # yourself afterward.
 #
 # VS Code Marketplace rejects semver pre-release suffixes (e.g. 1.7.0-rc.1),
-# so packages/vscode is skipped when VERSION contains a '-'. The extension
+# so apps/vscode is skipped when VERSION contains a '-'. The extension
 # catches up when an RC is promoted to a stable version.
 
 set -e
@@ -95,7 +95,7 @@ done
 # constraints. Delegate to scripts/bump-vscode.sh, which is also callable on
 # its own when bumping the extension independently from a codev release.
 if [ "$IS_PRERELEASE" = "1" ]; then
-  echo "Skipping packages/vscode ($VERSION is a pre-release; VS Code Marketplace requires plain semver)"
+  echo "Skipping apps/vscode ($VERSION is a pre-release; VS Code Marketplace requires plain semver)"
 else
   SCRIPT_DIR="$(dirname "$0")"
   "$SCRIPT_DIR/bump-vscode.sh" "$VERSION"

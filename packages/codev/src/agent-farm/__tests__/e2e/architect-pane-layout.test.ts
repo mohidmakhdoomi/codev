@@ -4,7 +4,7 @@
  * PR #762 introduced `.architect-pane` / `.architect-pane-body` wrappers in the
  * N>1 branch of `App.tsx` but never added matching CSS, so the architect
  * terminal collapsed to ~1/4 of the SplitPane left side. The fix in
- * `packages/dashboard/src/index.css` makes `.architect-pane` a
+ * `apps/web/src/index.css` makes `.architect-pane` a
  * `position: absolute; inset: 0` flex column anchored against `.split-left`
  * (which is `position: relative`), with `.architect-pane-body` as a `flex: 1`
  * filler. This test pins the layout invariant by mocking `/api/state` with

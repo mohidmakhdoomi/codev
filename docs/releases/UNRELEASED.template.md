@@ -10,7 +10,7 @@
 
   Per-PR architect workflow (on the docs/vscode-changelog branch):
     1. cd worktrees/changelog                       # no fetch / no rebase — branches diverge by design
-    2. Add the CHANGELOG entry to packages/vscode/CHANGELOG.md under [Unreleased]
+    2. Add the CHANGELOG entry to apps/vscode/CHANGELOG.md under [Unreleased]
        (add the [Unreleased] heading if it's missing — post-release state removes it)
     3. Add the matching release-notes entry to UNRELEASED.md under the right section:
          substantive change → its own ## section

@@ -13,7 +13,7 @@
  * a marker annotates the nearest non-marker line above it (so a stack of
  * comments on one block all resolve to that block). This convention
  * matches both the existing VSCode editor Comments-API path
- * (`packages/vscode/src/comments/plan-review.ts`) and the canvas package's own
+ * (`apps/vscode/src/comments/plan-review.ts`) and the canvas package's own
  * tested adapter contract, so the two authoring surfaces round-trip through the
  * same bytes.
  *

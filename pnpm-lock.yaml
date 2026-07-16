@@ -8,6 +8,128 @@ importers:
 
   .: {}
 
+  apps/vscode:
+    dependencies:
+      '@cluesmith/codev-artifact-canvas':
+        specifier: workspace:*
+        version: link:../../packages/artifact-canvas
+      '@cluesmith/codev-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@cluesmith/codev-types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      react:
+        specifier: ^19.0.0
+        version: 19.2.5
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.5(react@19.2.5)
+      ws:
+        specifier: ^8.18.0
+        version: 8.20.0
+    devDependencies:
+      '@types/mocha':
+        specifier: ^10.0.10
+        version: 10.0.10
+      '@types/node':
+        specifier: 22.x
+        version: 22.19.17
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.0.0
+        version: 19.2.3(@types/react@19.2.14)
+      '@types/vscode':
+        specifier: ~1.105.0
+        version: 1.105.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      '@vscode/test-cli':
+        specifier: ^0.0.12
+        version: 0.0.12
+      '@vscode/test-electron':
+        specifier: ^2.5.2
+        version: 2.5.2
+      esbuild:
+        specifier: ^0.27.1
+        version: 0.27.7
+      eslint:
+        specifier: ^9.39.1
+        version: 9.39.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.48.1
+        version: 8.58.2(eslint@9.39.4)(typescript@5.9.3)
+      vitest:
+        specifier: ^4.0.15
+        version: 4.1.4(@types/node@22.19.17)(@vitest/coverage-v8@4.1.4)(jsdom@28.1.0)(vite@6.4.2(@types/node@22.19.17)(tsx@4.21.0))
+
+  apps/web:
+    dependencies:
+      '@cluesmith/codev-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@xterm/addon-canvas':
+        specifier: ^0.7.0
+        version: 0.7.0(@xterm/xterm@5.5.0)
+      '@xterm/addon-fit':
+        specifier: ^0.10.0
+        version: 0.10.0(@xterm/xterm@5.5.0)
+      '@xterm/addon-web-links':
+        specifier: ^0.12.0
+        version: 0.12.0
+      '@xterm/addon-webgl':
+        specifier: ^0.18.0
+        version: 0.18.0(@xterm/xterm@5.5.0)
+      '@xterm/xterm':
+        specifier: ^5.5.0
+        version: 5.5.0
+      react:
+        specifier: ^19.0.0
+        version: 19.2.5
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.5(react@19.2.5)
+      recharts:
+        specifier: ^3.7.0
+        version: 3.8.1(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react-is@19.2.5)(react@19.2.5)(redux@5.0.1)
+    devDependencies:
+      '@cluesmith/codev-types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@testing-library/jest-dom':
+        specifier: ^6.6.0
+        version: 6.9.1
+      '@testing-library/react':
+        specifier: ^16.0.0
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.0.0
+        version: 19.2.3(@types/react@19.2.14)
+      '@vitejs/plugin-react':
+        specifier: ^4.3.0
+        version: 4.7.0(vite@6.4.2(@types/node@22.19.17)(tsx@4.21.0))
+      jsdom:
+        specifier: ^26.0.0
+        version: 26.1.0
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vite:
+        specifier: ^6.0.0
+        version: 6.4.2(@types/node@22.19.17)(tsx@4.21.0)
+      vitest:
+        specifier: ^4.0.0
+        version: 4.1.4(@types/node@22.19.17)(@vitest/coverage-v8@4.1.4)(jsdom@26.1.0)(vite@6.4.2(@types/node@22.19.17)(tsx@4.21.0))
+
   packages/artifact-canvas:
     dependencies:
       dompurify:
@@ -102,12 +224,12 @@ importers:
         specifier: ^8.18.0
         version: 8.20.0
     devDependencies:
-      '@cluesmith/codev-dashboard':
-        specifier: workspace:*
-        version: link:../dashboard
       '@cluesmith/codev-types':
         specifier: workspace:*
         version: link:../types
+      '@cluesmith/codev-web':
+        specifier: workspace:*
+        version: link:../../apps/web
       '@playwright/test':
         specifier: ^1.58.0
         version: 1.59.1
@@ -162,133 +284,11 @@ importers:
         specifier: ^4.0.15
         version: 4.1.4(@types/node@22.19.17)(@vitest/coverage-v8@4.1.4)(jsdom@28.1.0)(vite@6.4.2(@types/node@22.19.17)(tsx@4.21.0))
 
-  packages/dashboard:
-    dependencies:
-      '@cluesmith/codev-core':
-        specifier: workspace:*
-        version: link:../core
-      '@xterm/addon-canvas':
-        specifier: ^0.7.0
-        version: 0.7.0(@xterm/xterm@5.5.0)
-      '@xterm/addon-fit':
-        specifier: ^0.10.0
-        version: 0.10.0(@xterm/xterm@5.5.0)
-      '@xterm/addon-web-links':
-        specifier: ^0.12.0
-        version: 0.12.0
-      '@xterm/addon-webgl':
-        specifier: ^0.18.0
-        version: 0.18.0(@xterm/xterm@5.5.0)
-      '@xterm/xterm':
-        specifier: ^5.5.0
-        version: 5.5.0
-      react:
-        specifier: ^19.0.0
-        version: 19.2.5
-      react-dom:
-        specifier: ^19.0.0
-        version: 19.2.5(react@19.2.5)
-      recharts:
-        specifier: ^3.7.0
-        version: 3.8.1(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react-is@19.2.5)(react@19.2.5)(redux@5.0.1)
-    devDependencies:
-      '@cluesmith/codev-types':
-        specifier: workspace:*
-        version: link:../types
-      '@testing-library/jest-dom':
-        specifier: ^6.6.0
-        version: 6.9.1
-      '@testing-library/react':
-        specifier: ^16.0.0
-        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.14
-      '@types/react-dom':
-        specifier: ^19.0.0
-        version: 19.2.3(@types/react@19.2.14)
-      '@vitejs/plugin-react':
-        specifier: ^4.3.0
-        version: 4.7.0(vite@6.4.2(@types/node@22.19.17)(tsx@4.21.0))
-      jsdom:
-        specifier: ^26.0.0
-        version: 26.1.0
-      typescript:
-        specifier: ^5.7.0
-        version: 5.9.3
-      vite:
-        specifier: ^6.0.0
-        version: 6.4.2(@types/node@22.19.17)(tsx@4.21.0)
-      vitest:
-        specifier: ^4.0.0
-        version: 4.1.4(@types/node@22.19.17)(@vitest/coverage-v8@4.1.4)(jsdom@26.1.0)(vite@6.4.2(@types/node@22.19.17)(tsx@4.21.0))
-
   packages/types:
     devDependencies:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
-
-  packages/vscode:
-    dependencies:
-      '@cluesmith/codev-artifact-canvas':
-        specifier: workspace:*
-        version: link:../artifact-canvas
-      '@cluesmith/codev-core':
-        specifier: workspace:*
-        version: link:../core
-      '@cluesmith/codev-types':
-        specifier: workspace:*
-        version: link:../types
-      react:
-        specifier: ^19.0.0
-        version: 19.2.5
-      react-dom:
-        specifier: ^19.0.0
-        version: 19.2.5(react@19.2.5)
-      ws:
-        specifier: ^8.18.0
-        version: 8.20.0
-    devDependencies:
-      '@types/mocha':
-        specifier: ^10.0.10
-        version: 10.0.10
-      '@types/node':
-        specifier: 22.x
-        version: 22.19.17
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.14
-      '@types/react-dom':
-        specifier: ^19.0.0
-        version: 19.2.3(@types/react@19.2.14)
-      '@types/vscode':
-        specifier: ~1.105.0
-        version: 1.105.0
-      '@types/ws':
-        specifier: ^8.18.1
-        version: 8.18.1
-      '@vscode/test-cli':
-        specifier: ^0.0.12
-        version: 0.0.12
-      '@vscode/test-electron':
-        specifier: ^2.5.2
-        version: 2.5.2
-      esbuild:
-        specifier: ^0.27.1
-        version: 0.27.7
-      eslint:
-        specifier: ^9.39.1
-        version: 9.39.4
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      typescript-eslint:
-        specifier: ^8.48.1
-        version: 8.58.2(eslint@9.39.4)(typescript@5.9.3)
-      vitest:
-        specifier: ^4.0.15
-        version: 4.1.4(@types/node@22.19.17)(@vitest/coverage-v8@4.1.4)(jsdom@28.1.0)(vite@6.4.2(@types/node@22.19.17)(tsx@4.21.0))
 
 packages:
 
@@ -4553,7 +4553,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.0.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.4(@types/node@22.19.17)(@vitest/coverage-v8@4.1.4)(jsdom@26.1.0)(vite@6.4.2(@types/node@22.19.17)(tsx@4.21.0))
+      vitest: 4.1.4(@types/node@22.19.17)(@vitest/coverage-v8@4.1.4)(jsdom@28.1.0)(vite@6.4.2(@types/node@22.19.17)(tsx@4.21.0))
 
   '@vitest/expect@4.1.4':
     dependencies:
