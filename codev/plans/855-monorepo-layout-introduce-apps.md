@@ -47,26 +47,31 @@ Use `git mv` for the directory moves so `git log --follow` history is preserved.
 After the moves, run `pnpm install` to regenerate `pnpm-lock.yaml` importer keys,
 then `pnpm build` + tests to confirm the wiring.
 
-### Decisions for the reviewer (issue's open questions)
+### Decisions (issue's open questions — resolved with the reviewer)
 
-These are the issue's "Questions for the team." My recommendation for each; the
-`plan-approval` gate is where you confirm or redirect.
-
-1. **Split now, all in one PR?** — *Recommend yes* (single PR, both moves). Redirect
-   to phased PRs if you'd rather land the glob first.
+1. **Split now, all in one PR?** — **CONFIRMED: yes**, single PR, glob + both moves.
 2. **Rename npm package `@cluesmith/codev-dashboard` → `@cluesmith/codev-web`?**
-   — *Recommend yes.* The package is `private: true`; blast radius is fully
+   — **CONFIRMED: yes.** The package is `private: true`; blast radius is fully
    internal (one dependency entry in `packages/codev/package.json` + three test
-   imports of `@cluesmith/codev-dashboard/lib/*` in `packages/codev`). Renaming
-   keeps the package name aligned with its `apps/web` home; leaving it as
-   `codev-dashboard` under `apps/web` is a lasting small dissonance. Say the word
-   and I'll instead keep the package name and only move the directory.
-3. **User-facing "Dashboard" brand** — *Recommend keep as-is.* This is a
-   directory/package decision only. The many "Tower dashboard" references in code
-   comments and the `area/dashboard` label describe the *product concept* and
-   stay untouched.
-4. **Naming (`web` vs `dashboard`, `mobile` vs `native`)** — *Recommend the
-   issue's `web` / `mobile` / `vscode` surface axis.* No change proposed.
+   imports of `@cluesmith/codev-dashboard/lib/*` in `packages/codev`). Baked into
+   "Files to Change" below as a definite change.
+3. **User-facing "Dashboard" brand** — **Recommend keep as-is** (pending final
+   confirm). Scope note: this PR renames only the *directory* (`apps/web`) and the
+   *package name* (`@cluesmith/codev-web`). It does **not** sweep the word
+   "Dashboard" from user-facing/product surfaces — the `area/dashboard` GitHub
+   label, "Tower dashboard" code comments, and UI copy describe the *product
+   concept* and stay untouched. Rebranding that word is a separate cosmetic
+   follow-up if desired.
+4. **Naming + single unified app** — Keep the issue's `web` / `mobile` / `vscode`
+   surface axis for now. The reviewer raised exploring a **single Expo /
+   React Native Web app** covering web + mobile instead of two projects. That is
+   **out of scope for #855** and tracked as a separate RESEARCH/EXPERIMENT track.
+   Crucially, this move does **not** foreclose it: `apps/web` + `apps/mobile` as
+   peers is compatible with a later unified `apps/app`, and the shareable
+   non-terminal surfaces already have a cross-host home in
+   `@cluesmith/codev-artifact-canvas`. (Main blocker for a unified app is that the
+   web surface's load-bearing feature — live xterm.js terminals — is DOM-only and
+   doesn't port to React Native.)
 
 ## Files to Change
 
@@ -114,12 +119,14 @@ These are the issue's "Questions for the team." My recommendation for each; the
 ### Moved package's own metadata
 - `apps/vscode/package.json` — `repository.directory: "packages/vscode"` → `"apps/vscode"`.
 
-### Package rename (only if Decision 2 = yes)
+### Package rename (Decision 2 = confirmed yes)
 - `apps/web/package.json:2` — name `@cluesmith/codev-dashboard` → `@cluesmith/codev-web`.
 - `packages/codev/package.json:55` — dependency key → `@cluesmith/codev-web: workspace:*`.
 - `packages/codev/src/__tests__/filePathLinkProvider.test.ts:13-14` and
   `packages/codev/src/agent-farm/__tests__/open-files-shells-section.test.ts:11`
   — import specifiers `@cluesmith/codev-dashboard/lib/*` → `@cluesmith/codev-web/lib/*`.
+- After the rename, re-grep for any lingering `@cluesmith/codev-dashboard`
+  (excluding historical `codev/` records) to confirm the sweep is complete.
 
 ### Live docs describing the layout
 - `codev/resources/arch.md` — Monorepo Structure table + structure tree + ASCII
@@ -127,8 +134,9 @@ These are the issue's "Questions for the team." My recommendation for each; the
   update `packages/dashboard` / `packages/vscode` → `apps/web` / `apps/vscode`.
 - `CLAUDE.md` / `AGENTS.md` — the "Directory Map" / structure references. These
   two must stay **byte-identical** to each other. Update only genuine
-  *current-layout* references; the `area/dashboard` label description (keyed on
-  the product concept / package name) changes only if Decision 2 = yes.
+  *current-layout* references. The `area/dashboard` label description stays
+  untouched (Decision 3: the "Dashboard" product concept is not rebranded — the
+  package-rename in Decision 2 does not touch the label).
 - `packages/core/src/review-markers.ts:16` — comment path
   `packages/vscode/src/comments/plan-review.ts` → `apps/vscode/...` (cosmetic accuracy).
 
