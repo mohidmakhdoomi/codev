@@ -233,6 +233,11 @@ Projects currently in development (conceived through committed), sorted by prior
 
 ```yaml
 releases:
+  - version: "v3.2.3"
+    name: "Karnak"
+    status: released
+    target_date: "2026-07-16"
+    notes: "Third patch on the Karnak (v3.2.x) line. Multi-architect UX polish across the Agents view: childless architects stay visible so a row can't disappear when the last builder is cleaned up (#1174/PR #1175); idle sibling architects group under a collapsible 'Idle Architects' node when there are 2+ of them, with main always its own row (#1182/PR #1183); the per-window terminal cap is configurable via `codev.maxTerminals` with a new default of 25 up from 10 (#1180/PR #1181); group-header context menus no longer offer builder-scoped actions on group rows (#1170/PR #1172); Backlog 'Reference issue in architect' honors the QuickPick selection (#1139/PR #1157). Recovery-family investigation closeout — four independent fixes to Tower's recovery pathways: `afx workspace recover` preserves each builder's original owning architect (#1140/PR #1156); `codev adopt` and main-architect launch no longer hijack unrelated Claude Code sessions (#1145/PR #1160); deliberately-removed sibling architects stay removed across stop/start cycles (#1150/PR #1178); Claude-architect crash-loops on stale `--resume` UUIDs degrade to a fresh session (#1149/PR #1184). VS Code IDE-mode foundation lands as `codev.hasWorkspace`/`codev.ideMode` context keys with provably-inert marketplace behaviour and a first-run empty-window surface for the Codev IDE fork (#1144/PR #1148). Sidebar defaults collapse lower-priority views (#1169/PR #1171); 'Dev Server' phrasing throughout the runnable-worktrees feature becomes 'Dev' so non-web-stack users can see themselves in it (#1158/PR #1173) — breaking change for `keybindings.json` entries targeting `codev.devServer.*` (must migrate to `codev.dev.*`). Codex CMAP lane restored on macOS 26 by moving off a certificate-revoked codex-sdk vendor binary (#1128/PR #1141); VS Code extension prepublish now builds every workspace dep so fresh clones pass check-types (#1154/PR #1155). Codev Mobile design refresh lands as a research artifact — no runtime impact (#1153). No external contributors this cycle."
   - version: "v3.2.2"
     name: "Karnak"
     status: released
