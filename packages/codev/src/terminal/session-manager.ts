@@ -21,12 +21,25 @@ import { execFile } from 'node:child_process';
 import { defaultSessionOptions } from './index.js';
 import type { Readable } from 'node:stream';
 import { ShellperClient, type IShellperClient } from './shellper-client.js';
+import type { ExitMessage } from './shellper-protocol.js';
 
 export interface SessionManagerConfig {
   socketDir: string;
   shellperScript: string;
   nodeExecutable: string;
   logger?: (message: string) => void;
+}
+
+/**
+ * Alternate launch config applied once if the session crash-loops (Issue #1149:
+ * CRASH_LOOP_THRESHOLD failing exits inside CRASH_LOOP_WINDOW_MS). The caller
+ * precomputes it; this layer stays agnostic of what the args mean.
+ */
+export interface CrashLoopFallback {
+  args: string[];
+  env: Record<string, string>;
+  /** Fired once when the fallback is applied (caller repairs persisted state, logs). */
+  onApply?: () => void;
 }
 
 export interface CreateSessionOptions {
@@ -41,6 +54,7 @@ export interface CreateSessionOptions {
   restartDelay?: number;
   maxRestarts?: number;
   restartResetAfter?: number;
+  crashLoopFallback?: CrashLoopFallback;
 }
 
 export interface ReconnectRestartOptions {
@@ -51,6 +65,28 @@ export interface ReconnectRestartOptions {
   restartDelay?: number;
   maxRestarts?: number;
   restartResetAfter?: number;
+  crashLoopFallback?: CrashLoopFallback;
+}
+
+/** Failing exits inside this window count toward crash-loop detection. */
+export const CRASH_LOOP_WINDOW_MS = 30_000;
+/** Failing exits within the window needed to declare a crash loop. */
+export const CRASH_LOOP_THRESHOLD = 3;
+
+/**
+ * Issue #1149: true when the recorded failing-exit timestamps amount to a
+ * crash loop (>= CRASH_LOOP_THRESHOLD failures inside the trailing
+ * CRASH_LOOP_WINDOW_MS ending at `now`). Pure so the policy is testable
+ * without spawning processes.
+ */
+export function isCrashLooping(failingExitTimes: number[], now: number): boolean {
+  let recent = 0;
+  for (const t of failingExitTimes) {
+    if (now - t <= CRASH_LOOP_WINDOW_MS) {
+      recent++;
+    }
+  }
+  return recent >= CRASH_LOOP_THRESHOLD;
 }
 
 /**
@@ -118,6 +154,8 @@ interface ManagedSession {
   options: CreateSessionOptions;
   restartCount: number;
   restartResetTimer: ReturnType<typeof setTimeout> | null;
+  /** Timestamps of nonzero-code exits, pruned to CRASH_LOOP_WINDOW_MS (Issue #1149). */
+  failingExitTimes: number[];
   stderrBuffer: StderrBuffer | null;
   stderrStream: Readable | null;
   stderrTailLogged: boolean;
@@ -218,6 +256,7 @@ export class SessionManager extends EventEmitter {
       options: opts,
       restartCount: 0,
       restartResetTimer: null,
+      failingExitTimes: [],
       stderrBuffer: null, // stderr goes to file, not pipe (Bugfix #324)
       stderrStream: null,
       stderrTailLogged: false,
@@ -335,9 +374,11 @@ export class SessionManager extends EventEmitter {
           maxRestarts: restartOptions?.maxRestarts,
           restartResetAfter: restartOptions?.restartResetAfter,
         }),
+        crashLoopFallback: restartOptions?.crashLoopFallback,
       },
       restartCount: 0,
       restartResetTimer: null,
+      failingExitTimes: [],
       stderrBuffer: null,
       stderrStream: null,
       stderrTailLogged: false,
@@ -843,7 +884,7 @@ export class SessionManager extends EventEmitter {
   }
 
   private setupAutoRestart(session: ManagedSession, sessionId: string): void {
-    session.client.on('exit', () => {
+    session.client.on('exit', (exit: ExitMessage) => {
       // Check if session was removed (killed intentionally)
       if (!this.sessions.has(sessionId)) return;
 
@@ -853,6 +894,21 @@ export class SessionManager extends EventEmitter {
       if (session.restartResetTimer) {
         clearTimeout(session.restartResetTimer);
         session.restartResetTimer = null;
+      }
+
+      // Issue #1149: a fast-failing process (e.g. an unresumable `--resume`
+      // replayed verbatim) never lives long enough for the reset timer to
+      // clear the counter, so it would burn all restarts on identical args.
+      // Count failing exits and swap to the caller-provided fallback launch
+      // once they amount to a crash loop. Clean exits (code 0) never count:
+      // a user quitting a healthy session repeatedly must not trigger it.
+      if (exit.code !== 0) {
+        const now = Date.now();
+        session.failingExitTimes = session.failingExitTimes.filter(
+          (t) => now - t <= CRASH_LOOP_WINDOW_MS,
+        );
+        session.failingExitTimes.push(now);
+        this.maybeApplyCrashLoopFallback(session, sessionId, now);
       }
 
       const maxRestarts = session.options.maxRestarts ?? 50;
@@ -888,6 +944,32 @@ export class SessionManager extends EventEmitter {
         this.startRestartResetTimer(session);
       }, delay);
     });
+  }
+
+  /**
+   * Issue #1149: swap the session's launch options to the caller-provided
+   * fallback when the failing-exit history amounts to a crash loop. One-shot:
+   * the fallback is consumed on application, so a fallback that itself
+   * crash-loops proceeds to the ordinary maxRestarts cap. The next scheduled
+   * restart picks the swapped options up automatically because spawn() reads
+   * session.options.
+   */
+  private maybeApplyCrashLoopFallback(session: ManagedSession, sessionId: string, now: number): void {
+    const fallback = session.options.crashLoopFallback;
+    if (!fallback) return;
+    if (!isCrashLooping(session.failingExitTimes, now)) return;
+
+    session.options.args = fallback.args;
+    session.options.env = fallback.env;
+    session.options.crashLoopFallback = undefined;
+    this.log(`Session ${sessionId} crash-looping; applying fallback launch args`);
+    if (fallback.onApply) {
+      try {
+        fallback.onApply();
+      } catch (err) {
+        this.log(`Session ${sessionId} crash-loop fallback onApply failed: ${(err as Error).message}`);
+      }
+    }
   }
 
   private startRestartResetTimer(session: ManagedSession): void {

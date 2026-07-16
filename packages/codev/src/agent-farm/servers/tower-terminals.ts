@@ -34,7 +34,7 @@ function extractShellperSessionId(socketPath: string | null): string | null {
 import type { SessionManager, ReconnectRestartOptions } from '../../terminal/session-manager.js';
 import type { PtySession } from '../../terminal/pty-session.js';
 import type { WorkspaceTerminals, TerminalEntry, DbTerminalSession } from './tower-types.js';
-import { normalizeWorkspacePath, resolveArchitectRestart } from './tower-utils.js';
+import { normalizeWorkspacePath, resolveArchitectRestart, buildArchitectCrashLoopFallback } from './tower-utils.js';
 import { setArchitectByName } from '../state.js';
 import { isIntentionallyStopping } from './tower-instances.js';
 
@@ -660,7 +660,7 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
         // heals (the next spawn/revival stores an id). The minted id on the fresh
         // branch is not persisted here (the bake precedes the actual restart) —
         // fine, since post-#832 architects always carry a stored id and resume.
-        const { args: architectArgs, env: harnessEnv, resumed, storedSessionId } =
+        const { args: architectArgs, env: harnessEnv, resumed, storedSessionId, fallback } =
           resolveArchitectRestart(workspacePath, architectName, cmdParts.slice(1));
         if (resumed && storedSessionId) {
           _deps.log('INFO', `Resuming architect '${architectName}' session ${storedSessionId.slice(0, 8)}… on restart in ${workspacePath}`);
@@ -673,6 +673,19 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
           restartDelay: 2000,
           maxRestarts: 50,
         };
+        // Issue #1149: if the resumed session fast-fails at runtime (jsonl
+        // vanished after the bake, or corrupt), degrade to a fresh launch
+        // instead of burning all 50 restarts on identical args.
+        if (resumed && storedSessionId && fallback) {
+          restartOptions.crashLoopFallback = buildArchitectCrashLoopFallback({
+            workspacePath,
+            architectName,
+            storedSessionId,
+            fallback,
+            baseEnv: cleanEnv,
+            log: _deps.log,
+          });
+        }
       } catch (err) {
         _deps.log('WARN', `Harness resolution failed for workspace ${workspacePath}: ${err instanceof Error ? err.message : err}`);
         // Fall back to plain command without harness role-prompt args so the
@@ -898,7 +911,7 @@ export async function getTerminalsForWorkspace(
           try {
             // Issue #832: revive the same conversation on auto-restart via the
             // stored session id (see matching block above).
-            const { args: architectArgs, env: harnessEnv, resumed, storedSessionId } =
+            const { args: architectArgs, env: harnessEnv, resumed, storedSessionId, fallback } =
               resolveArchitectRestart(dbSession.workspace_path, architectName, cmdParts.slice(1));
             if (resumed && storedSessionId) {
               _deps.log('INFO', `Resuming architect '${architectName}' session ${storedSessionId.slice(0, 8)}… on reconnect in ${dbSession.workspace_path}`);
@@ -911,6 +924,18 @@ export async function getTerminalsForWorkspace(
               restartDelay: 2000,
               maxRestarts: 50,
             };
+            // Issue #1149: degrade a fast-failing resume to a fresh launch
+            // (see matching block in reconcileTerminalSessionsInner above).
+            if (resumed && storedSessionId && fallback) {
+              restartOptions.crashLoopFallback = buildArchitectCrashLoopFallback({
+                workspacePath: dbSession.workspace_path,
+                architectName,
+                storedSessionId,
+                fallback,
+                baseEnv: cleanEnv,
+                log: _deps.log,
+              });
+            }
           } catch (err) {
             _deps.log('WARN', `Harness resolution failed for workspace ${dbSession.workspace_path}: ${err instanceof Error ? err.message : err}`);
             restartOptions = {

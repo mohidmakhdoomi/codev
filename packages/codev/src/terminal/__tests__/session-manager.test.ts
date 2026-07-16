@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
-import { SessionManager, StderrBuffer, getProcessStartTime, type CreateSessionOptions } from '../session-manager.js';
+import { SessionManager, StderrBuffer, getProcessStartTime, isCrashLooping, CRASH_LOOP_WINDOW_MS, type CreateSessionOptions } from '../session-manager.js';
 import { ShellperProcess, type IShellperPty, type PtyOptions } from '../shellper-process.js';
 import { ShellperClient } from '../shellper-client.js';
 
@@ -1122,6 +1122,146 @@ describe('SessionManager', () => {
 
       expect(err.message).toContain('Max restarts (2) exceeded');
     }, 20000);
+
+    // Issue #1149: a fast-failing launch (e.g. an unresumable --resume) swaps
+    // to the caller-provided fallback args after 3 failing exits within the
+    // window. Spawns real shellper processes — skip in CI.
+    it.skipIf(!!process.env.CI)('applies crashLoopFallback after repeated fast failures', async () => {
+      const shellperScript = path.resolve(
+        path.dirname(new URL(import.meta.url).pathname),
+        '../../../dist/terminal/shellper-main.js',
+      );
+
+      const manager = new SessionManager({
+        socketDir,
+        shellperScript,
+        nodeExecutable: process.execPath,
+      });
+
+      const sentinel = path.join(socketDir, 'fallback-applied');
+      const onApply = vi.fn();
+      const testEnv = { PATH: process.env.PATH || '/usr/bin:/bin' };
+
+      await manager.createSession({
+        sessionId: 'crashloop-test',
+        command: '/bin/sh',
+        args: ['-c', 'exit 1'],
+        cwd: '/tmp',
+        env: testEnv,
+        cols: 80,
+        rows: 24,
+        restartOnExit: true,
+        restartDelay: 100,
+        maxRestarts: 10,
+        crashLoopFallback: {
+          args: ['-c', `touch '${sentinel}' && sleep 30`],
+          env: testEnv,
+          onApply,
+        },
+      });
+      const clInfo = manager.getSessionInfo('crashloop-test');
+      if (clInfo) shellperPids.add(clInfo.pid);
+      cleanupFns.push(async () => {
+        try { await manager.killSession('crashloop-test'); } catch { /* noop */ }
+      });
+
+      // Wait for the fallback launch to touch the sentinel file
+      const deadline = Date.now() + 10000;
+      while (!fs.existsSync(sentinel) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      expect(fs.existsSync(sentinel)).toBe(true);
+      expect(onApply).toHaveBeenCalledTimes(1);
+      // The fallback command sleeps, so the session should still be alive
+      expect(manager.getSessionInfo('crashloop-test')).not.toBeNull();
+    }, 20000);
+
+    // Issue #1149: clean exits (code 0) never trigger the fallback — a user
+    // quitting a healthy session repeatedly must not lose a valid resumable
+    // conversation. Spawns real shellper processes — skip in CI.
+    it.skipIf(!!process.env.CI)('does not apply crashLoopFallback on clean exits', async () => {
+      const shellperScript = path.resolve(
+        path.dirname(new URL(import.meta.url).pathname),
+        '../../../dist/terminal/shellper-main.js',
+      );
+
+      const manager = new SessionManager({
+        socketDir,
+        shellperScript,
+        nodeExecutable: process.execPath,
+      });
+
+      const sentinel = path.join(socketDir, 'fallback-clean-exit');
+      const onApply = vi.fn();
+      const testEnv = { PATH: process.env.PATH || '/usr/bin:/bin' };
+
+      await manager.createSession({
+        sessionId: 'cleanexit-test',
+        command: '/bin/sh',
+        args: ['-c', 'exit 0'],
+        cwd: '/tmp',
+        env: testEnv,
+        cols: 80,
+        rows: 24,
+        restartOnExit: true,
+        restartDelay: 50,
+        maxRestarts: 3,
+        crashLoopFallback: {
+          args: ['-c', `touch '${sentinel}' && sleep 30`],
+          env: testEnv,
+          onApply,
+        },
+      });
+      const ceInfo = manager.getSessionInfo('cleanexit-test');
+      if (ceInfo) shellperPids.add(ceInfo.pid);
+      cleanupFns.push(async () => {
+        try { await manager.killSession('cleanexit-test'); } catch { /* noop */ }
+      });
+
+      // Clean exits still restart; the session exhausts maxRestarts without
+      // ever counting a failing exit.
+      const errorPromise = new Promise<Error>((resolve) => {
+        manager.on('session-error', (_id: string, err: Error) => {
+          if (err.message.includes('Max restarts')) {
+            resolve(err);
+          }
+        });
+      });
+      await Promise.race([
+        errorPromise,
+        new Promise<Error>((_, reject) => setTimeout(() => reject(new Error('timeout waiting for max restarts')), 15000)),
+      ]);
+
+      expect(onApply).not.toHaveBeenCalled();
+      expect(fs.existsSync(sentinel)).toBe(false);
+    }, 20000);
+  });
+
+  describe('isCrashLooping (Issue #1149)', () => {
+    it('returns false below the failure threshold', () => {
+      const now = 1_000_000;
+      expect(isCrashLooping([], now)).toBe(false);
+      expect(isCrashLooping([now - 1000], now)).toBe(false);
+      expect(isCrashLooping([now - 2000, now - 1000], now)).toBe(false);
+    });
+
+    it('returns true at 3 failures inside the window', () => {
+      const now = 1_000_000;
+      expect(isCrashLooping([now - 5000, now - 2500, now], now)).toBe(true);
+    });
+
+    it('ignores failures older than the window', () => {
+      const now = 1_000_000;
+      const stale = now - CRASH_LOOP_WINDOW_MS - 1;
+      expect(isCrashLooping([stale, now - 2000, now - 1000], now)).toBe(false);
+    });
+
+    it('counts a failure exactly at the window boundary', () => {
+      const now = 1_000_000;
+      const edge = now - CRASH_LOOP_WINDOW_MS;
+      expect(isCrashLooping([edge, now - 1000, now], now)).toBe(true);
+    });
   });
 
   describe('shutdown (disconnect without killing)', () => {

@@ -171,6 +171,19 @@ export function setArchitectByName(workspacePath: string, name: string, architec
 }
 
 /**
+ * Issue #1149: repair the stored conversation id on an architect row after a
+ * crash-loop fallback replaced an unresumable session. Targeted UPDATE so the
+ * rest of the row (cmd, terminal id, timestamps) is untouched; a no-op when
+ * the row does not exist.
+ */
+export function setArchitectSessionId(workspacePath: string, name: string, sessionId: string | null): void {
+  const db = getDb();
+  const ws = canonicalize(workspacePath);
+  db.prepare('UPDATE architect SET session_id = ? WHERE workspace_path = ? AND id = ?')
+    .run(sessionId, ws, name);
+}
+
+/**
  * Add or update a builder
  * Note: This is now synchronous
  */

@@ -21,15 +21,18 @@ import {
   resolveArchitectLaunch,
   resolveArchitectRestart,
   siblingRegistrationIsLive,
+  buildArchitectCrashLoopFallback,
 } from '../servers/tower-utils.js';
 
-// resolveArchitectRestart reads the architect row via getArchitectByName; mock just
-// that one export so the restart-bake wiring is testable without a live state.db.
+// resolveArchitectRestart reads the architect row via getArchitectByName, and
+// buildArchitectCrashLoopFallback's onApply writes it back via
+// setArchitectSessionId; mock just those two exports so the wiring is testable
+// without a live state.db.
 vi.mock('../state.js', async (importOriginal) => {
   const actual = (await importOriginal()) as typeof import('../state.js');
-  return { ...actual, getArchitectByName: vi.fn() };
+  return { ...actual, getArchitectByName: vi.fn(), setArchitectSessionId: vi.fn() };
 });
-import { getArchitectByName } from '../state.js';
+import { getArchitectByName, setArchitectSessionId } from '../state.js';
 import { encodeClaudeProjectDir } from '../utils/claude-session-discovery.js';
 
 /**
@@ -326,6 +329,51 @@ describe('resolveArchitectLaunch (Issue #832)', () => {
     expect(sessionId).toBeNull();
     expect(resumed).toBe(false);
   });
+
+  // Issue #1149: the resume branch precomputes the crash-loop fallback.
+
+  it('resume branch returns a fallback holding the fresh-launch variant', () => {
+    writeSessionFixture(fakeHome, workspace, 'stored-abc');
+    const { resumed, fallback } = resolveArchitectLaunch({
+      workspacePath: workspace, name: 'main', baseArgs: ['--foo'], storedSessionId: 'stored-abc', homeDir: fakeHome,
+    });
+    expect(resumed).toBe(true);
+    expect(fallback).toBeDefined();
+    expect(fallback!.sessionId).toMatch(UUID_RE);
+    expect(fallback!.sessionId).not.toBe('stored-abc');
+    // The fallback is a real fresh launch: pinned to the minted id, no resume,
+    // baseArgs preserved.
+    expect(fallback!.args).not.toContain('--resume');
+    expect(fallback!.args).toContain('--session-id');
+    expect(fallback!.args[fallback!.args.indexOf('--session-id') + 1]).toBe(fallback!.sessionId);
+    expect(fallback!.args).toContain('--foo');
+  });
+
+  it('fresh branch returns no fallback', () => {
+    const { resumed, fallback } = resolveArchitectLaunch({
+      workspacePath: workspace, name: 'main', baseArgs: [], storedSessionId: null, homeDir: fakeHome,
+    });
+    expect(resumed).toBe(false);
+    expect(fallback).toBeUndefined();
+  });
+
+  it('CODEV_SKIP_RESUME=1 forces a fresh launch even with a valid stored id', () => {
+    writeSessionFixture(fakeHome, workspace, 'stored-abc');
+    vi.stubEnv('CODEV_SKIP_RESUME', '1');
+    try {
+      const { args, sessionId, resumed, fallback } = resolveArchitectLaunch({
+        workspacePath: workspace, name: 'main', baseArgs: [], storedSessionId: 'stored-abc', homeDir: fakeHome,
+      });
+      expect(args).not.toContain('--resume');
+      expect(args).toContain('--session-id');
+      expect(resumed).toBe(false);
+      expect(fallback).toBeUndefined();
+      expect(sessionId).toMatch(UUID_RE);
+      expect(sessionId).not.toBe('stored-abc');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
 
 describe('siblingRegistrationIsLive (Issue #1150)', () => {
@@ -441,5 +489,56 @@ describe('resolveArchitectRestart (Issue #832 — shellper auto-restart bake)', 
       (name === 'reviewer' ? { sessionId: 'rev-1' } : { sessionId: 'casa-1' }) as never);
     expect(resolveArchitectRestart(workspace, 'reviewer', [], { homeDir: fakeHome }).args).toEqual(['--resume', 'rev-1']);
     expect(resolveArchitectRestart(workspace, 'casa', [], { homeDir: fakeHome }).args).toEqual(['--resume', 'casa-1']);
+  });
+
+  it('passes the crash-loop fallback through on resume (Issue #1149)', () => {
+    writeSessionFixture(fakeHome, workspace, 'stored-xyz');
+    mockGet.mockReturnValue({ name: 'reviewer', cmd: 'claude', startedAt: 'x', sessionId: 'stored-xyz' } as never);
+    const { resumed, fallback } = resolveArchitectRestart(workspace, 'reviewer', [], { homeDir: fakeHome });
+    expect(resumed).toBe(true);
+    expect(fallback).toBeDefined();
+    expect(fallback!.args).toContain('--session-id');
+    expect(fallback!.args).not.toContain('--resume');
+  });
+});
+
+describe('buildArchitectCrashLoopFallback (Issue #1149)', () => {
+  const mockSet = vi.mocked(setArchitectSessionId);
+  const baseFallback = { args: ['--session-id', 'minted-1'], env: { HARNESS: 'x' }, sessionId: 'minted-1' };
+
+  beforeEach(() => {
+    mockSet.mockReset();
+  });
+
+  it('carries the fresh args and merges the base env under the fallback env', () => {
+    const built = buildArchitectCrashLoopFallback({
+      workspacePath: '/ws', architectName: 'main', storedSessionId: 'poisoned-1',
+      fallback: baseFallback, baseEnv: { PATH: '/bin', HARNESS: 'base' }, log: vi.fn(),
+    });
+    expect(built.args).toEqual(['--session-id', 'minted-1']);
+    expect(built.env).toEqual({ PATH: '/bin', HARNESS: 'x' });
+  });
+
+  it('onApply logs the unrecoverable session and persists the minted id', () => {
+    const log = vi.fn();
+    const built = buildArchitectCrashLoopFallback({
+      workspacePath: '/ws', architectName: 'reviewer', storedSessionId: 'poisoned-12345678',
+      fallback: baseFallback, baseEnv: {}, log,
+    });
+    built.onApply!();
+    expect(log).toHaveBeenCalledWith('WARN', expect.stringContaining('poisoned'));
+    expect(log).toHaveBeenCalledWith('WARN', expect.stringContaining("reviewer"));
+    expect(mockSet).toHaveBeenCalledExactlyOnceWith('/ws', 'reviewer', 'minted-1');
+  });
+
+  it('onApply does not throw when persistence fails; it logs instead', () => {
+    const log = vi.fn();
+    mockSet.mockImplementation(() => { throw new Error('db locked'); });
+    const built = buildArchitectCrashLoopFallback({
+      workspacePath: '/ws', architectName: 'main', storedSessionId: 'poisoned-1',
+      fallback: baseFallback, baseEnv: {}, log,
+    });
+    expect(() => built.onApply!()).not.toThrow();
+    expect(log).toHaveBeenCalledWith('WARN', expect.stringContaining('db locked'));
   });
 });

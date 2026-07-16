@@ -15,7 +15,8 @@ import crypto from 'node:crypto';
 import { loadRolePrompt, type RoleConfig } from '../utils/roles.js';
 import { getArchitectHarness } from '../utils/config.js';
 import type { HarnessProvider } from '../utils/harness.js';
-import { getArchitectByName } from '../state.js';
+import { getArchitectByName, setArchitectSessionId } from '../state.js';
+import type { CrashLoopFallback } from '../../terminal/session-manager.js';
 
 // ============================================================================
 // Rate Limiting
@@ -260,7 +261,22 @@ export function siblingRegistrationIsLive(
  *
  * The returned `sessionId` is the value the caller writes onto the architect row,
  * so the column is populated correctly on every spawn.
+ *
+ * Issue #1149: the resume branch also returns `fallback`, the precomputed
+ * fresh-launch variant (role injection + newly minted pinned id). Callers hand
+ * it to the shellper layer as the crash-loop escape: the #1145 ownership check
+ * above validates existence at bake time only, so a session whose jsonl
+ * vanishes after the bake (Claude's transcript GC) or is corrupt (existence
+ * passes, resume fails) still fast-fails at runtime; the fallback is what the
+ * restart loop degrades to. It cannot be "args minus the resume flag" because
+ * the resume branch skips role injection.
  */
+export interface ArchitectLaunchFallback {
+  args: string[];
+  env: Record<string, string>;
+  sessionId: string;
+}
+
 export function resolveArchitectLaunch(opts: {
   workspacePath: string;
   name: string;
@@ -268,7 +284,13 @@ export function resolveArchitectLaunch(opts: {
   storedSessionId?: string | null;
   /** Test seam: pins the home dir the ownership check resolves the session store under. */
   homeDir?: string;
-}): { args: string[]; env: Record<string, string>; sessionId: string | null; resumed: boolean } {
+}): {
+  args: string[];
+  env: Record<string, string>;
+  sessionId: string | null;
+  resumed: boolean;
+  fallback?: ArchitectLaunchFallback;
+} {
   const { workspacePath, baseArgs, storedSessionId, homeDir } = opts;
   const harness = getArchitectHarness(workspacePath);
 
@@ -277,16 +299,28 @@ export function resolveArchitectLaunch(opts: {
     return { ...buildArchitectArgs(baseArgs, workspacePath), sessionId: null, resumed: false };
   }
 
+  // Issue #1149: emergency escape hatch. When the stored id passes the
+  // existence check but is unresumable in practice (corrupted transcript),
+  // restarting Tower with CODEV_SKIP_RESUME=1 forces every architect to a
+  // fresh launch without waiting for the automatic crash-loop fallback.
+  const skipResume = process.env['CODEV_SKIP_RESUME'] === '1';
+
   // 2. Resume the persisted conversation (role injection skipped) — but only
   // when the session still exists on disk for this workspace. A failed or
   // throwing check falls through to a fresh spawn (Issue #1145: a stored id
   // can outlive its jsonl, and resuming it would crash-loop the restart).
-  if (storedSessionId && sessionIsOwned(harness, storedSessionId, workspacePath, homeDir)) {
+  if (!skipResume && storedSessionId && sessionIsOwned(harness, storedSessionId, workspacePath, homeDir)) {
+    const fallbackSessionId = crypto.randomUUID();
+    const fresh = buildArchitectArgs(
+      [...baseArgs, ...harness.session.newSessionArgs(fallbackSessionId)],
+      workspacePath,
+    );
     return {
       args: [...baseArgs, ...harness.session.resumeArgs(storedSessionId)],
       env: {},
       sessionId: storedSessionId,
       resumed: true,
+      fallback: { args: fresh.args, env: fresh.env, sessionId: fallbackSessionId },
     };
   }
 
@@ -315,12 +349,54 @@ export function resolveArchitectRestart(
   architectName: string,
   baseArgs: string[],
   opts?: { homeDir?: string },
-): { args: string[]; env: Record<string, string>; sessionId: string | null; resumed: boolean; storedSessionId: string | null } {
+): {
+  args: string[];
+  env: Record<string, string>;
+  sessionId: string | null;
+  resumed: boolean;
+  storedSessionId: string | null;
+  fallback?: ArchitectLaunchFallback;
+} {
   const storedSessionId = getArchitectByName(workspacePath, architectName)?.sessionId ?? null;
   const resolved = resolveArchitectLaunch({
     workspacePath, name: architectName, baseArgs, storedSessionId, homeDir: opts?.homeDir,
   });
   return { ...resolved, storedSessionId };
+}
+
+/**
+ * Issue #1149: build the crash-loop fallback handed to the shellper layer when
+ * an architect launch resumes a stored conversation. If the resumed session
+ * fast-fails (the SessionManager detector), the restart loop swaps to this
+ * fresh launch and `onApply` repairs the architect row so future bakes resume
+ * the replacement conversation instead of relearning the unresumable id.
+ *
+ * The minted id is persisted rather than NULL: a NULL id would trip #1150's
+ * dead-registration pruning for siblings, and #1145's ownership check already
+ * defuses a minted id whose jsonl never materializes (next bake degrades to a
+ * fresh spawn with zero crash cycles).
+ */
+export function buildArchitectCrashLoopFallback(opts: {
+  workspacePath: string;
+  architectName: string;
+  storedSessionId: string;
+  fallback: ArchitectLaunchFallback;
+  baseEnv: Record<string, string>;
+  log: (level: 'INFO' | 'ERROR' | 'WARN', message: string) => void;
+}): CrashLoopFallback {
+  const { workspacePath, architectName, storedSessionId, fallback, baseEnv, log } = opts;
+  return {
+    args: fallback.args,
+    env: { ...baseEnv, ...fallback.env },
+    onApply: () => {
+      log('WARN', `Architect '${architectName}' resume session ${storedSessionId.slice(0, 8)}… unrecoverable; falling back to a fresh session in ${workspacePath}`);
+      try {
+        setArchitectSessionId(workspacePath, architectName, fallback.sessionId);
+      } catch (err) {
+        log('WARN', `Failed to persist replacement session id for architect '${architectName}': ${err instanceof Error ? err.message : err}`);
+      }
+    },
+  };
 }
 
 /**

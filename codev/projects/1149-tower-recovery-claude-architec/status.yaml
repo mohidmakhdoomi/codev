@@ -1,0 +1,30 @@
+id: '1149'
+title: tower-recovery-claude-architec
+protocol: pir
+phase: review
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: approved
+    requested_at: '2026-07-08T06:37:20.305Z'
+    approved_at: '2026-07-15T05:17:30.551Z'
+  dev-approval:
+    status: approved
+    requested_at: '2026-07-15T05:31:10.499Z'
+    approved_at: '2026-07-15T23:56:42.150Z'
+  pr:
+    status: approved
+    requested_at: '2026-07-16T00:10:51.649Z'
+    approved_at: '2026-07-16T00:53:17.337Z'
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-08T06:30:55.032Z'
+updated_at: '2026-07-16T00:53:17.339Z'
+pr_history:
+  - phase: review
+    pr_number: 1184
+    branch: builder/pir-1149
+    created_at: '2026-07-16T00:07:58.943Z'
+pr_ready_for_human: false
