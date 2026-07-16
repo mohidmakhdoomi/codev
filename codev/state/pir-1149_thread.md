@@ -45,3 +45,5 @@ Commits: fa5c5137 (session manager), 5af6cb95 (tower wiring).
 ## 2026-07-16 Review phase
 
 dev-approval approved. Wrote the retrospective (codev/reviews/1149-tower-recovery-claude-architec.md), routed governance updates COLD-only: arch.md gains "Architect Resume Crash-Loop Fallback" under Error Handling and Recovery; lessons-learned.md Architecture gains the persisted-hint/runtime-feedback lesson. Hot files untouched (subsystem detail, not cap-worthy). Opening PR next.
+
+PR #1184 opened (review file as body, Fixes #1149). Porch consultation ran as a 2-way pass: claude=APPROVE, codex=APPROVE. Architect notified. Sitting at the pr gate.
