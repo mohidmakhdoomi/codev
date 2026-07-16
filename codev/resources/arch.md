@@ -856,6 +856,15 @@ function cleanupDeadProcesses(): void {
 }
 ```
 
+#### Architect Resume Crash-Loop Fallback
+
+An architect's stored conversation id (`architect.session_id` in `global.db`) is a *hint* about state Claude owns, validated at two layers:
+
+- **Bake time** (`resolveArchitectLaunch`, `tower-utils.ts`): the harness's `verifyOwnership` capability confirms the session jsonl exists on disk before the resume branch is taken; otherwise the launch degrades to a fresh session with a newly minted pinned id.
+- **Runtime** (`SessionManager.setupAutoRestart`, `session-manager.ts`): existence cannot certify resumability (transcripts can be corrupt, or garbage-collected after the bake). The session manager counts nonzero-code exits; 3 within 30 seconds is a crash loop, and it swaps once to a caller-precomputed `crashLoopFallback` launch. For architects that fallback is the fresh-launch variant (role injection + minted pinned id), precomputed on the resume branch and wired at all four resume-bake sites (two reconcile paths in `tower-terminals.ts`, two cold-spawn paths in `tower-instances.ts`). Its `onApply` callback repairs the architect row via `setArchitectSessionId`, so the unresumable id is never relearned.
+
+The terminal layer stays harness-neutral: it never sees `--resume`, only "plan A fast-fails, apply plan B". Clean exits (code 0) never count toward detection, so a user quitting a healthy session repeatedly cannot lose a resumable conversation. `CODEV_SKIP_RESUME=1` is the manual escape hatch: `resolveArchitectLaunch` ignores stored ids entirely, forcing fresh launches for every architect.
+
 #### Graceful Shutdown
 
 Tower shutdown uses a multi-step process (orchestrated in `tower-server.ts` → `gracefulShutdown()`):

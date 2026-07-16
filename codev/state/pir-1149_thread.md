@@ -41,3 +41,7 @@ Implemented per the approved plan, no deviations:
 Build green; the 3 affected test files pass (163 tests). Full suite running before porch done.
 
 Commits: fa5c5137 (session manager), 5af6cb95 (tower wiring).
+
+## 2026-07-16 Review phase
+
+dev-approval approved. Wrote the retrospective (codev/reviews/1149-tower-recovery-claude-architec.md), routed governance updates COLD-only: arch.md gains "Architect Resume Crash-Loop Fallback" under Error Handling and Recovery; lessons-learned.md Architecture gains the persisted-hint/runtime-feedback lesson. Hot files untouched (subsystem detail, not cap-worthy). Opening PR next.
