@@ -32,15 +32,15 @@ packages/codev/skeleton/
 packages/types/dist/
 packages/core/dist/
 packages/artifact-canvas/dist/
-packages/vscode/dist/
-packages/vscode/out/
+apps/vscode/dist/
+apps/vscode/out/
 *.vsix
 *.tsbuildinfo
 test-results/
 
 # Dashboard build output (copied into codev for publishing)
 packages/codev/dashboard-dist/
-packages/dashboard/dist/
+apps/web/dist/
 
 # Checklister runtime state (per-project JSON files)
 codev/checklists/*.json

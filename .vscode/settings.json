@@ -1,7 +1,7 @@
 {
     "files.exclude": {
-        "packages/vscode/out": true,
-        "packages/vscode/dist": true,
+        "apps/vscode/out": true,
+        "apps/vscode/dist": true,
         "packages/codev/dist": true
     },
     "files.watcherExclude": {
@@ -11,8 +11,8 @@
     "search.exclude": {
         "**/.builders/**": true,
         "**/node_modules/**": true,
-        "packages/vscode/out": true,
-        "packages/vscode/dist": true,
+        "apps/vscode/out": true,
+        "apps/vscode/dist": true,
         "packages/codev/dist": true
     },
     "typescript.tsc.autoDetect": "off"
