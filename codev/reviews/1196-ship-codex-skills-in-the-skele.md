@@ -11,10 +11,9 @@ from silently drifting.
 
 ## Files Changed
 
-GitHub's canonical PR scope includes the large root
-`.codex/skills/**` addition came from the contributor commit that preceded PIR
-initialization; it is part of the upstream PR because that commit is not on
-`cluesmith/codev:main`.
+GitHub's canonical PR scope includes the large root `.codex/skills/**` addition
+from the contributor commit that preceded PIR initialization; it is part of
+the upstream PR because that commit is not on `cluesmith/codev:main`.
 
 - `.codex/skills/**` (+6,558 / -0) — self-hosted Codex mirror.
 - `codev-skeleton/.codex/skills/**` (+611 / -0) — seven shipped Codex skills.
