@@ -323,3 +323,46 @@ describe('afx status — Tower-running human path (Spec 1057)', () => {
     expect(rows.map((r) => r[0])).toEqual(['builder-feedback-1']);
   });
 });
+
+// ============================================================================
+// Startup recommendations (Bugfix #1199)
+// ============================================================================
+
+describe('afx status — startup recommendations', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLoadState.mockReturnValue({
+      architect: null,
+      architects: [],
+      builders: [],
+      utils: [],
+      annotations: [],
+    });
+  });
+
+  it('recommends workspace start when Tower is running but the workspace is unregistered', async () => {
+    mockIsRunning.mockResolvedValue(true);
+    mockGetHealth.mockResolvedValue({
+      uptime: 100,
+      activeWorkspaces: 1,
+      memoryUsage: 1024 * 1024,
+    });
+    mockGetWorkspaceStatus.mockResolvedValue(null);
+
+    await status();
+
+    const info = mockLoggerInfo.mock.calls.map((c) => stripAnsi(String(c[0])));
+    expect(info).toContain(`Run 'afx workspace start' to activate this workspace`);
+    expect(info).not.toContain(`Run 'afx tower start' to activate this workspace`);
+  });
+
+  it('continues to recommend tower start when Tower is not running', async () => {
+    mockIsRunning.mockResolvedValue(false);
+
+    await status();
+
+    const info = mockLoggerInfo.mock.calls.map((c) => stripAnsi(String(c[0])));
+    expect(info).toContain(`Run 'afx tower start' to start the tower daemon`);
+    expect(info).not.toContain(`Run 'afx workspace start' to start the tower daemon`);
+  });
+});
