@@ -47,3 +47,17 @@ Plan written to `codev/plans/1187-chore-upgrade-typescript-to-6-.md`. Awaiting p
 - Bumped it directly: `typescript ^5.0.0 → ^6.0.3`, and aligned `@types/node ^20 → ^22`, `vitest ^1 → ^4` to match the real workspace (makes the "external todo app" fixture realistic for a TS 6 world). codev-skeleton has no TS pins.
 - Zero lockfile impact (not a workspace member); codev suite still 3482 pass / 48 skip. Commit `cdd949ee`.
 - Repo-wide grep now: **no `typescript` 5.x pins remain anywhere** (excl. node_modules/lockfile/dist).
+
+## Review phase
+
+- Wrote `codev/reviews/1187-*.md` (Summary/Files/Commits/Tests/Arch/Lessons/Things-to-look-at/How-to-test). Routed governance updates to COLD tier: arch.md (Technology Stack: catalog + TS6 `types:[]`; Monorepo: tsdown per-format build) and lessons-learned.md (Debugging: false-cascade + the CI config-loader trap). HOT tiers are at cap → COLD is correct.
+- Opened **PR #1193**, recorded with porch. Ran the 2-way consult (claude + codex; gemini CLI unavailable): **both APPROVE, HIGH confidence, no blocking issues**.
+
+### CI failure + fix (the real saga)
+- Architect asked me to check failed GH Actions. **Unit Tests** job red: artifact-canvas build → `Error: Failed to import module "unrun"`.
+- Root cause: tsdown 0.22.8's `auto` config-loader uses native `import()` only when Node has native TS support (Bun / Node ≥24.11), else falls back to `unrun` — an *optional* peer `unconfig-core` declares but pnpm never installs. Local Node 22 has native support (worked); CI's older Node + clean `--frozen-lockfile` hit the `unrun` branch. **Node-version-driven, not file-extension-driven.**
+- **First fix attempt (WRONG)**: renamed `tsdown.config.ts` → `.mjs` assuming extension-based loader selection. Pushed → **CI failed again identically** (my assumption was unverified — the lesson I'd literally just written). Also caught a `git add` pathspec-abort that made a commit delete the config without adding the replacement (amended before push).
+- **Second attempt (config-less CLI + copy script)**: worked but architect flagged it as hacky/sprawling. Reverted.
+- **Final fix**: keep declarative `tsdown.config.mjs`; build script = `tsdown --config-loader native`. Forces native `import()` of the plain-ESM config on every Node version. **Verified rigorously**: reproduced CI's exact failure locally with `pnpm exec tsdown --config-loader unrun` (fails identically), confirmed `--config-loader native` builds clean under that same condition.
+- **CI now fully green** (all 6 checks). Corrected the wrong `.mjs` explanation in both review + lessons docs.
+- Note: consults reviewed the pre-CI-fix diff; the fix is a build-config-loader change only (no substantive impact on their APPROVE).
