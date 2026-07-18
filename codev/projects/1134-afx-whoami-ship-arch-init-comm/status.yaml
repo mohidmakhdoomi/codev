@@ -1,0 +1,35 @@
+id: '1134'
+title: afx-whoami-ship-arch-init-comm
+protocol: spir
+phase: review
+plan_phases:
+  - id: phase_1
+    title: afx whoami command + tests
+    status: complete
+  - id: phase_2
+    title: arch-init skill in both trees + tests
+    status: complete
+  - id: phase_3
+    title: CLI reference and afx-skill docs sync
+    status: complete
+current_plan_phase: null
+gates:
+  spec-approval:
+    status: approved
+    requested_at: '2026-07-03T14:54:56.796Z'
+    approved_at: '2026-07-03T15:02:32.243Z'
+  plan-approval:
+    status: approved
+    requested_at: '2026-07-03T15:10:13.750Z'
+    approved_at: '2026-07-03T16:50:06.085Z'
+  pr:
+    status: pending
+    requested_at: '2026-07-03T17:31:34.065Z'
+  verify-approval:
+    status: pending
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-03T14:44:55.927Z'
+updated_at: '2026-07-03T17:31:34.065Z'
+pr_ready_for_human: true

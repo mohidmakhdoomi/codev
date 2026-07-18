@@ -230,6 +230,21 @@ export async function runAgentFarm(args: string[]): Promise<void> {
       }
     });
 
+  // Whoami command (Spec 1134) — report this terminal's agent identity
+  program
+    .command('whoami')
+    .description("Report this terminal's agent identity (workspace, type, name)")
+    .option('--json', 'Output machine-readable JSON')
+    .action(async (options) => {
+      const { whoami } = await import('./commands/whoami.js');
+      try {
+        await whoami({ json: options.json });
+      } catch (error) {
+        logger.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
+    });
+
   // Attach command
   program
     .command('attach')

@@ -49,7 +49,7 @@ export function detectWorkspaceRoot(): string | null {
 
 /**
  * Thrown when CWD is confirmed to be inside `.builders/<id>/` but the canonical
- * builder identity cannot be verified against the workspace `state.db`.
+ * builder identity cannot be verified against `global.db`.
  *
  * We refuse to fall back to the bare worktree directory name (e.g. `bugfix-774`)
  * here: that non-canonical id does not match any `builders.id` (`builder-bugfix-774`),
@@ -68,7 +68,7 @@ export class BuilderIdResolutionError extends Error {
 }
 
 /**
- * Build an actionable message for a `state.db` open failure, naming the likely
+ * Build an actionable message for a `global.db` open failure, naming the likely
  * cause. A better-sqlite3 ABI mismatch (a `node` on PATH built for a different
  * NODE_MODULE_VERSION than codev's native module) is the real-world trigger
  * from issue #1094 and gets a specific reinstall hint.
@@ -81,7 +81,7 @@ export function describeStateDbOpenFailure(dbPath: string, worktreeDirName: stri
     : 'Check the file for corruption, a permissions problem, or a stale lock.';
   return (
     `Cannot resolve builder identity for worktree '${worktreeDirName}': ` +
-    `failed to open workspace state.db at ${dbPath} (${detail}). ${hint} ` +
+    `failed to open global.db at ${dbPath} (${detail}). ${hint} ` +
     `Refusing to send with an unverified identity — it would silently misroute to 'main' (issue #1094).`
   );
 }

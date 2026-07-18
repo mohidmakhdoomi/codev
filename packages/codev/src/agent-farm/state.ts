@@ -6,6 +6,7 @@
  */
 
 import path from 'node:path';
+import type Database from 'better-sqlite3';
 import type { DashboardState, ArchitectState, Builder, UtilTerminal, Annotation } from './types.js';
 import { getDb, closeDb } from './db/index.js';
 import type { DbArchitect, DbBuilder, DbUtil, DbAnnotation } from './db/types.js';
@@ -546,12 +547,16 @@ export function getArchitectByName(workspacePath: string, name: string): Archite
  * spoofing check must resolve to the *correct* workspace's spawning architect.
  * When omitted (a CLI caller already inside one workspace), it falls back to
  * match by id alone.
+ *
+ * Spec 1134: `db` lets a caller supply its own connection — `afx whoami` passes
+ * a read-only handle so it never opens global.db read-write (its spec
+ * requirement). Defaults to the shared `getDb()` singleton.
  */
 export function lookupBuilderSpawningArchitect(
   builderId: string,
   workspacePath?: string,
+  db: Database.Database = getDb(),
 ): string | null | undefined {
-  const db = getDb();
   let row: { spawned_by_architect: string | null } | undefined;
   if (workspacePath) {
     row = db

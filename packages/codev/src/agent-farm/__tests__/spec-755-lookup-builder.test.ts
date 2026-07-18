@@ -115,4 +115,35 @@ describe('Issue #1118 — lookupBuilderSpawningArchitect (single shared global.d
     insertBuilder(wsA, 'only-in-a', 'sibling');
     expect(lookupBuilderSpawningArchitect('only-in-a', wsB)).toBeUndefined();
   });
+
+  it('uses an explicitly supplied db handle instead of getDb() (Spec 1134 read-only callers)', () => {
+    // Row exists only in the singleton (mocked getDb) db, NOT in the explicit
+    // handle — proving the explicit handle is the one queried.
+    insertBuilder(wsA, 'spir-100', 'sibling');
+
+    const explicit = new Database(':memory:');
+    explicit.exec(`
+      CREATE TABLE builders (
+        workspace_path TEXT NOT NULL,
+        id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        worktree TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        spawned_by_architect TEXT,
+        PRIMARY KEY (workspace_path, id)
+      );
+    `);
+    try {
+      expect(lookupBuilderSpawningArchitect('spir-100', wsA, explicit)).toBeUndefined();
+
+      explicit
+        .prepare(
+          'INSERT INTO builders (workspace_path, id, name, worktree, branch, spawned_by_architect) VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .run(realpathSync(wsA), 'spir-100', 'x', join(wsA, '.builders', 'spir-100'), 'main', 'ro-architect');
+      expect(lookupBuilderSpawningArchitect('spir-100', wsA, explicit)).toBe('ro-architect');
+    } finally {
+      explicit.close();
+    }
+  });
 });
