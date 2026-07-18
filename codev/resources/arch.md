@@ -1010,7 +1010,7 @@ const CONFIG = {
 ## Technology Stack
 
 ### Core Technologies
-- **TypeScript/Node.js**: Primary language for agent-farm orchestration CLI
+- **TypeScript/Node.js**: Primary language for agent-farm orchestration CLI. The compiler version is pinned **once** in the `pnpm-workspace.yaml` `catalog:` (currently `typescript: ^6.0.3`); every workspace member references it as `"typescript": "catalog:"`. Bump the catalog entry — never a single package — to keep the six manifests in lockstep (Issue #1187 unified a prior 5.7/5.9 drift). Note: TS 6 changed the `types` compiler-option default to `[]` (was: auto-include every `@types/*`), so packages using Node globals must declare `"types": ["node"]` explicitly (see `packages/core`, `packages/codev`), and Vite apps need a `vite-env.d.ts` triple-slash reference for the `vite/client` ambient types.
 - **Shell/Bash**: Thin wrappers and installation scripting
 - **Markdown**: Documentation format for specs, plans, reviews, and agent definitions
 - **Git**: Version control with worktree support for isolated builder environments
@@ -1079,6 +1079,8 @@ codev (CLI + Tower)        vscode (extension)        dashboard (React SPA)
 **Build order:** `pnpm build` from root builds types → core → codev (including dashboard). `codev-types` is built first because the VS Code extension's esbuild bundle resolves the package's runtime `exports.default` (`./dist/index.js`); a missing `types/dist` breaks the extension build even though tsc and vite resolve it from source via `exports.types` (`./src/index.ts`).
 
 **Publishing:** `codev-core` must be published to npm before `codev` (runtime dependency).
+
+**Per-package build tools:** most packages compile with plain `tsc`; `apps/web` uses Vite; `apps/vscode` uses esbuild; `packages/artifact-canvas` produces its dual-format (CJS + ESM) library via **tsdown** (Rolldown-powered, the maintained successor to tsup — migrated in Issue #1187). tsdown emits per-format filenames (`index.mjs`/`index.d.mts` for ESM, `index.cjs`/`index.d.cts` for CJS), so the package's `exports` map uses nested `import`/`require` conditions each pointing at their matching declaration file.
 
 ## VS Code Extension
 

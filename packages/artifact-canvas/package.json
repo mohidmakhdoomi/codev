@@ -5,20 +5,25 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./default-theme.css": "./dist/default-theme.css"
   },
   "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.cts",
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsdown --config-loader native",
     "test": "vitest run",
     "build:smoke": "node scripts/smoke.mjs",
     "check-types": "tsc --noEmit",
@@ -43,8 +48,8 @@
     "jsdom": "^26.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tsup": "^8.3.0",
-    "typescript": "^5.7.0",
+    "tsdown": "^0.22.8",
+    "typescript": "catalog:",
     "vite": "^6.0.0",
     "vitest": "^4.0.0"
   },
