@@ -54,8 +54,7 @@ be expected to have repository-local framework files.
    provider-qualified update results/output.
 6. Update lifecycle comments/output and user-facing skill/directory
    documentation to name both `.claude/skills/` and `.codex/skills/`. Keep
-   `AGENTS.md` and `CLAUDE.md` byte-identical in both the self-hosted root and
-   skeleton template pairs.
+   the self-hosted root `AGENTS.md` and `CLAUDE.md` byte-identical.
 
 ## Files to Change
 
@@ -83,9 +82,8 @@ be expected to have repository-local framework files.
 - `codev-skeleton/.claude/skills/codev/SKILL.md` and
   `codev-skeleton/.codex/skills/codev/SKILL.md` — same documentation in the
   shipped skill trees.
-- `AGENTS.md`, `CLAUDE.md`, `codev-skeleton/templates/AGENTS.md`, and
-  `codev-skeleton/templates/CLAUDE.md` — accurately show Claude and Codex skill
-  directories while preserving each required identical pair.
+- `AGENTS.md` and `CLAUDE.md` — accurately show Claude and Codex skill
+  directories while preserving the required identical pair.
 
 ## Risks & Alternatives Considered
 
@@ -128,7 +126,5 @@ be expected to have repository-local framework files.
   adopt/update in temporary directories; inspect both skill trees, then modify
   a Codex `SKILL.md`, remove a different Codex skill, rerun update, and verify
   the customized bytes remain while the missing skill returns.
-- Documentation guard: assert/diff `AGENTS.md` against `CLAUDE.md`, the two
-  skeleton templates against each other, and the provider skill trees
-  recursively.
-
+- Documentation guard: assert/diff `AGENTS.md` against `CLAUDE.md` and the
+  provider skill trees recursively.

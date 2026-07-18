@@ -19,3 +19,7 @@
   global Codex config and `/tmp/.git`; rerunning porch checks with isolated
   `HOME`/`TMPDIR` passed the build and all 3,525 executed tests (48 existing
   skips). No tests were skipped or modified to mask failures.
+- Dev-gate feedback: restored `codev-skeleton/templates/{AGENTS,CLAUDE}.md`
+  unchanged and removed those files from the plan's implementation/test scope.
+  Provider-location documentation remains in lifecycle output, provider
+  skills, and the self-hosted root instruction pair.

@@ -60,8 +60,6 @@ This succeeds if the protocol is registered (including via the skeleton fallback
 - **Plans**: `codev/plans/` - Implementation plans (HOW to build)
 - **Reviews**: `codev/reviews/` - Reviews and lessons learned
 - **Protocols**: `codev/protocols/` - Development protocols
-- **Claude skills**: `.claude/skills/` - Provider-native Codev command guidance
-- **Codex skills**: `.codex/skills/` - Provider-native Codev command guidance
 
 ## Working with Project Labels
 
