@@ -37,8 +37,10 @@ import {
 export interface IShellperClient extends EventEmitter {
   connect(): Promise<WelcomeMessage>;
   disconnect(): void;
-  write(data: string | Buffer): void;
-  resize(cols: number, rows: number): void;
+  /** Returns false when the frame was dropped because the client is not connected (#1198). */
+  write(data: string | Buffer): boolean;
+  /** Returns false when the frame was dropped because the client is not connected (#1198). */
+  resize(cols: number, rows: number): boolean;
   signal(sig: number): void;
   spawn(msg: SpawnMessage): void;
   ping(): void;
@@ -57,6 +59,14 @@ export interface IShellperClient extends EventEmitter {
 export class ShellperClient extends EventEmitter implements IShellperClient {
   private socket: net.Socket | null = null;
   private _connected = false;
+  // Whether the handshake ever completed on the current socket. Unlike
+  // _connected, this is NOT cleared by cleanup(), so the socket 'close'
+  // handler can still tell that a post-handshake connection died even when
+  // an error path ran cleanup() first (#1198: the swallowed-close bug).
+  private _everConnected = false;
+  // Set by disconnect() so a deliberate teardown (Tower shutdown, killSession,
+  // detach) never emits 'close'. Only unexpected closes reach consumers.
+  private _intentionalDisconnect = false;
   private replayData: Buffer | null = null;
   // Wall-clock epoch (ms) of the last PTY byte the shellper has seen.
   //
@@ -121,6 +131,7 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
         reject(new Error('Already connected'));
         return;
       }
+      this._intentionalDisconnect = false;
 
       const socket = net.createConnection(this.socketPath);
       this.socket = socket;
@@ -151,9 +162,14 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
       });
 
       socket.on('close', () => {
-        const wasConnected = this._connected;
+        // Decide from _everConnected, not _connected: error paths run
+        // cleanup() (which clears _connected) before this event fires, and
+        // basing the decision on _connected swallowed the 'close' emission
+        // exactly when it mattered most (#1198).
+        const shouldEmitClose = this._everConnected && !this._intentionalDisconnect;
+        this._everConnected = false;
         this.cleanup();
-        if (wasConnected) {
+        if (shouldEmitClose) {
           this.emit('close');
         }
         if (!handshakeResolved) {
@@ -189,6 +205,7 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
 
               handshakeResolved = true;
               this._connected = true;
+              this._everConnected = true;
               // Hydrate lastDataAt from the shellper's own tracker if it
               // sent one. Old shellpers omit the field (it's optional in
               // the protocol) — leave the construct-time fallback in
@@ -260,6 +277,7 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
   }
 
   disconnect(): void {
+    this._intentionalDisconnect = true;
     this.cleanup();
   }
 
@@ -271,14 +289,16 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
     this.socket = null;
   }
 
-  write(data: string | Buffer): void {
-    if (!this._connected || !this.socket) return;
+  write(data: string | Buffer): boolean {
+    if (!this._connected || !this.socket) return false;
     this.socket.write(encodeData(data));
+    return true;
   }
 
-  resize(cols: number, rows: number): void {
-    if (!this._connected || !this.socket) return;
+  resize(cols: number, rows: number): boolean {
+    if (!this._connected || !this.socket) return false;
     this.socket.write(encodeResize({ cols, rows }));
+    return true;
   }
 
   signal(sig: number): void {
