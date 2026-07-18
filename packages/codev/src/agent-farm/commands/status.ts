@@ -265,7 +265,7 @@ export async function status(options: StatusOptions = {}): Promise<void> {
 
     // Workspace not found in tower, show "not active"
     logger.kv('Workspace', chalk.gray('not active in tower'));
-    logger.info(`Run 'afx tower start' to activate this workspace`);
+    logger.info(`Run 'afx workspace start' to activate this workspace`);
     return;
   }
 
