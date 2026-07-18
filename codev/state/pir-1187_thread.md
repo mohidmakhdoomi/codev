@@ -40,3 +40,10 @@ Plan written to `codev/plans/1187-chore-upgrade-typescript-to-6-.md`. Awaiting p
 - Three logical commits: (1) catalog unification, (2) TS6 tsconfig fallout, (3) tsdown migration.
 - **Full re-verification green under catalog+tsdown**: `pnpm --recursive build` ✓, `pnpm --recursive check-types` ✓, `vscode:prepublish` ✓, artifact-canvas `build:smoke` ✓, tests: core 41 / artifact-canvas 73 / apps/web 323(+1 skip) / codev 3482(+48 skip).
 - Awaiting **dev-approval** gate.
+
+### Follow-up at gate (architect request): eliminate ALL TS 5 artifacts
+- Architect wants zero legacy TS 5 anywhere (TS 7 move coming). Swept whole repo: the **only** remaining TS 5 pin was the vestigial e2e fixture `packages/codev/src/commands/porch/__tests__/e2e/fixtures/todo-app/package.json` (`typescript: ^5.0.0`).
+- Fixture is dead: no src files, not referenced by any test (e2e `setup.ts` builds its own inline package.json), never installed/compiled, not a pnpm workspace member (so can't use `catalog:`).
+- Bumped it directly: `typescript ^5.0.0 → ^6.0.3`, and aligned `@types/node ^20 → ^22`, `vitest ^1 → ^4` to match the real workspace (makes the "external todo app" fixture realistic for a TS 6 world). codev-skeleton has no TS pins.
+- Zero lockfile impact (not a workspace member); codev suite still 3482 pass / 48 skip. Commit `cdd949ee`.
+- Repo-wide grep now: **no `typescript` 5.x pins remain anywhere** (excl. node_modules/lockfile/dist).
