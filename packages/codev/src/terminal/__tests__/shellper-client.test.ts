@@ -733,4 +733,75 @@ describe('ShellperClient', () => {
       expect(warnings).toEqual([]); // No warnings when versions match
     });
   });
+
+  describe('unexpected close emission (#1198)', () => {
+    function createCapturingShellper() {
+      let serverSocket: net.Socket | null = null;
+      const server = net.createServer((socket) => {
+        serverSocket = socket;
+        const parser = createFrameParser();
+        socket.pipe(parser);
+        parser.on('data', (frame: ParsedFrame) => {
+          if (frame.type === FrameType.HELLO) {
+            socket.write(encodeWelcome({ version: PROTOCOL_VERSION, pid: 1, cols: 80, rows: 24, startTime: Date.now() }));
+          }
+        });
+      });
+      server.listen(socketPath);
+      cleanup.push(() => { server.close(); });
+      return { getServerSocket: () => serverSocket };
+    }
+
+    it('emits close when a post-handshake error path runs cleanup first', async () => {
+      const { getServerSocket } = createCapturingShellper();
+
+      const client = new ShellperClient(socketPath);
+      cleanup.push(() => client.disconnect());
+      await client.connect();
+
+      const errors: Error[] = [];
+      client.on('error', (err: Error) => errors.push(err));
+      const closed = new Promise<void>((resolve) => client.once('close', resolve));
+
+      // A frame header whose declared payload length exceeds MAX_FRAME_SIZE
+      // makes the client's parser throw. That is the production error path
+      // (safeEmitError then cleanup) whose subsequent socket 'close' was
+      // swallowed before the fix, leaving a silent zombie.
+      getServerSocket()!.write(Buffer.from([FrameType.DATA, 0xff, 0xff, 0xff, 0xff]));
+
+      await closed;
+      expect(errors.length).toBeGreaterThan(0);
+      expect(client.connected).toBe(false);
+    });
+
+    it('does not emit close on intentional disconnect', async () => {
+      createCapturingShellper();
+
+      const client = new ShellperClient(socketPath);
+      await client.connect();
+
+      let closeEmitted = false;
+      client.on('close', () => { closeEmitted = true; });
+
+      client.disconnect();
+      await new Promise((r) => setTimeout(r, 100));
+      expect(closeEmitted).toBe(false);
+      expect(client.connected).toBe(false);
+    });
+
+    it('write and resize report delivery: true while connected, false after', async () => {
+      createCapturingShellper();
+
+      const client = new ShellperClient(socketPath);
+      await client.connect();
+
+      expect(client.write('hello')).toBe(true);
+      expect(client.resize(100, 50)).toBe(true);
+
+      client.disconnect();
+
+      expect(client.write('dropped')).toBe(false);
+      expect(client.resize(100, 50)).toBe(false);
+    });
+  });
 });

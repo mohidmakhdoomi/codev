@@ -15,3 +15,15 @@ PIR builder for issue #1198 (shellper reconnect error swallowed, terminal become
 - attach.ts (terminal-mode client) has the same swallowed-close symptom and gets fixed for free.
 
 Plan written to codev/plans/1198-shellper-reconnect-error-is-sw.md. Waiting at plan-approval gate.
+
+## Implement phase
+
+Plan approved as written (architect confirmed the core = swallowed close + session-error consumer; heartbeat detection stays a follow-up). Implementation landed in six commits:
+
+1. shellper-client.ts: `_everConnected` + `_intentionalDisconnect` flags; error-path closes now emit 'close'; write/resize return boolean.
+2. session-manager.ts: wiring unified into `wireClientEvents`; unexpected close triggers `recoverSession` (up to 3 attempts, 500ms/1s/2s backoff, PID + start-time + socket-file preflight, 3-round cap with 30s stability reset) before the historical dead path; new 'session-reconnected' event. pty-manager.ts gained `findByShellperSessionId` (create flow keys SessionManager by a UUID distinct from the terminal id; adoption keys by terminal id — the helper handles both).
+3. pty-session.ts: unexpected-close teardown deferred behind a 15s grace timer (`SHELLPER_CLOSE_GRACE_MS`), cancelled by attachShellper; `writable` getter; boolean write/resize.
+4. Tower: session-error now logged at ERROR; session-reconnected re-attaches the replacement client (empty replay to avoid duplicating ring-buffer content); both adoption sites use `waitForReplay()` instead of racing the REPLAY frame; send router returns 503 TERMINAL_NOT_WRITABLE + logs "Message DROPPED" instead of "Message sent"; send-buffer holds messages while a session is unwritable and only drops (loudly) at max age.
+5. tower.ts: towerStop polls for process exit (8s), SIGKILL escalation.
+
+Notable test change: tower-shellper-integration's "emits exit with code -1 on unexpected disconnect" was asserting the OLD immediate-teardown behavior; rewritten for the grace-window semantics plus a re-attach-cancels-teardown case.

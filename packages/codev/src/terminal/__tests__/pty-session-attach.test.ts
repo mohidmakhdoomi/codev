@@ -10,10 +10,16 @@ import type { IShellperClient } from '../shellper-client.js';
  * re-run onPtyData for every PTY byte (the listener-leak the hardening targets).
  */
 
-function makeFakeClient(): IShellperClient {
-  const emitter = new EventEmitter() as unknown as IShellperClient & { _lastDataAt: number };
+function makeFakeClient(): IShellperClient & { connectedState: boolean } {
+  const emitter = new EventEmitter() as unknown as IShellperClient & { connectedState: boolean };
   // attachShellper reads client.lastDataAt and subscribes data/exit/close.
   Object.defineProperty(emitter, 'lastDataAt', { get: () => Date.now() });
+  // #1198: PtySession.writable and write() consult the client's connection
+  // state; the fake models it with a mutable flag.
+  emitter.connectedState = true;
+  Object.defineProperty(emitter, 'connected', { get: () => emitter.connectedState });
+  emitter.write = () => emitter.connectedState;
+  emitter.resize = () => emitter.connectedState;
   return emitter;
 }
 
@@ -75,5 +81,30 @@ describe('PtySession.attachShellper idempotency (#1047 Fix E)', () => {
     // Guard only fires for a *different* client, so this is a no-op re-subscribe
     // path; the session stays attached and functional.
     expect(clientA.listenerCount('data')).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('PtySession.writable (#1198)', () => {
+  it('reflects the shellper client connection state, not just session status', () => {
+    const session = makeSession();
+    const client = makeFakeClient();
+    session.attachShellper(client, Buffer.alloc(0), 1234);
+
+    expect(session.writable).toBe(true);
+    expect(session.write('reaches the pty')).toBe(true);
+
+    // The connection dies but the session still reports status 'running':
+    // this is exactly the zombie state the getter exists to expose.
+    client.connectedState = false;
+    expect(session.status).toBe('running');
+    expect(session.writable).toBe(false);
+    expect(session.write('dropped')).toBe(false);
+    expect(session.resize(100, 50)).toBe(false);
+  });
+
+  it('is false with no backing client', () => {
+    const session = makeSession();
+    expect(session.writable).toBe(false);
+    expect(session.write('nowhere')).toBe(false);
   });
 });

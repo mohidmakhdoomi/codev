@@ -529,6 +529,7 @@ describe('tower-terminals', () => {
       const reconnectGate = new Promise<void>((r) => { releaseReconnect = r; });
       const makeClient = () => ({
         getReplayData: () => Buffer.alloc(0),
+        waitForReplay: async () => Buffer.alloc(0),
         connected: true,
         connect: vi.fn(), disconnect: vi.fn(), write: vi.fn(), resize: vi.fn(),
         signal: vi.fn(), spawn: vi.fn(), ping: vi.fn(), setReplayData: vi.fn(),
@@ -678,6 +679,7 @@ describe('tower-terminals', () => {
       // Mock a shellper client that returns successfully
       const makeClient = () => ({
         getReplayData: () => Buffer.alloc(0),
+        waitForReplay: async () => Buffer.alloc(0),
         connected: true,
         connect: vi.fn(),
         disconnect: vi.fn(),
