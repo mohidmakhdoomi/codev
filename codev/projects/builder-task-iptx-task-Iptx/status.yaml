@@ -1,0 +1,12 @@
+id: builder-task-iptx
+title: task-Iptx
+protocol: spike
+phase: spike
+plan_phases: []
+current_plan_phase: null
+gates: {}
+iteration: 1
+build_complete: false
+history: []
+started_at: '2026-07-18T21:56:10.367Z'
+updated_at: '2026-07-18T21:56:10.368Z'
