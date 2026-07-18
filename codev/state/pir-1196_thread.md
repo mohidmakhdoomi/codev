@@ -23,3 +23,6 @@
   unchanged and removed those files from the plan's implementation/test scope.
   Provider-location documentation remains in lifecycle output, provider
   skills, and the self-hosted root instruction pair.
+- Dev approval completed. Review phase routes the current materialization model
+  to COLD `arch.md` and the general duplicate-tree parity/preservation pattern
+  to COLD `lessons-learned.md`; no HOT displacement is warranted.
