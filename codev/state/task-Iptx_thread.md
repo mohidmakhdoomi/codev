@@ -21,3 +21,9 @@ Plan: research (Kimi ref page, PR #1059 + plan/review, harness seams) → minima
   - Submit timing: message-write.ts's 80ms delayed Enter does NOT submit in Kimi; 1s does (single- and multi-line as one message) → per-harness Enter-delay knob needed.
 - **Verdict: Feasible with Caveats** for both builder and architect. Recommended: builder MVI (script-owned seed, no Tower contract change) then architect parity (async `seedSession` capability generalizing `HarnessProvider.session`). Effort Medium–Large; protocol SPIR (or PIR for builder-only MVI).
 - Deliverables: `codev/spikes/task-Iptx-kimi-code-cli-support.md` + `task-Iptx-kimi-poc.sh` (reproducible probes). Committed locally only — no GitHub write permission in this environment (per architect note).
+
+## 2026-07-18 — Post-review addendum
+
+Architect review flagged two gaps; both addressed in the findings addendum (commit 9f2370f6) with two extra probes:
+- Task-delivery readiness: Kimi TUI has no alt-screen escape (verified) and seed-window PTY input is silently lost (verified) → corrected design is sentinel + grace + store-verified BEGIN kick with retry; seed turn carries role+task.
+- #1149 parity: conceded that fast-fail-to-restart-cap is an outage (row deregistration), not crash-loop safety → parity requires an async-buildable CrashLoopFallback running seedSession at degradation time; valid stages are Codex-like or stored-ID+async-fallback, no middle.
