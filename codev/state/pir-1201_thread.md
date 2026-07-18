@@ -13,3 +13,11 @@
   - NO `session` block on KIMI_HARNESS (mint-and-pin `newSessionArgs` unsatisfiable; contract generalization = stage 2). Architect use fails loudly via `buildRoleInjection` throw + doctor warning.
   - Enter-delay: optional `pacing.enterDelayMs` on `writeMessageToSession`, sourced from `HarnessProvider.messagePacing`; bisect 80ms–1s live during implement.
 - Plan committed at `codev/plans/1201-support-kimi-code-cli-as-a-bui.md`; sitting at plan-approval gate.
+
+## 2026-07-18 — Implement phase
+
+- Plan approved with one review note: make message-pacing resolution robust to a per-spawn `--builder-cmd` override. Solved without a DB migration: pacing probes the target's cwd for the `.builder-kimi-session` marker FIRST (the marker exists iff the launch script is Kimi-shaped — self-describing, survives Tower restarts, override-proof), then falls back to config-resolved harness by terminal role.
+- Full MVI implemented across five commits: harness+discovery+script-shape, Tower seed-kick+pacing, doctor, docs, hardening. All porch checks (build, tests) green; suite 3592 passing after fixing a 500 my pacing hook caused in the /api/send test env (lesson: advisory features must be try/catch-total — pacing can never break delivery).
+- Enter-delay bisect (real kimi 0.27.0, POC probe-10 method): 80ms fails (spike-confirmed), 120/250/500ms submit. Threshold ≈ 100ms; shipped constant pinned at 1000ms (~10x margin, POC-validated, latency-only cost).
+- Demo driver at `codev/spikes/pir-1201-kimi-builder-demo.mjs` — runs the REAL dist modules (script generator, armSeedKick, writeMessageToSession, buildResume) against a real kimi PTY, covering the architect's 4-point demo checklist without touching the global Tower. Full `afx spawn` path needs the branch build installed into Tower (`pnpm -w run local-install`) — that restarts Tower, so it's the human's call at the gate.
+- **Demo executed: ALL 5 steps PASS** (kimi 0.27.0, first run). Seed → sentinel → store-verified BEGIN (`lastPrompt="BEGIN"`); the ack-and-wait-with-task discipline HELD (spike addendum's open question — no fallback needed); multiline submitted with the pinned delay; TUI killed mid-session → `-S` restart recalled both role token and task verbatim; buildResume returned the pinned id. Sitting at dev-approval gate.
