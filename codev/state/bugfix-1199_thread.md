@@ -13,3 +13,9 @@
 - Added deterministic unit coverage for both required branches and their distinct recommendations in `spec-1057-status-owner.test.ts`.
 - Focused regression suite passed: 17/17 tests.
 - Porch build and full test checks passed. The shared environment's `/tmp/.git` marker and global `~/.codev/config.json` initially contaminated unrelated non-hermetic tests; isolating `TMPDIR` and `HOME` made the unchanged baseline tests pass without out-of-scope edits.
+
+## PR
+
+- Published the branch through the contributor fork and opened upstream PR #1200.
+- CMAP results so far: Gemini `APPROVE` (high confidence); Codex `APPROVE` (high confidence).
+- Blocked before the PR gate: the required Claude lane was attempted twice but the Claude CLI quota is exhausted until 9am America/Toronto. The architect was notified; no verdict was fabricated and the gate was not requested.
