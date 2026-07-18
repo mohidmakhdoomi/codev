@@ -1,0 +1,15 @@
+# Thread — pir-1201 (Support Kimi Code CLI as a builder)
+
+## 2026-07-18 — Plan phase
+
+- Spawned in PIR strict mode against issue #1201. Spike `task-Iptx` (findings + addendum + POC script) rode into the worktree from main — used as the design base.
+- Architect constraints received mid-turn and folded into the plan: hard scope fence (builder MVI only — no architect parity, no ACP; write-guard is a caveat), evidence rule (documented claims cite the Kimi command reference only; store layout / `session_index.jsonl` / `resume_hint` labeled undocumented, kimi ≥ 0.27.0 pinned), fork flow (pushes land on mohidmakhdoomi/codev via per-worktree pushurl; cross-fork PR to cluesmith/codev; NO self-merge — maintainers merge), live demo required before dev-approval.
+- Investigated all seams at HEAD: `harness.ts` (provider interface + #1062 claude fallthrough), `spawn-worktree.ts` script generation, `spawn.ts` `discoverResumeSession`, `message-write.ts` pacing constants, tower-routes/cron delivery paths, `createTerminal` surface (core tower-client + `handleTerminalCreate`), `claude-session-discovery.ts` (pattern for the kimi sibling), `doctor.ts` check structures.
+- Key plan decisions:
+  - New optional `HarnessProvider.buildBuilderLaunchScript` capability — provider-owned script shape; only Kimi implements; existing harness scripts byte-identical.
+  - Seed-session bootstrap in the generated script (idempotent `-s` guard, seed-failure exits before the loop, sentinel re-printed on relaunch).
+  - Readiness barrier Tower-side (new `servers/seed-kick.ts`) armed via a `seedKick` field on createTerminal; store-verified BEGIN with Enter-resend → kick-resend → loud-warn ladder.
+  - `kimi-session-discovery.ts` scans the store directly (skips `session_index.jsonl` — one undocumented surface instead of two).
+  - NO `session` block on KIMI_HARNESS (mint-and-pin `newSessionArgs` unsatisfiable; contract generalization = stage 2). Architect use fails loudly via `buildRoleInjection` throw + doctor warning.
+  - Enter-delay: optional `pacing.enterDelayMs` on `writeMessageToSession`, sourced from `HarnessProvider.messagePacing`; bisect 80ms–1s live during implement.
+- Plan committed at `codev/plans/1201-support-kimi-code-cli-as-a-bui.md`; sitting at plan-approval gate.
