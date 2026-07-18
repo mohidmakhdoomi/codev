@@ -31,3 +31,9 @@
   the claimed review scope error: GitHub reports 59 PR files, while consult
   reported 27 because local `main` already contains contributor commit
   `25e1a000`; the review now explains that baseline difference explicitly.
+- Architect PR review requested CI-active fresh-init coverage and non-volatile
+  PR-scope wording (the initially requested skill-wording change was explicitly
+  withdrawn). Follow-up adds provider skill assertions to the built-CLI init
+  suite while leaving every root/skeleton provider `SKILL.md` byte unchanged.
+- Follow-up verification passed: 58 targeted parity/lifecycle tests and all 87
+  built-CLI integration tests.

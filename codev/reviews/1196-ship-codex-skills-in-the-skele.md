@@ -11,7 +11,7 @@ from silently drifting.
 
 ## Files Changed
 
-GitHub's canonical PR scope contains 59 files. The large root
+GitHub's canonical PR scope includes the large root
 `.codex/skills/**` addition came from the contributor commit that preceded PIR
 initialization; it is part of the upstream PR because that commit is not on
 `cluesmith/codev:main`.
@@ -54,6 +54,8 @@ Porch-generated phase and gate commits are also retained in branch history.
 
 - Codev dependency/core/types/artifact/package build chain: ✓ pass
 - Targeted lifecycle and parity tests: ✓ 58 tests
+- Built-CLI integration suite: ✓ 87 tests, including CI-active fresh-init
+  assertions for matching packaged Claude and Codex skills
 - Full default unit suite: ✓ 3,525 executed tests; 48 existing skips
 - Porch implement checks: ✓ build and tests
 - Built-CLI smoke test: ✓ fresh init installs both trees; adopt and update
@@ -98,7 +100,7 @@ guidance but does not displace a HOT lesson.
   self-hosted and shipped inventories.
 - The Codex consultation reported a 27-file scope because its local-main
   baseline already contained contributor commit `25e1a000`; GitHub's actual
-  upstream PR file list contains 59 files, including that root Codex mirror.
+  upstream PR scope includes that root Codex mirror.
 
 ## How to Test Locally
 
@@ -108,6 +110,8 @@ guidance but does not displace a HOT lesson.
   `pnpm --filter @cluesmith/codev-types build && pnpm --filter @cluesmith/codev-core build && pnpm --filter @cluesmith/codev-artifact-canvas build && pnpm --filter @cluesmith/codev build`
 - **Targeted tests**:
   `pnpm --filter @cluesmith/codev exec vitest run src/__tests__/skill-parity.test.ts src/__tests__/scaffold.test.ts src/__tests__/adopt.test.ts src/__tests__/update.test.ts`
+- **Built-CLI integration suite**:
+  `pnpm --filter @cluesmith/codev test:e2e:cli`
 - **Verify preservation**: customize
   `.codex/skills/arch-init/SKILL.md` in a temporary adopted project, remove a
   different Codex skill, run the built `codev update --agent`, and confirm the
