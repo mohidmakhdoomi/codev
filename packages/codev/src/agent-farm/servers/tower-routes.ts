@@ -1316,6 +1316,19 @@ async function handleSend(
     return;
   }
 
+  // #1198: a session whose shellper connection died still reports status
+  // 'running', but every write to it is dropped. Fail the send loudly
+  // instead of logging "Message sent" for a message that went nowhere.
+  if (!session.writable) {
+    ctx.log('ERROR', `Message DROPPED: ${from ?? 'unknown'} → ${result.agent} (terminal ${result.terminalId.slice(0, 8)}...): terminal not writable (shellper connection down)`);
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      error: 'TERMINAL_NOT_WRITABLE',
+      message: `Terminal for '${result.agent}' is not accepting input (its process connection is down). Retry shortly; if this persists, check Tower logs.`,
+    }));
+    return;
+  }
+
   // Format the message based on sender/target
   const isArchitectTarget = result.agent === 'architect';
   let formattedMessage: string;

@@ -747,7 +747,10 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
 
     const workspacePath = dbSession.workspace_path;
     const sessionCwd = dbSession.cwd ?? workspacePath;
-    const replayData = client.getReplayData() ?? Buffer.alloc(0);
+    // #1198: the REPLAY frame often arrives in a separate socket read after
+    // WELCOME, so a synchronous getReplayData() here raced it and adopted
+    // terminals rendered blank until new output arrived. Wait briefly for it.
+    const replayData = await client.waitForReplay();
     const label = dbSession.label || (dbSession.type === 'architect' ? 'Architect' : (dbSession.role_id || 'unknown'));
 
     // Create a PtySession backed by the reconnected shellper client.
@@ -958,7 +961,9 @@ export async function getTerminalsForWorkspace(
           restartOptions,
         );
         if (client) {
-          const replayData = client.getReplayData() ?? Buffer.alloc(0);
+          // #1198: wait for the REPLAY frame instead of racing it (see the
+          // matching change in the startup adoption pass above).
+          const replayData = await client.waitForReplay();
           const label = dbSession.label || (dbSession.type === 'architect' ? 'Architect' : (dbSession.role_id || dbSession.id));
           // Reuse the persisted terminal id (#991) so the session keeps its
           // identity across the reconnect — clients holding `/ws/terminal/<id>`
