@@ -353,6 +353,36 @@ export async function towerStop(options: TowerStopOptions = {}): Promise<void> {
     }
   }
 
+  // #1198: wait for the processes to actually exit before returning.
+  // Returning right after SIGTERM let `afx tower stop && afx tower start`
+  // overlap the old Tower's shellper teardown with the new Tower's adoption
+  // pass, which is how transient reconnect errors were minted.
+  const isAlive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const deadline = Date.now() + 8000;
+  let survivors = pids.filter(isAlive);
+  while (survivors.length > 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    survivors = survivors.filter(isAlive);
+  }
+
+  if (survivors.length > 0) {
+    for (const pid of survivors) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        // Exited between the check and the kill
+      }
+    }
+    logger.warn(`Tower did not exit within 8s; sent SIGKILL to PID${survivors.length > 1 ? 's' : ''} ${survivors.join(', ')}`);
+  }
+
   if (stopped > 0) {
     logger.success(`Tower stopped (${stopped} process${stopped > 1 ? 'es' : ''}: PIDs ${pids.join(', ')})`);
   }
