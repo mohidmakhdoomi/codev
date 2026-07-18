@@ -267,9 +267,12 @@ export const KIMI_SESSION_FILE = '.builder-kimi-session';
 
 /**
  * Delayed-Enter timing for Kimi PTYs. Kimi's paste-detection window is longer
- * than Claude's: an Enter 80ms after the message body is treated as part of a
- * paste and NOT submitted; 1s works (observed, kimi 0.27.0 — bisected during
- * PIR #1201's live validation). Applied via messagePacing below.
+ * than Claude's: an Enter arriving too soon after the message body is treated
+ * as part of a paste and NOT submitted. Bisected live against kimi 0.27.0
+ * (PIR #1201): 80ms and 100ms fail; 120ms, 250ms, 500ms, 1000ms submit —
+ * threshold ≈ 100–120ms. Pinned at 1000ms for ~9x margin (the POC-validated
+ * value; the only cost is submission latency, which is irrelevant for
+ * agent-to-agent messages). Applied via messagePacing below.
  */
 export const KIMI_ENTER_DELAY_MS = 1000;
 
