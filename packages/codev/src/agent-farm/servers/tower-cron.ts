@@ -38,7 +38,9 @@ export interface CronDeps {
   log: (level: 'INFO' | 'ERROR' | 'WARN', message: string) => void;
   getKnownWorkspacePaths: () => string[];
   resolveTarget: (target: string, fallbackWorkspace?: string) => unknown;
-  getTerminalManager: () => { getSession: (id: string) => { write: (data: string) => void } | undefined };
+  // id/cwd feed per-harness pacing resolution (Issue #1201); the real
+  // PtySession provides both.
+  getTerminalManager: () => { getSession: (id: string) => { id: string; cwd?: string; write: (data: string) => void } | undefined };
 }
 
 // ============================================================================

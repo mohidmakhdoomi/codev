@@ -28,26 +28,28 @@ import type { MessagePacing } from './message-write.js';
 export function resolvePacingForSession(
   session: { id: string; cwd?: string },
 ): MessagePacing | undefined {
-  const row = getTerminalSessionById(session.id);
-
-  // 1. Kimi worktree marker in the terminal's cwd (live session's cwd, else
-  //    the persisted row's — a rehydrated session may only have the latter).
-  const cwd = session.cwd || row?.cwd || null;
-  if (cwd && existsSync(join(cwd, KIMI_SESSION_FILE))) {
-    return KIMI_HARNESS.messagePacing;
-  }
-
-  // 2. Config-resolved harness for the registered terminal role.
-  if (!row?.workspace_path) return undefined;
+  // Pacing is advisory: any failure here (missing DB, unknown harness name,
+  // fs error) must degrade to default pacing, never break message delivery.
   try {
+    const row = getTerminalSessionById(session.id);
+
+    // 1. Kimi worktree marker in the terminal's cwd (live session's cwd, else
+    //    the persisted row's — a rehydrated session may only have the latter).
+    const cwd = session.cwd || row?.cwd || null;
+    if (cwd && existsSync(join(cwd, KIMI_SESSION_FILE))) {
+      return KIMI_HARNESS.messagePacing;
+    }
+
+    // 2. Config-resolved harness for the registered terminal role.
+    if (!row?.workspace_path) return undefined;
     if (row.type === 'builder') {
       return getBuilderHarness(row.workspace_path).messagePacing;
     }
     if (row.type === 'architect') {
       return getArchitectHarness(row.workspace_path).messagePacing;
     }
+    return undefined;
   } catch {
-    // resolveHarness throws on unknown explicit harness names — default pacing
+    return undefined;
   }
-  return undefined;
 }
