@@ -15,8 +15,7 @@
   added recursive parity plus lifecycle preservation coverage.
 - Verification: dependency/core/types/artifact/codev build chain passed; 58
   targeted tests passed; built-CLI smoke tests passed for fresh init, adopt,
-  and update. The full default suite passed 3,508 tests but has 17 unrelated
-  environment-sensitive failures in `tower-utils.test.ts` (Codex harness
-  selected where assertions assume Claude session flags) and
-  `findWorkspaceRoot.test.ts` (`/tmp` is detected as a workspace). No tests
-  were skipped or modified to mask these pre-existing failures.
+  and update. The first full-suite run exposed host contamination from the
+  global Codex config and `/tmp/.git`; rerunning porch checks with isolated
+  `HOME`/`TMPDIR` passed the build and all 3,525 executed tests (48 existing
+  skips). No tests were skipped or modified to mask failures.
