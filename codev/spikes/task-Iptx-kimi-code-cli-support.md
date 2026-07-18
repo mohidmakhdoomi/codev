@@ -177,6 +177,34 @@ Everything above, plus the session-contract generalization:
 - [ ] Follow-up investigation (separate, small): Kimi "static deny rules" config surface as a partial write-guard substitute for builders.
 - [ ] Not pursued: ACP/`kimi server` adapter (larger backend change, no parity payoff — revisit only for structured-agent-I/O needs).
 
+## Addendum (2026-07-18, post-architect-review)
+
+Two corrections from architect review, with two additional probes.
+
+### A. Task-delivery readiness barrier (builder MVI)
+
+The original MVI said "spawn.ts posts the task through Tower's message path after PTY creation" — underspecified, because for the first ~5–15s the PTY's foreground process is the **seed `kimi -p` call**, not the TUI. Additional observations:
+
+- **(observed)** Kimi's TUI never emits the alternate-screen-enter escape (`ESC[?1049h` absent from both captured TUI transcripts) — it renders inline, so "TUI rendered" is not cleanly detectable from terminal escapes, and matching UI text (status bar/composer) would be version-fragile.
+- **(observed)** Bytes written to the PTY while `kimi -p` runs have **no defined consumer**: the seed's prompt is argv-bound and was unaffected by an injected line (`lastPrompt` = seed prompt only), and the injected text was recorded nowhere — a task written early is silently lost, or at worst replayed unpredictably into the TUI composer from the PTY input buffer. A barrier is mandatory, not defensive.
+
+**Corrected design — layered barrier + verified delivery:**
+
+1. **Shrink the at-risk payload**: the seed turn carries **role + task briefing** (with an explicit "do not act; do not use tools; acknowledge and wait for BEGIN" wrapper — the ack-and-wait discipline held in POC 6 for the role; validate it holds with a task attached, else fall back to role-only seed and treat the full task as the delivered payload below).
+2. **Sentinel**: the generated script prints `__CODEV_KIMI_SEED_DONE__ <session-id>` on its own line between seed completion and TUI exec. Tower (which already streams PTY output) gates any delivery on the sentinel — this deterministically bounds the seed window without guessing at timing.
+3. **Grace + write**: after the sentinel, a short fixed grace (~2–3s) for the composer, then the kick message (`BEGIN`, single line) with the Kimi-tuned delayed Enter.
+4. **Store-verified delivery (the actual guarantee)**: after writing, poll the session's `state.json` (`lastPrompt`/`updatedAt` — observed to update on submit) for confirmation; on timeout re-send Enter (the dominant observed failure is a swallowed Enter), then re-send the kick once, then surface a loud spawn warning. Ground truth from the store makes delivery self-healing and also absorbs the Enter-delay bisection uncertainty.
+
+Impact-map delta: the "spawn.ts post-spawn task delivery" row becomes a small Tower-side readiness-gated delivery routine (harness-owned sentinel pattern + verify function); test matrix adds sentinel parsing, the verify-retry state machine, and a seed-window write-loss regression test.
+
+### B. #1149 crash-loop fallback — corrected requirement for architect parity
+
+Concession: the original "stage-1: omit the precomputed fallback, rely on shellper's max-restart cap" is **not crash-loop-safe** — a dead stored session (store GC, manual deletion) makes every `-S` resume fast-fail (obs. 8); the restart loop burns to cap exhaustion, and per the documented lifecycle the permanent-exit handlers then **deregister the architect row**. That is a detectable outage requiring manual restart — a regression vs. Claude's self-healing, and must not be shipped under a "parity" claim.
+
+**Corrected requirement:** true architect resume parity REQUIRES preserving #1149's degrade-to-working-fresh semantic. Because a Kimi fresh-with-role launch can only be produced by the async seed, `CrashLoopFallback` (`session-manager.ts`) must be generalized so the fallback can be **built at degradation time**: an async `build(): Promise<{args, env}>` that runs `seedSession` (role re-seed → newly captured id) with `onApply` persisting the replacement id (the #1149 row-repair semantic, unchanged). The restart loop already tolerates inter-attempt delay; awaiting a 5–15s seed there is acceptable. A sync-only fallback (roleless fresh TUI) is ruled out by #1149's own constraint — the resume branch skips role injection, so the fallback must carry the role.
+
+**Corrected staging:** ship Kimi architect as EITHER (stage 1) Codex-like — no `session` capability, fresh on every restart, which is genuinely crash-loop-safe because no resume path exists — OR (stage 2) full stored-ID resume **with** the async-`build` fallback. The middle configuration (stored-ID resume, no async fallback) is not a shippable stage. Impact-map delta: add `packages/codev/src/terminal/session-manager.ts` (async-capable `CrashLoopFallback.build`); test matrix adds fallback-time seed success/failure (failure → capped restarts surfaced loudly, row NOT silently repaired).
+
 ## References
 
 - Exclusive Kimi documentation source: https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-command.html
