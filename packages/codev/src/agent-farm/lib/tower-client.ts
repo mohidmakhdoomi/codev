@@ -15,6 +15,7 @@ export {
   type TowerTunnelStatus,
   type TowerStatus,
   type TowerTerminal,
+  type SeedKickRequest,
 } from '@cluesmith/codev-core/tower-client';
 
 export { encodeWorkspacePath, decodeWorkspacePath } from '@cluesmith/codev-core/workspace';
