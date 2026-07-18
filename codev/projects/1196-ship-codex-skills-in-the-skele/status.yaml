@@ -1,7 +1,7 @@
 id: '1196'
 title: ship-codex-skills-in-the-skele
 protocol: pir
-phase: implement
+phase: review
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -10,12 +10,13 @@ gates:
     requested_at: '2026-07-18T06:29:49.252Z'
     approved_at: '2026-07-18T06:33:24.369Z'
   dev-approval:
-    status: pending
+    status: approved
     requested_at: '2026-07-18T06:45:27.775Z'
+    approved_at: '2026-07-18T07:08:00.955Z'
   pr:
     status: pending
 iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-18T06:26:40.103Z'
-updated_at: '2026-07-18T06:45:27.775Z'
+updated_at: '2026-07-18T07:15:35.471Z'
