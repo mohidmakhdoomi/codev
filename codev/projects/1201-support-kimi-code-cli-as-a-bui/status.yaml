@@ -1,7 +1,7 @@
 id: '1201'
 title: support-kimi-code-cli-as-a-bui
 protocol: pir
-phase: review
+phase: verified
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -21,7 +21,7 @@ iteration: 1
 build_complete: true
 history: []
 started_at: '2026-07-18T22:59:08.361Z'
-updated_at: '2026-07-19T00:55:09.990Z'
+updated_at: '2026-07-19T00:55:25.203Z'
 pr_history:
   - phase: review
     pr_number: 1203
