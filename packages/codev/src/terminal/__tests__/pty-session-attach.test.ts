@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { PtySession, type PtySessionConfig } from '../pty-session.js';
 import type { IShellperClient } from '../shellper-client.js';
 
@@ -81,6 +84,47 @@ describe('PtySession.attachShellper idempotency (#1047 Fix E)', () => {
     // Guard only fires for a *different* client, so this is a no-op re-subscribe
     // path; the session stays attached and functional.
     expect(clientA.listenerCount('data')).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('PtySession disk-log handle on re-attach (#1198)', () => {
+  it('does not reopen the disk log when a recovery re-attach arrives', () => {
+    const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pty-attach-log-'));
+    const config: PtySessionConfig = {
+      id: 'sess-log',
+      command: '',
+      args: [],
+      cols: 80,
+      rows: 24,
+      cwd: '/tmp',
+      env: {},
+      label: 'test',
+      logDir,
+      diskLogEnabled: true,
+    };
+    const session = new PtySession(config);
+    const openSpy = vi.spyOn(fs, 'openSync');
+    const logOpens = () => openSpy.mock.calls.filter((c) => String(c[0]).startsWith(logDir)).length;
+
+    try {
+      session.attachShellper(makeFakeClient(), Buffer.alloc(0), 1234);
+      expect(logOpens()).toBe(1);
+
+      // In-place recovery delivers a replacement client. Before the guard,
+      // this leaked one append handle per reconnect.
+      session.attachShellper(makeFakeClient(), Buffer.alloc(0), 1234);
+      expect(logOpens()).toBe(1);
+
+      // After a real teardown the handle is closed, so a fresh attach must
+      // reopen it.
+      session.detachShellper();
+      session.attachShellper(makeFakeClient(), Buffer.alloc(0), 1234);
+      expect(logOpens()).toBe(2);
+    } finally {
+      openSpy.mockRestore();
+      session.detachShellper();
+      fs.rmSync(logDir, { recursive: true, force: true });
+    }
   });
 });
 

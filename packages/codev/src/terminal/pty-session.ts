@@ -154,8 +154,11 @@ export class PtySession extends EventEmitter {
     // keeps it bumped going forward via onPtyData.
     this._lastDataAt = client.lastDataAt;
 
-    // Ensure log directory exists
-    if (this.diskLogEnabled) {
+    // Ensure log directory exists. Guarded on logFd: with #1198 re-attach is
+    // a routine recovery step, and reopening unconditionally would leak one
+    // append handle per reconnect. cleanupShellper() closes and nulls the fd,
+    // so a post-teardown attach still reopens.
+    if (this.diskLogEnabled && this.logFd === null) {
       fs.mkdirSync(path.dirname(this.logPath), { recursive: true });
       this.logFd = fs.openSync(this.logPath, 'a');
     }
