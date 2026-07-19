@@ -42,6 +42,9 @@ name in a multi-architect workspace).
      state.
    - The state file is authoritative free text. It typically opens with a
      role banner and may carry resume instructions; follow whatever it says.
+   - Architect state files are per-person and gitignored
+     (`codev/state/*.md`); never commit them. Builder `*_thread.md` files
+     are the opposite: versioned, shipping with each builder PR.
 
 3. **Confirm identity + orient, then follow the state file.** In one tight
    block, report: who you now are (name + one-line role from the banner, if

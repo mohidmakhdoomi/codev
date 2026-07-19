@@ -24,3 +24,23 @@ Key findings:
 
 Plan written to `codev/plans/1192-gitignore-architect-state-file.md`. Sitting
 at the plan-approval gate.
+
+## 2026-07-19 — Implement phase
+
+Plan approved without changes. Implemented as planned:
+
+- Rule pair added to `CODEV_GITIGNORE_ENTRIES` (covers init/adopt/update in
+  one edit); new `auditStateFileIgnore()` in `lib/gitignore.ts` probing real
+  git behavior via `git check-ignore` on phantom paths; wired into doctor's
+  `checkCodevStructure`.
+- Repo `.gitignore` gained the pair; verified in-worktree:
+  `git check-ignore codev/state/main.md` → ignored,
+  `codev/state/pir-1192_thread.md` → not ignored.
+- `/arch-init` SKILL.md versioning note added, mirrored byte-identical into
+  the skeleton copy.
+- Tests: new suites for the constant order, backfill pair, end-to-end
+  check-ignore split, and the audit (5 cases incl. shadowed negation and
+  tracked-file migration warning). Two pre-existing #880 backfill tests had
+  stale `result.added` expectations; updated to include the new entries.
+- Worktree gotcha: `@cluesmith/codev-core` dist wasn't built here; had to
+  build types + core before the codev package would compile.
