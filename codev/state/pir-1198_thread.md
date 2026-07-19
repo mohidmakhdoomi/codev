@@ -27,3 +27,14 @@ Plan approved as written (architect confirmed the core = swallowed close + sessi
 5. tower.ts: towerStop polls for process exit (8s), SIGKILL escalation.
 
 Notable test change: tower-shellper-integration's "emits exit with code -1 on unexpected disconnect" was asserting the OLD immediate-teardown behavior; rewritten for the grace-window semantics plus a re-attach-cancels-teardown case.
+
+## Dev-approval gate iteration
+
+Architect probed the design hard at the gate. Two code changes came out of it:
+- The `_connected`/`_everConnected`/`_intentionalDisconnect` trio collapsed into a single `_closePending` recorded inside `cleanup(intentional)` — the reviewer's "these feel like duplicates" instinct was right; capturing the decision at the transition point is both smaller and clearer (41398bff).
+- towerStop's 8000/200 literals extracted to STOP_EXIT_TIMEOUT_MS / STOP_CHECK_INTERVAL_MS (54ef5bd4).
+Also surfaced honestly at the gate: replay-gap loss on re-attach, no handshake timeout in connect() (pre-existing), tuning numbers are heuristics, incident trigger (stop/start overlap) is probable-not-proven.
+
+## Review phase
+
+Review file written; arch.md gained "Connection-loss recovery (#1198)" under Shellper Process Architecture; lessons-learned.md gained two entries (transition-time state capture / audit consumers before un-swallowing an event; success-shaped logging). HOT tier untouched (at cap; nothing here displaces the current ten). Follow-up candidates for the architect to file: heartbeat detection, connect() handshake timeout, lifecycle enum consolidation.
