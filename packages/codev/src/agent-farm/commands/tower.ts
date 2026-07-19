@@ -22,6 +22,11 @@ const LOG_FILE = resolve(AGENT_FARM_DIR, 'tower.log');
 const STARTUP_TIMEOUT_MS = 30000;
 const STARTUP_CHECK_INTERVAL_MS = 200;
 
+// Stop settings (#1198): how long towerStop waits for the SIGTERMed process
+// to exit before escalating to SIGKILL, and how often it polls.
+const STOP_EXIT_TIMEOUT_MS = 8000;
+const STOP_CHECK_INTERVAL_MS = 200;
+
 export interface TowerStartOptions {
   port?: number;
   wait?: boolean; // Defaults to true. Set false for fire-and-forget startup.
@@ -365,10 +370,10 @@ export async function towerStop(options: TowerStopOptions = {}): Promise<void> {
       return false;
     }
   };
-  const deadline = Date.now() + 8000;
+  const deadline = Date.now() + STOP_EXIT_TIMEOUT_MS;
   let survivors = pids.filter(isAlive);
   while (survivors.length > 0 && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, STOP_CHECK_INTERVAL_MS));
     survivors = survivors.filter(isAlive);
   }
 
@@ -380,7 +385,7 @@ export async function towerStop(options: TowerStopOptions = {}): Promise<void> {
         // Exited between the check and the kill
       }
     }
-    logger.warn(`Tower did not exit within 8s; sent SIGKILL to PID${survivors.length > 1 ? 's' : ''} ${survivors.join(', ')}`);
+    logger.warn(`Tower did not exit within ${STOP_EXIT_TIMEOUT_MS / 1000}s; sent SIGKILL to PID${survivors.length > 1 ? 's' : ''} ${survivors.join(', ')}`);
   }
 
   if (stopped > 0) {
