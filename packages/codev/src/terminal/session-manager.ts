@@ -434,7 +434,7 @@ export class SessionManager extends EventEmitter {
     if (this.sessions.get(sessionId) !== session) return;
     this.log(`Session ${sessionId} shellper disconnected unexpectedly`);
     this.logStderrTail(sessionId, session, -1);
-    this.removeDeadSession(sessionId);
+    this.removeUnreachableSession(sessionId);
     this.emit('session-error', sessionId, new Error('Shellper disconnected unexpectedly'));
   }
 
@@ -811,29 +811,55 @@ export class SessionManager extends EventEmitter {
    * Remove a dead session from the map, clear its timers, and clean up socket.
    * Called when a session exits naturally (no restart) or exhausts maxRestarts.
    */
+  /**
+   * Removal for sessions whose CHILD process ended (clean exit, or restart
+   * exhaustion). The shellper deliberately lingers after its child exits to
+   * serve late connections (#905), so it is a spent husk here: unlink the
+   * socket unconditionally — that is what marks the lingering shellper
+   * unresponsive so killOrphanedShellpers reaps it. Preserving the socket on
+   * this path leaks an immortal empty shellper per exited session (#1198
+   * e2e regression).
+   */
   private removeDeadSession(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
+    const session = this.detachSessionFromMap(sessionId);
     if (!session) return;
-    if (session.restartResetTimer) {
-      clearTimeout(session.restartResetTimer);
-      session.restartResetTimer = null;
-    }
-    this.sessions.delete(sessionId);
+    this.unlinkSocketIfExists(session.socketPath);
+  }
+
+  /**
+   * #1198: removal for sessions whose CONNECTION died (recovery exhausted or
+   * shellper unreachable). Unlike the child-exit path, the shellper may
+   * still host a live conversation, and unlinking a live shellper's socket
+   * makes it unreachable AND flags it for the orphan sweeper's kill path —
+   * so this path preserves the socket while the recorded process is current,
+   * degrading to a recoverable orphan (re-adoptable, attachable), never a
+   * killed live process.
+   */
+  private removeUnreachableSession(sessionId: string): void {
+    const session = this.detachSessionFromMap(sessionId);
+    if (!session) return;
     this.cleanupDeadSessionSocket(sessionId, session).catch((err) => {
       this.log(`Session ${sessionId} socket cleanup failed: ${(err as Error).message}`);
     });
   }
 
+  private detachSessionFromMap(sessionId: string): ManagedSession | null {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    if (session.restartResetTimer) {
+      clearTimeout(session.restartResetTimer);
+      session.restartResetTimer = null;
+    }
+    this.sessions.delete(sessionId);
+    return session;
+  }
+
   /**
-   * #1198: only unlink a removed session's socket when its shellper process
-   * is actually gone. Unlinking a live shellper's socket makes it
-   * unreachable AND flags it for the orphan sweeper's kill path — so a
-   * session whose connection fails deterministically must degrade to a
-   * recoverable orphan (re-adoptable, attachable), never to a killed live
-   * process. The check uses the same start-time guard as reconnection: a
-   * reused PID counts as "gone", so a dead shellper's socket/log files do
-   * not leak just because an unrelated process took its PID. Async and
-   * best-effort by design; removeDeadSession's map mutation stays sync.
+   * Socket cleanup for the connection-failure path: unlink only when the
+   * recorded shellper process is gone. The check uses the same start-time
+   * guard as reconnection, so a reused PID counts as "gone" and a dead
+   * shellper's socket/log files do not leak. Async and best-effort by
+   * design; the map mutation stays sync in the caller.
    */
   private async cleanupDeadSessionSocket(sessionId: string, session: ManagedSession): Promise<void> {
     if (await this.isShellperProcessCurrent(session)) {
