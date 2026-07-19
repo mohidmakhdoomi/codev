@@ -38,3 +38,5 @@ Also surfaced honestly at the gate: replay-gap loss on re-attach, no handshake t
 ## Review phase
 
 Review file written; arch.md gained "Connection-loss recovery (#1198)" under Shellper Process Architecture; lessons-learned.md gained two entries (transition-time state capture / audit consumers before un-swallowing an event; success-shaped logging). HOT tier untouched (at cap; nothing here displaces the current ten). Follow-up candidates for the architect to file: heartbeat detection, connect() handshake timeout, lifecycle enum consolidation.
+
+PR #1204 opened. Consult (single pass): claude=APPROVE, codex=REQUEST_CHANGES. Codex's finding was a real regression: attachShellper() leaked one disk-log fd per recovery re-attach. Fixed (guard open on logFd===null) + regression test, documented in review + rebuttal file; consult validated the consult-trusting lesson once again. Also caught at final worktree check: the exitInfo.code ?? -1 type fix had been verified by every build but never staged — committed in 0db7c7b7. Waiting at pr gate.
