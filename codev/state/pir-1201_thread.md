@@ -21,3 +21,11 @@
 - Enter-delay bisect (real kimi 0.27.0, POC probe-10 method): 80ms fails (spike-confirmed), 120/250/500ms submit. Threshold ≈ 100ms; shipped constant pinned at 1000ms (~10x margin, POC-validated, latency-only cost).
 - Demo driver at `codev/spikes/pir-1201-kimi-builder-demo.mjs` — runs the REAL dist modules (script generator, armSeedKick, writeMessageToSession, buildResume) against a real kimi PTY, covering the architect's 4-point demo checklist without touching the global Tower. Full `afx spawn` path needs the branch build installed into Tower (`pnpm -w run local-install`) — that restarts Tower, so it's the human's call at the gate.
 - **Demo executed: ALL 5 steps PASS** (kimi 0.27.0, first run). Seed → sentinel → store-verified BEGIN (`lastPrompt="BEGIN"`); the ack-and-wait-with-task discipline HELD (spike addendum's open question — no fallback needed); multiline submitted with the pinned delay; TUI killed mid-session → `-S` restart recalled both role token and task verbatim; buildResume returned the pinned id. Sitting at dev-approval gate.
+
+## 2026-07-19 — Review phase
+
+- dev-approval approved after the human ran the full afx-spawn-through-Tower demo (all 4 checklist items live).
+- Review file written; two lessons routed to COLD lessons-learned.md (advisory-decorator failure-totality; on-disk marker over schema for per-instance runtime facts). Arch already routed during implement (COLD arch.md subsection); no HOT-tier changes.
+- Cross-fork PR opened: cluesmith/codev#1203 (head mohidmakhdoomi:builder/pir-1201). No self-merge — maintainers merge.
+- CMAP (single advisory pass): gemini APPROVE, claude APPROVE, **codex REQUEST_CHANGES** — a real defect: seed-kick delivery confirmation used substring match on lastPrompt, but the fresh-spawn seed prompt itself contains "BEGIN", so the verifier false-positived before the kick submitted (the happy-path demo had masked it). **Fixed** (`732f04b8`): whitespace-normalized equality + two pinning regression tests; live demo re-run post-fix 5/5 PASS. Disposition recorded in `codev/projects/1201-*/1201-review-iter1-rebuttals.md` and flagged in the review's "Things to Look At" since PIR won't re-review it. Good CMAP catch — the exact class of thing solo review + a passing live demo can miss.
+- Sitting at the pr gate.
