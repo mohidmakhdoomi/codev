@@ -245,6 +245,32 @@ describe('ShellperProcess', () => {
       socket.destroy();
     });
 
+    it('sends an empty REPLAY frame when the buffer is empty (#1198)', async () => {
+      shellper = new ShellperProcess(createMockPty, socketPath);
+      await shellper.start('/bin/bash', [], '/tmp', {}, 80, 24);
+      expect(shellper.getReplayData().length).toBe(0);
+
+      const socket = net.createConnection(socketPath);
+      const parser = createFrameParser();
+      socket.pipe(parser);
+      const frames: ParsedFrame[] = [];
+      parser.on('data', (f: ParsedFrame) => frames.push(f));
+      await new Promise<void>((resolve) => socket.on('connect', () => resolve()));
+      socket.write(encodeHello({ version: PROTOCOL_VERSION, clientType: 'tower' }));
+
+      const deadline = Date.now() + 5000;
+      while (!frames.some((f) => f.type === FrameType.REPLAY) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      // Empty REPLAY still arrives, so replay waiters resolve immediately
+      // instead of burning their timeout on every fresh-terminal creation.
+      const replayFrame = frames.find((f) => f.type === FrameType.REPLAY);
+      expect(replayFrame).toBeDefined();
+      expect(replayFrame!.payload.length).toBe(0);
+
+      socket.destroy();
+    }, 10_000);
+
     it('caps an oversized replay to the most recent bytes on connect (#1198)', async () => {
       shellper = new ShellperProcess(createMockPty, socketPath);
       await shellper.start('/bin/bash', [], '/tmp', {}, 80, 24);

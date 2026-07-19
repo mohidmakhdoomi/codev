@@ -578,7 +578,7 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
             });
 
             // Get replay data and shellper info
-            const replayData = client.getReplayData() ?? Buffer.alloc(0);
+            const replayData = await client.waitForReplay(); // #1198: fresh shellpers always send REPLAY (possibly empty); awaiting avoids racing early child output
             const shellperInfo = _deps.shellperManager.getSessionInfo(sessionId)!;
 
             // Create a PtySession backed by the shellper client
@@ -1056,7 +1056,7 @@ export async function addArchitect(
         ...defaultSessionOptions({ restartOnExit: true, restartDelay: 2000, maxRestarts: 50 }),
       });
 
-      const replayData = client.getReplayData() ?? Buffer.alloc(0);
+      const replayData = await client.waitForReplay(); // #1198: fresh shellpers always send REPLAY (possibly empty); awaiting avoids racing early child output
       const shellperInfo = _deps.shellperManager.getSessionInfo(shellperSessionId)!;
 
       const session = manager.createSessionRaw({ label: `Architect (${name})`, cwd: workspacePath });

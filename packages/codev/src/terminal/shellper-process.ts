@@ -390,9 +390,11 @@ export class ShellperProcess extends EventEmitter {
       this.log(`Replay ${replayData.length} bytes exceeds cap; sending last ${REPLAY_PAYLOAD_MAX}`);
       replayData = replayData.subarray(replayData.length - REPLAY_PAYLOAD_MAX);
     }
-    if (replayData.length > 0) {
-      socket.write(encodeReplay(replayData));
-    }
+    // #1198: send REPLAY even when empty, so a client awaiting the frame
+    // resolves immediately instead of burning its timeout. Creation-time
+    // attach awaits the frame to avoid racing early child output into a
+    // dropped replay; old clients treat an empty REPLAY as no replay data.
+    socket.write(encodeReplay(replayData));
 
     // If the PTY already exited before this client connected, the original
     // EXIT broadcast missed it. Replay the retained EXIT frame so the client

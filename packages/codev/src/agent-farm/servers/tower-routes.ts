@@ -606,7 +606,7 @@ async function handleTerminalCreate(
           cols: cols || DEFAULT_COLS,
         });
 
-        const replayData = client.getReplayData() ?? Buffer.alloc(0);
+        const replayData = await client.waitForReplay(); // #1198: fresh shellpers always send REPLAY (possibly empty); awaiting avoids racing early child output
         const shellperInfo = shellperManager.getSessionInfo(sessionId)!;
 
         const session = manager.createSessionRaw({
@@ -2047,7 +2047,7 @@ async function handleWorkspaceShellCreate(
           ...defaultSessionOptions(),
         });
 
-        const replayData = client.getReplayData() ?? Buffer.alloc(0);
+        const replayData = await client.waitForReplay(); // #1198: fresh shellpers always send REPLAY (possibly empty); awaiting avoids racing early child output
         const shellperInfo = shellperManager.getSessionInfo(sessionId)!;
 
         const session = manager.createSessionRaw({
