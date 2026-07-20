@@ -14,6 +14,16 @@ import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 /**
+ * Architect state files (`codev/state/<name>.md`) are per-person and must be
+ * gitignored; builder thread files (`codev/state/*_thread.md`) share the
+ * directory but must stay versioned (they ship with each builder PR). Defined
+ * once here and referenced both in the entries block below and in the doctor
+ * audit's warning text (issue #1192), so the two can't drift out of sync.
+ */
+export const STATE_IGNORE_RULE = 'codev/state/*.md';
+export const THREAD_KEEP_RULE = '!codev/state/*_thread.md';
+
+/**
  * Standard gitignore entries for codev projects
  */
 export const CODEV_GITIGNORE_ENTRIES = `# Codev
@@ -22,8 +32,8 @@ export const CODEV_GITIGNORE_ENTRIES = `# Codev
 codev/.update-hashes.json
 .builders/
 .architect-role.md
-codev/state/*.md
-!codev/state/*_thread.md
+${STATE_IGNORE_RULE}
+${THREAD_KEEP_RULE}
 `;
 
 /**
@@ -152,9 +162,6 @@ export function backfillGitignore(
 
   return { added, alreadyPresent, skipped: false };
 }
-
-const STATE_IGNORE_RULE = 'codev/state/*.md';
-const THREAD_KEEP_RULE = '!codev/state/*_thread.md';
 
 function gitExitStatus(args: string[], cwd: string): number | null {
   try {
