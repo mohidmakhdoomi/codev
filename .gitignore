@@ -10,6 +10,10 @@ worktrees/
 .architect-role.md
 .codev/config.json
 
+# Architect state files are per-person; builder *_thread.md files ARE versioned (#1192)
+codev/state/*.md
+!codev/state/*_thread.md
+
 # OS files
 .DS_Store
 

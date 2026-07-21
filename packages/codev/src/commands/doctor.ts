@@ -13,6 +13,7 @@ import { query as claudeQuery } from '@anthropic-ai/claude-agent-sdk';
 import { executeForgeCommandSync, loadForgeConfig, validateForgeConfig, resolveAllConcepts, type ConceptResolution } from '../lib/forge.js';
 import { detectHarnessFromCommand } from '../agent-farm/utils/harness.js';
 import { auditPrGates, formatPrGateWarning } from '../lib/pr-gate-audit.js';
+import { auditStateFileIgnore } from '../lib/gitignore.js';
 import { auditFrameworkRefs, formatFrameworkRefFinding, hasFrameworkOverrides } from '../lib/framework-ref-audit.js';
 import { resolveAgyBin, AGY_OAUTH_MARKERS } from './consult/index.js';
 
@@ -487,6 +488,9 @@ function checkCodevStructure(workspaceRoot: string): { warnings: string[] } {
   if (!remoteCheck.hasRemote) {
     warnings.push('No git remote configured - builders cannot push branches or create PRs. Run: git remote add origin <url>');
   }
+
+  // Architect state files must be gitignored; builder thread files versioned (#1192)
+  warnings.push(...auditStateFileIgnore(workspaceRoot));
 
   return { warnings };
 }
