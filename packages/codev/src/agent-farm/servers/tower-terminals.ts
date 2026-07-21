@@ -26,6 +26,23 @@ import { TerminalManager, DEFAULT_DISK_LOG_MAX_BYTES } from '../../terminal/inde
  * Extract shellper session UUID from socket path (Spec 468).
  * Socket format: shellper-<UUID>.sock
  */
+/**
+ * #1198: cap the replay seeded into an adopted PtySession's ring buffer.
+ * A long-lived full-screen TUI session's replay can be many MB of
+ * newline-free history; seeding it whole means every subsequent viewer
+ * attach ships the entire payload to xterm.js in one bracketed write
+ * (multi-second parse, webview stalls). Seed only the most recent bytes:
+ * the client's post-connect resize nudge repaints full-screen apps, and the
+ * shellper retains the full history.
+ */
+const RING_SEED_MAX_BYTES = 1024 * 1024; // 1MB
+
+function capRingSeed(replayData: Buffer, sessionId: string): Buffer {
+  if (replayData.length <= RING_SEED_MAX_BYTES) return replayData;
+  _deps?.log('INFO', `Session ${sessionId} replay is ${replayData.length} bytes; seeding the most recent ${RING_SEED_MAX_BYTES}`);
+  return replayData.subarray(replayData.length - RING_SEED_MAX_BYTES);
+}
+
 function extractShellperSessionId(socketPath: string | null): string | null {
   if (!socketPath) return null;
   const match = path.basename(socketPath).match(/^shellper-(.+)\.sock$/);
@@ -747,7 +764,10 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
 
     const workspacePath = dbSession.workspace_path;
     const sessionCwd = dbSession.cwd ?? workspacePath;
-    const replayData = client.getReplayData() ?? Buffer.alloc(0);
+    // #1198: the REPLAY frame often arrives in a separate socket read after
+    // WELCOME, so a synchronous getReplayData() here raced it and adopted
+    // terminals rendered blank until new output arrived. Wait briefly for it.
+    const replayData = capRingSeed(await client.waitForReplay(), dbSession.id);
     const label = dbSession.label || (dbSession.type === 'architect' ? 'Architect' : (dbSession.role_id || 'unknown'));
 
     // Create a PtySession backed by the reconnected shellper client.
@@ -958,7 +978,9 @@ export async function getTerminalsForWorkspace(
           restartOptions,
         );
         if (client) {
-          const replayData = client.getReplayData() ?? Buffer.alloc(0);
+          // #1198: wait for the REPLAY frame instead of racing it (see the
+          // matching change in the startup adoption pass above).
+          const replayData = capRingSeed(await client.waitForReplay(), dbSession.id);
           const label = dbSession.label || (dbSession.type === 'architect' ? 'Architect' : (dbSession.role_id || dbSession.id));
           // Reuse the persisted terminal id (#991) so the session keeps its
           // identity across the reconnect — clients holding `/ws/terminal/<id>`

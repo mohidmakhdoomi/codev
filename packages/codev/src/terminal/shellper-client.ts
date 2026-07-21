@@ -37,8 +37,10 @@ import {
 export interface IShellperClient extends EventEmitter {
   connect(): Promise<WelcomeMessage>;
   disconnect(): void;
-  write(data: string | Buffer): void;
-  resize(cols: number, rows: number): void;
+  /** Returns false when the frame was dropped because the client is not connected (#1198). */
+  write(data: string | Buffer): boolean;
+  /** Returns false when the frame was dropped because the client is not connected (#1198). */
+  resize(cols: number, rows: number): boolean;
   signal(sig: number): void;
   spawn(msg: SpawnMessage): void;
   ping(): void;
@@ -57,6 +59,13 @@ export interface IShellperClient extends EventEmitter {
 export class ShellperClient extends EventEmitter implements IShellperClient {
   private socket: net.Socket | null = null;
   private _connected = false;
+  // #1198: a 'close' emission is owed to consumers. Recorded by cleanup()
+  // when it tears down a live connection that did not ask to die (anything
+  // other than disconnect()); consumed by the socket's 'close' event. The
+  // decision must be captured at teardown time because error paths run
+  // cleanup() before that event fires — reading _connected inside the close
+  // handler is what swallowed the emission.
+  private _closePending = false;
   private replayData: Buffer | null = null;
   // Wall-clock epoch (ms) of the last PTY byte the shellper has seen.
   //
@@ -121,6 +130,7 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
         reject(new Error('Already connected'));
         return;
       }
+      this._closePending = false;
 
       const socket = net.createConnection(this.socketPath);
       this.socket = socket;
@@ -143,6 +153,18 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
         this.safeEmitError(err);
         this.cleanup();
       });
+      // #1198: the parser drops oversized frames instead of erroring (a
+      // long-lived shellper's replay can exceed the frame cap). The
+      // connection stays healthy; surface what was lost. For a dropped
+      // REPLAY, unblock replay waiters with an empty replay so adoption
+      // proceeds (viewers repaint via the post-connect resize nudge).
+      parser.on('frame-skipped', (info: { type: number; size: number }) => {
+        if (info.type === FrameType.REPLAY && this.replayData === null) {
+          this.replayData = Buffer.alloc(0);
+          this.emit('replay', this.replayData);
+        }
+        this.emit('frame-skipped', info);
+      });
 
       socket.on('connect', () => {
         socket.pipe(parser);
@@ -151,9 +173,13 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
       });
 
       socket.on('close', () => {
-        const wasConnected = this._connected;
         this.cleanup();
-        if (wasConnected) {
+        // Emit exactly once per unexpectedly lost live connection.
+        // _closePending was recorded by whichever cleanup() ran first — an
+        // error path's or the one just above — so error-path closes are no
+        // longer swallowed (#1198).
+        if (this._closePending) {
+          this._closePending = false;
           this.emit('close');
         }
         if (!handshakeResolved) {
@@ -260,10 +286,13 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
   }
 
   disconnect(): void {
-    this.cleanup();
+    this.cleanup(true);
   }
 
-  private cleanup(): void {
+  private cleanup(intentional = false): void {
+    if (this._connected && !intentional) {
+      this._closePending = true;
+    }
     this._connected = false;
     if (this.socket && !this.socket.destroyed) {
       this.socket.destroy();
@@ -271,14 +300,16 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
     this.socket = null;
   }
 
-  write(data: string | Buffer): void {
-    if (!this._connected || !this.socket) return;
+  write(data: string | Buffer): boolean {
+    if (!this._connected || !this.socket) return false;
     this.socket.write(encodeData(data));
+    return true;
   }
 
-  resize(cols: number, rows: number): void {
-    if (!this._connected || !this.socket) return;
+  resize(cols: number, rows: number): boolean {
+    if (!this._connected || !this.socket) return false;
     this.socket.write(encodeResize({ cols, rows }));
+    return true;
   }
 
   signal(sig: number): void {

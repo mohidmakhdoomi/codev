@@ -6,6 +6,7 @@ import os from 'node:os';
 import {
   FrameType,
   PROTOCOL_VERSION,
+  MAX_FRAME_SIZE,
   createFrameParser,
   encodeFrame,
   encodeWelcome,
@@ -731,6 +732,117 @@ describe('ShellperClient', () => {
       expect(welcome.pid).toBe(1);
       expect(client.connected).toBe(true);
       expect(warnings).toEqual([]); // No warnings when versions match
+    });
+  });
+
+  describe('unexpected close emission (#1198)', () => {
+    function createCapturingShellper() {
+      let serverSocket: net.Socket | null = null;
+      const server = net.createServer((socket) => {
+        serverSocket = socket;
+        const parser = createFrameParser();
+        socket.pipe(parser);
+        parser.on('data', (frame: ParsedFrame) => {
+          if (frame.type === FrameType.HELLO) {
+            socket.write(encodeWelcome({ version: PROTOCOL_VERSION, pid: 1, cols: 80, rows: 24, startTime: Date.now() }));
+          }
+        });
+      });
+      server.listen(socketPath);
+      cleanup.push(() => { server.close(); });
+      return { getServerSocket: () => serverSocket };
+    }
+
+    it('emits close when a post-handshake error path runs cleanup first', async () => {
+      createCapturingShellper();
+
+      const client = new ShellperClient(socketPath);
+      cleanup.push(() => client.disconnect());
+      await client.connect();
+
+      const errors: Error[] = [];
+      client.on('error', (err: Error) => errors.push(err));
+      const closed = new Promise<void>((resolve) => client.once('close', resolve));
+
+      // Destroy the client-side socket with an error: the production error
+      // path (socket 'error' → safeEmitError → cleanup) whose subsequent
+      // 'close' was swallowed before the fix, leaving a silent zombie.
+      const socket = (client as unknown as { socket: net.Socket }).socket;
+      socket.destroy(new Error('transient socket error'));
+
+      await closed;
+      expect(errors.length).toBeGreaterThan(0);
+      expect(client.connected).toBe(false);
+    });
+
+    it('survives an oversized REPLAY frame: skips it, stays connected, keeps parsing (#1198 incident)', async () => {
+      const { getServerSocket } = createCapturingShellper();
+
+      const client = new ShellperClient(socketPath);
+      cleanup.push(() => client.disconnect());
+      await client.connect();
+
+      let closeEmitted = false;
+      client.on('close', () => { closeEmitted = true; });
+      const errors: Error[] = [];
+      client.on('error', (err: Error) => errors.push(err));
+      const skipped: Array<{ type: number; size: number }> = [];
+      client.on('frame-skipped', (info: { type: number; size: number }) => skipped.push(info));
+      const dataPromise = new Promise<Buffer>((resolve) => client.once('data', resolve));
+
+      // The incident shape: a shellper whose replay outgrew MAX_FRAME_SIZE
+      // sends it anyway (old shellper binaries still do). Before the fix the
+      // parser threw, the connection died on every reconnect, and the
+      // session was eventually orphaned and killed.
+      const oversized = Buffer.alloc(MAX_FRAME_SIZE + 1, 0x41);
+      const header = Buffer.alloc(5);
+      header[0] = FrameType.REPLAY;
+      header.writeUInt32BE(oversized.length, 1);
+      const server = getServerSocket()!;
+      server.write(header);
+      server.write(oversized);
+      // A frame after the oversized one must still be parsed.
+      server.write(encodeData('still alive'));
+
+      const data = await dataPromise;
+      expect(data.toString()).toBe('still alive');
+      expect(skipped).toEqual([{ type: FrameType.REPLAY, size: MAX_FRAME_SIZE + 1 }]);
+      expect(errors).toEqual([]);
+      expect(closeEmitted).toBe(false);
+      expect(client.connected).toBe(true);
+      // Replay waiters resolve with an empty replay instead of hanging.
+      const replay = await client.waitForReplay(100);
+      expect(replay.length).toBe(0);
+    }, 20_000);
+
+    it('does not emit close on intentional disconnect', async () => {
+      createCapturingShellper();
+
+      const client = new ShellperClient(socketPath);
+      await client.connect();
+
+      let closeEmitted = false;
+      client.on('close', () => { closeEmitted = true; });
+
+      client.disconnect();
+      await new Promise((r) => setTimeout(r, 100));
+      expect(closeEmitted).toBe(false);
+      expect(client.connected).toBe(false);
+    });
+
+    it('write and resize report delivery: true while connected, false after', async () => {
+      createCapturingShellper();
+
+      const client = new ShellperClient(socketPath);
+      await client.connect();
+
+      expect(client.write('hello')).toBe(true);
+      expect(client.resize(100, 50)).toBe(true);
+
+      client.disconnect();
+
+      expect(client.write('dropped')).toBe(false);
+      expect(client.resize(100, 50)).toBe(false);
     });
   });
 });
