@@ -86,9 +86,18 @@ overrides.
 - A new drift-audit library (pure, testable) returning structured findings + formatters.
 - Wiring the report into `codev doctor`.
 - Shadow-drift detection over the framework subtrees that ship in the skeleton and resolve via the
-  resolver: **`protocols/`, `consult-types/`, `roles/`, and prompt files within those trees**
-  (the issue names "protocols, consult-types, roles, prompts"). Both tier-1 `.codev/` and tier-2
-  `codev/` local copies are considered (either shadows the skeleton).
+  resolver. **Explicit scan set** (per Codex spec review — pinned here, not deferred to Plan): every
+  `.md` / `.json` file under the skeleton's **`protocols/`**, **`consult-types/`**, and **`roles/`**
+  trees (prompts and per-protocol templates live *within* `protocols/`, so they are covered). This is
+  the enumerable "framework files that can be shadowed" set; adding a new top-level framework subtree
+  is a documented maintenance point (same shape as `PR_PRODUCING_PROTOCOLS` in pr-gate-audit).
+- **Both override roots are considered independently.** A given skeleton file may be shadowed by a
+  tier-1 `.codev/<path>` copy, a tier-2 `codev/<path>` copy, or both. doctor reports **each local
+  copy it finds**, labeled with its tier, each classified on its own (identical vs differs) — because
+  a stale lower-precedence `codev/` copy is still rot even when a `.codev/` copy currently wins
+  resolution. The report also names which copy the resolver actually resolves (the winner), so the
+  human knows which one is live. (Note: the existing `hasLocalOverride()` helper only checks tier-2
+  `codev/`; the no-op / presence detection here must check **both** roots.)
 - Skeleton staleness: installed-version vs npm-latest, best-effort and offline-tolerant.
 - Classification of each shadow as **identical** (redundant) vs **differs** (adjudicate).
 - Tests: unit tests for the audit lib; an e2e/CLI test asserting doctor surfaces drift.
@@ -113,12 +122,17 @@ overrides.
 - [ ] Running `codev doctor` in a project with **no** local framework overrides prints no drift
       warnings and does not misreport (true no-op — no false "all clean" when there was nothing to
       scan, and no crash).
-- [ ] Skeleton-staleness check reports "N versions behind" (or equivalent) when the installed
-      version is older than npm latest, and degrades gracefully (no error, no hang) when offline or
-      when the registry is unreachable, bounded by a short timeout.
+- [ ] Skeleton-staleness check reports the **installed and latest versions explicitly** (e.g.
+      `installed 3.2.1; latest 3.2.3` — per Codex, an explicit pair is crisply testable where a
+      computed "N versions behind" distance is not) and flags "behind" when installed < latest. It
+      degrades gracefully (no error, no hang) when offline or the registry is unreachable, bounded by
+      a short timeout (~2–3s per Gemini).
 - [ ] doctor **never** modifies, deletes, or moves any local file as part of the drift check.
 - [ ] The drift audit is a standalone, unit-tested library (findings + formatter), mirroring the
       pr-gate / framework-ref precedent.
+- [ ] **Item 3 (known-default detection) is explicitly non-blocking** for this spec: it MAY ship, but
+      items 1 (shadow drift) and the staleness check are the required deliverables. The spec is
+      satisfied without item 3.
 - [ ] All new tests pass; existing doctor tests continue to pass.
 
 ## Constraints
