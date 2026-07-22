@@ -1,7 +1,7 @@
 id: '1220'
 title: arch-init-architect-auto-state
 protocol: air
-phase: implement
+phase: pr
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -11,4 +11,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-22T11:31:20.070Z'
-updated_at: '2026-07-22T11:31:20.071Z'
+updated_at: '2026-07-22T11:35:40.454Z'
