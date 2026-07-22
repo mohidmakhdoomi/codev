@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -2239,5 +2240,75 @@ describe('schema migration', () => {
     expect(GLOBAL_SCHEMA).toContain('shellper_socket TEXT');
     expect(GLOBAL_SCHEMA).toContain('shellper_pid INTEGER');
     expect(GLOBAL_SCHEMA).toContain('shellper_start_time INTEGER');
+  });
+});
+
+describe('crash-loop give-up (Issue #1224)', () => {
+  // Drive the setupAutoRestart exit handler to the maxRestarts give-up branch
+  // and assert it reaps the shellper husk (process-group SIGTERM) so give-up
+  // leaves no live-process-without-a-registry-row zombie.
+  function fakeSession(pid: number, socketDir: string) {
+    const client = new EventEmitter() as any;
+    client.spawn = vi.fn();
+    return {
+      client,
+      socketPath: path.join(socketDir, 'giveup.sock'),
+      pid,
+      startTime: 0,
+      options: {
+        sessionId: 'giveup-1',
+        command: 'claude',
+        args: [],
+        cwd: '/tmp',
+        env: {},
+        restartOnExit: true,
+        restartDelay: 1,
+        maxRestarts: 1,
+      },
+      restartCount: 1, // already at the cap → next failing exit gives up
+      restartResetTimer: null,
+      failingExitTimes: [] as number[],
+      stderrBuffer: null,
+      stderrStream: null,
+      stderrTailLogged: false,
+      recoveryRounds: 0,
+      lastRecoveryAt: 0,
+    };
+  }
+
+  it('SIGTERMs the shellper process group on give-up', () => {
+    const socketDir = tmpDir();
+    const HUSK_PID = 424242;
+    const manager = new SessionManager({
+      socketDir,
+      shellperScript: '/nonexistent/shellper.js',
+      nodeExecutable: process.execPath,
+    });
+    const session = fakeSession(HUSK_PID, socketDir);
+    (manager as any).sessions.set('giveup-1', session);
+
+    const killed: Array<[number, string | number | undefined]> = [];
+    const originalKill = process.kill;
+    process.kill = ((pid: number, signal?: string | number) => {
+      killed.push([pid, signal]);
+      return true;
+    }) as typeof process.kill;
+
+    const errors: string[] = [];
+    manager.on('session-error', (_id, err) => errors.push(err.message));
+
+    try {
+      (manager as any).setupAutoRestart(session, 'giveup-1');
+      session.client.emit('exit', { code: 1, signal: null });
+
+      // The whole process group is signalled (negative pid).
+      expect(killed).toContainEqual([-HUSK_PID, 'SIGTERM']);
+      // Give-up surfaced as a session-error, and the session was dropped.
+      expect(errors.some((m) => m.includes('Max restarts'))).toBe(true);
+      expect((manager as any).sessions.has('giveup-1')).toBe(false);
+    } finally {
+      process.kill = originalKill;
+      rmrf(socketDir);
+    }
   });
 });
