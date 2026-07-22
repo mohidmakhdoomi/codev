@@ -532,6 +532,7 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
           name: DEFAULT_ARCHITECT_NAME,
           baseArgs: cmdParts.slice(1),
           storedSessionId,
+          log: _deps.log,
         });
         if (resumed && mainSessionId) {
           _deps.log('INFO', `Resuming architect '${DEFAULT_ARCHITECT_NAME}' session ${mainSessionId.slice(0, 8)}… in ${workspacePath}`);
@@ -1013,6 +1014,7 @@ export async function addArchitect(
     name,
     baseArgs: cmdParts.slice(1),
     storedSessionId,
+    log: _deps.log,
   });
   if (resumed && conversationSessionId) {
     _deps.log('INFO', `Resuming architect '${name}' session ${conversationSessionId.slice(0, 8)}… in ${workspacePath}`);
