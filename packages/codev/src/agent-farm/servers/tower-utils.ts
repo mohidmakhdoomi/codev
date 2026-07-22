@@ -18,6 +18,7 @@ import { getArchitectHarness } from '../utils/config.js';
 import type { HarnessProvider } from '../utils/harness.js';
 import { getArchitectByName, setArchitectSessionId } from '../state.js';
 import type { CrashLoopFallback } from '../../terminal/session-manager.js';
+import { cmdlineHoldsSession } from './architect-session-holder.js';
 
 // ============================================================================
 // Rate Limiting
@@ -220,30 +221,32 @@ function sessionIsOwned(
  * which the caller treats as "could not determine" (see `sessionHasLiveHolder`).
  */
 function listProcessCommandLines(): string[] {
-  const out = execFileSync('ps', ['-A', '-o', 'args='], {
+  const out = execFileSync('ps', ['-ww', '-A', '-o', 'args='], {
     encoding: 'utf-8',
     timeout: 5000,
-    maxBuffer: 8 * 1024 * 1024,
+    maxBuffer: 16 * 1024 * 1024,
   });
   return out.split('\n').filter((line) => line.trim() !== '');
 }
 
 /**
  * Issue #1224: true when some live process is already running with `sessionId`
- * as a session-flag argument — i.e. a claude child launched with
- * `--session-id <id>` or `--resume <id>` (also the `=`-joined forms). Two real
- * holders were observed after a workspace restart: a stale pre-restart
- * shellper's claude child (same architect name), and an unrelated foreground
- * claude the user started by hand. Resuming a held id bakes `claude --resume
- * <id>`, which dies instantly with "Session ID is already in use" and
- * crash-loops the shellper forever.
+ * as a session-flag argument — a claude child (`--session-id <id>` / `--resume
+ * <id>`, incl. the `=`-joined forms) OR a shellper parent whose JSON config
+ * carries it (`"--session-id","<id>"`). The shellper-parent form matters because
+ * a crash-looping remnant's claude child is dead most of the time; the parent's
+ * argv is the durable evidence. Resuming a held id bakes `claude --resume <id>`,
+ * which dies instantly with "Session ID is already in use" and crash-loops the
+ * shellper forever.
  *
- * The match is anchored to the actual launch flags rather than a bare substring:
- * a session id is short in tests and could otherwise coincide with an unrelated
- * path in the process table, and the flags are exactly how a holder is spawned.
- * This is observation-only: it never touches the holder (case 2 is the user's
- * own terminal — killing it would be wrong), it only tells the caller to mint a
- * fresh session instead of colliding.
+ * The match is anchored to the launch flags (see `sessionIdNeedles`) rather than
+ * a bare substring: a session id is short in tests and could otherwise coincide
+ * with an unrelated path in the process table.
+ *
+ * This is the simple boolean guard used on the restart-bake path (mint fresh on
+ * any holder). The richer own-vs-foreign classification and mint-or-reclaim
+ * policy lives in `architect-session-holder.ts` and is wired into the
+ * add-architect / launch paths.
  *
  * On any scan failure (`ps` unavailable/timeout) it returns `false`: this guard
  * is purely additive — it diverts to fresh ONLY on positive evidence of a live
@@ -255,12 +258,8 @@ export function sessionHasLiveHolder(
   opts?: { list?: () => string[] },
 ): boolean {
   const list = opts?.list ?? listProcessCommandLines;
-  const needles = ['--session-id', '--resume'].flatMap((flag) => [
-    `${flag} ${sessionId}`,
-    `${flag}=${sessionId}`,
-  ]);
   try {
-    return list().some((cmdline) => needles.some((needle) => cmdline.includes(needle)));
+    return list().some((cmdline) => cmdlineHoldsSession(cmdline, sessionId));
   } catch {
     return false;
   }

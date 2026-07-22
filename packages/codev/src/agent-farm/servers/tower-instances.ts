@@ -31,6 +31,11 @@ import {
   buildArchitectCrashLoopFallback,
 } from './tower-utils.js';
 import {
+  reconcileArchitectSessionHolder,
+  findOwnArchitectShellpers,
+  reapShellpers,
+} from './architect-session-holder.js';
+import {
   autoNumberArchitectName,
   validateArchitectName,
   DEFAULT_ARCHITECT_NAME,
@@ -527,11 +532,25 @@ export async function launchInstance(workspacePath: string): Promise<{ success: 
         try {
           storedSessionId = getArchitectByName(resolvedPath, DEFAULT_ARCHITECT_NAME)?.sessionId ?? null;
         } catch { /* global.db unreadable — spawn fresh */ }
+        // Issue #1224: reconcile the stored session id against the live process
+        // table before resuming (default 'main' recovers via `workspace start`,
+        // so this launch path is main's mint-or-reclaim site). Reap our own
+        // superseded main shellper; a foreign holder forces a fresh session.
+        let foreignMainHolder = false;
+        if (storedSessionId) {
+          ({ foreignHolder: foreignMainHolder } = await reconcileArchitectSessionHolder({
+            sessionId: storedSessionId,
+            identity: { workspacePath: resolvedPath, architectName: DEFAULT_ARCHITECT_NAME },
+            selfPid: process.pid,
+            log: _deps.log,
+          }));
+        }
         const { args: cmdArgs, env: harnessEnv, sessionId: mainSessionId, resumed, fallback } = resolveArchitectLaunch({
           workspacePath,
           name: DEFAULT_ARCHITECT_NAME,
           baseArgs: cmdParts.slice(1),
           storedSessionId,
+          hasLiveHolder: () => foreignMainHolder,
           log: _deps.log,
         });
         if (resumed && mainSessionId) {
@@ -1009,11 +1028,25 @@ export async function addArchitect(
   try {
     storedSessionId = getArchitectByName(resolvedPath, name)?.sessionId ?? null;
   } catch { /* state.db unreadable — spawn fresh */ }
+  // Issue #1224: before deciding to resume, reconcile the stored session id
+  // against the live process table. Reap our OWN superseded shellper(s) holding
+  // it (mint-or-reclaim), and treat a foreign holder as "don't resume" so
+  // resolveArchitectLaunch mints fresh instead of baking a colliding --resume.
+  let foreignHolder = false;
+  if (storedSessionId) {
+    ({ foreignHolder } = await reconcileArchitectSessionHolder({
+      sessionId: storedSessionId,
+      identity: { workspacePath: resolvedPath, architectName: name },
+      selfPid: process.pid,
+      log: _deps.log,
+    }));
+  }
   const { args: cmdArgs, env: harnessEnv, sessionId: conversationSessionId, resumed, fallback } = resolveArchitectLaunch({
     workspacePath,
     name,
     baseArgs: cmdParts.slice(1),
     storedSessionId,
+    hasLiveHolder: () => foreignHolder,
     log: _deps.log,
   });
   if (resumed && conversationSessionId) {
@@ -1239,7 +1272,17 @@ export async function removeArchitect(
       hasStaleRow = getArchitectByName(resolvedPath, name) !== null;
     } catch { /* registry unreadable: fall through to not-found */ }
     const staleTerminalIds = findArchitectTerminalSessionIds(name, resolvedPath, workspacePath);
-    if (hasStaleRow || staleTerminalIds.length > 0) {
+    // Issue #1224 (symptom B): a shellper can outlive its registry row entirely
+    // — a give-up husk or a stale remnant that deregistered while looping. With
+    // no live terminal AND no rows, the historical code returned "not found"
+    // while the process kept running, and remove-architect could not clear it.
+    // Reap any of our own shellpers matching this identity so this command is
+    // the recovery tool for a live-process-without-a-row zombie too.
+    const zombiePids = findOwnArchitectShellpers({
+      identity: { workspacePath: resolvedPath, architectName: name },
+      selfPid: process.pid,
+    });
+    if (hasStaleRow || staleTerminalIds.length > 0 || zombiePids.length > 0) {
       try {
         if (hasStaleRow) {
           setArchitectByName(resolvedPath, name, null);
@@ -1253,7 +1296,10 @@ export async function removeArchitect(
           error: `Architect '${name}' has no live terminal, and deleting its stale state failed: ${(err as Error).message}. Retry 'afx workspace remove-architect --name ${name}'.`,
         };
       }
-      _deps.log('INFO', `Purged stale architect state for '${name}' from workspace ${workspacePath} (no live terminal; registration=${hasStaleRow}, terminal rows=${staleTerminalIds.length})`);
+      if (zombiePids.length > 0) {
+        await reapShellpers(zombiePids);
+      }
+      _deps.log('INFO', `Purged stale architect state for '${name}' from workspace ${workspacePath} (no live terminal; registration=${hasStaleRow}, terminal rows=${staleTerminalIds.length}, zombie shellpers=${zombiePids.length})`);
       return { success: true };
     }
     return { success: false, error: `Architect '${name}' not found in workspace '${workspacePath}'.` };
