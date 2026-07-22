@@ -185,12 +185,21 @@ function versionLt(a: string, b: string): boolean {
   return false;
 }
 
-/** Default npm-latest lookup: `npm view @cluesmith/codev version`, bounded + offline-tolerant. */
-function defaultFetchLatest(): string | null {
+/** Bound on the npm-latest lookup (ms). The registry can't stall doctor beyond this. */
+export const NPM_LATEST_TIMEOUT_MS = 2500;
+
+/**
+ * Default npm-latest lookup: `npm view @cluesmith/codev version`. Bounded by
+ * `NPM_LATEST_TIMEOUT_MS` (spawnSync kills the child past it) and offline-tolerant —
+ * an unreachable registry, non-zero exit, missing `npm`, or unparsable output all
+ * yield `null` rather than throwing or hanging. Exported so tests can assert the
+ * real bounded/offline behavior (not just an injected stub).
+ */
+export function fetchLatestVersion(): string | null {
   try {
     const r = spawnSync('npm', ['view', '@cluesmith/codev', 'version'], {
       encoding: 'utf-8',
-      timeout: 2500,
+      timeout: NPM_LATEST_TIMEOUT_MS,
       stdio: 'pipe',
     });
     if (r.status === 0 && r.stdout) {
@@ -211,7 +220,7 @@ function defaultFetchLatest(): string | null {
  * @param fetchLatest - injectable latest-version source (defaults to `npm view`)
  */
 export function checkSkeletonStaleness(
-  fetchLatest: FetchLatest = defaultFetchLatest,
+  fetchLatest: FetchLatest = fetchLatestVersion,
 ): StalenessResult {
   const installed = installedVersion;
   let latest: string | null = null;

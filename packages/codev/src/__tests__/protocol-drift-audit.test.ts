@@ -17,9 +17,11 @@ import {
   auditProtocolDrift,
   hasFrameworkShadows,
   checkSkeletonStaleness,
+  fetchLatestVersion,
   formatDriftFinding,
   formatStaleness,
   FRAMEWORK_DRIFT_DIRS,
+  NPM_LATEST_TIMEOUT_MS,
   type OverrideTier,
 } from '../lib/protocol-drift-audit.js';
 import { getSkeletonDir, listSkeletonFiles } from '../lib/skeleton.js';
@@ -171,6 +173,29 @@ describe('protocol-drift-audit', () => {
       });
       expect(s.latest).toBeNull();
       expect(s.behind).toBe(false);
+    });
+
+    it('the REAL default lookup is offline-tolerant AND bounded when the registry is unreachable', () => {
+      // Exercises the real `npm view` path (not an injected stub) against an unreachable
+      // registry, asserting the non-functional guarantee from the plan: it returns null and
+      // completes within a bound. ECONNREFUSED is immediate; the spawnSync timeout
+      // (NPM_LATEST_TIMEOUT_MS) is the hard backstop, so a generous ceiling never flakes.
+      const prevRegistry = process.env.npm_config_registry;
+      const prevRetries = process.env.npm_config_fetch_retries;
+      process.env.npm_config_registry = 'http://127.0.0.1:1';
+      process.env.npm_config_fetch_retries = '0';
+      try {
+        const start = performance.now();
+        const latest = fetchLatestVersion();
+        const elapsedMs = performance.now() - start;
+        expect(latest).toBeNull();
+        expect(elapsedMs).toBeLessThan(NPM_LATEST_TIMEOUT_MS + 5000);
+      } finally {
+        if (prevRegistry === undefined) delete process.env.npm_config_registry;
+        else process.env.npm_config_registry = prevRegistry;
+        if (prevRetries === undefined) delete process.env.npm_config_fetch_retries;
+        else process.env.npm_config_fetch_retries = prevRetries;
+      }
     });
   });
 
