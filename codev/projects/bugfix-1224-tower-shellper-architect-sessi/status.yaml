@@ -1,7 +1,7 @@
 id: bugfix-1224
 title: tower-shellper-architect-sessi
 protocol: bugfix
-phase: fix
+phase: pr
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -11,4 +11,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-22T21:01:48.295Z'
-updated_at: '2026-07-22T21:06:31.211Z'
+updated_at: '2026-07-22T21:24:27.488Z'
