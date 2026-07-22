@@ -65,17 +65,33 @@ describe('codev doctor — Framework Drift (CLI)', () => {
     expect(result.stdout).toMatch(/differs from installed skeleton v\d+\.\d+\.\d+/);
   });
 
-  it('reports a byte-identical local shadow as a safe-to-remove redundant copy', () => {
+  it('reports a byte-identical local shadow as info-only (redundant copy, not a warning)', () => {
     seedLocalCopy(env.dir, rel, /* mutate */ false);
     const result = runCodev(['doctor'], env.dir, env.env);
     expect(result.stdout).toContain('Framework Drift');
     expect(result.stdout).toContain('safe to remove');
+    // Info-only path: an identical copy must NOT be flagged for adjudication (that is the
+    // `differs`/warning path). No differing shadow exists here, so no adjudicate line.
+    expect(result.stdout).not.toContain('customized or stale? — adjudicate');
   });
 
-  it('prints no Framework Drift section when there are no local overrides', () => {
-    // codev/ exists but holds no framework files → no shadows. Skeleton is the installed
-    // package (not behind itself), so the section must be a true no-op.
+  it('prints no Framework Drift section when there are no local overrides and skeleton is current', () => {
+    // codev/ exists but holds no framework files → no shadows. npm is unreachable (beforeEach)
+    // so staleness is "could not check" → not behind → the section must be a true no-op.
     const result = runCodev(['doctor'], env.dir, env.env);
     expect(result.stdout).not.toContain('Framework Drift');
+  });
+
+  it('shows the Framework Drift section for staleness alone when the skeleton is behind (no shadows)', () => {
+    // No local overrides, but inject a newer npm-latest via the documented test seam so the
+    // installed skeleton is "behind". The section must open for staleness alone, with the
+    // staleness-specific subtitle (not the shadowing one) and a behind warning.
+    const behindEnv = { ...env.env, CODEV_DOCTOR_FAKE_LATEST: '999.0.0' };
+    const result = runCodev(['doctor'], env.dir, behindEnv);
+    expect(result.stdout).toContain('Framework Drift');
+    expect(result.stdout).toContain('installed skeleton is behind npm latest'); // staleness subtitle
+    expect(result.stdout).toMatch(/latest 999\.0\.0 — behind/);
+    // No shadows → no adjudication line in this path.
+    expect(result.stdout).not.toContain('customized or stale? — adjudicate');
   });
 });

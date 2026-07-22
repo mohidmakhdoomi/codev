@@ -808,7 +808,11 @@ export async function doctor(): Promise<number> {
     // has something actionable to say — a shadow exists OR the skeleton is behind. No overrides +
     // up-to-date/offline => true no-op (no section at all).
     const drift = auditProtocolDrift(workspaceRoot);
-    const staleness = checkSkeletonStaleness();
+    // Test seam: `CODEV_DOCTOR_FAKE_LATEST` injects the npm-latest version so the
+    // staleness-only "behind" integration branch is e2e-testable without a live
+    // registry. Unset in real use → the actual `npm view` lookup runs.
+    const fakeLatest = process.env.CODEV_DOCTOR_FAKE_LATEST;
+    const staleness = checkSkeletonStaleness(fakeLatest ? () => fakeLatest : undefined);
     if (drift.length > 0 || staleness.behind) {
       // Header parenthetical reflects the actual finding: the shadowing subtitle is only accurate
       // when a local shadow exists; in the staleness-only path (no shadows, skeleton behind) it

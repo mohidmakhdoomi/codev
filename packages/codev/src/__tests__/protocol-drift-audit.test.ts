@@ -117,13 +117,13 @@ describe('protocol-drift-audit', () => {
     });
 
     it('classifies an EOL-only difference as differs (conservative raw-byte compare)', () => {
+      // Precondition made explicit: the baseline file must contain a newline to convert,
+      // otherwise the CRLF transform is a no-op and the test would vacuously pass.
+      expect(skeletonBytes(rel).includes(0x0a)).toBe(true);
       const crlf = skeletonBytes(rel).toString('utf-8').replace(/\n/g, '\r\n');
       writeLocal(root, 'codev', rel, crlf);
       const f = auditProtocolDrift(root).find((x) => x.relativePath === rel);
-      // Only meaningful if the file actually contained a newline to convert.
-      if (skeletonBytes(rel).includes(0x0a)) {
-        expect(f!.status).toBe('differs');
-      }
+      expect(f!.status).toBe('differs');
     });
   });
 
