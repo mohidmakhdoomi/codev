@@ -430,6 +430,15 @@ export function resolveArchitectRestart(
   const storedSessionId = getArchitectByName(workspacePath, architectName)?.sessionId ?? null;
   const resolved = resolveArchitectLaunch({
     workspacePath, name: architectName, baseArgs, storedSessionId, homeDir: opts?.homeDir, log: opts?.log,
+    // Issue #1224: never run the live-holder check on the restart-bake path. The
+    // holder of this session at bake time is THIS shellper's own child (its argv
+    // carries --resume <id>), so a self-detection would bake fresh restart args
+    // on every healthy reconnect and lose conversation continuity on the next
+    // child crash. Collision-avoidance for a genuinely-held id belongs at the
+    // add-architect / main-launch reconcile layer (mint-or-reclaim), and the
+    // #1149 crash-loop fallback is the runtime backstop if a baked resume does
+    // collide. So resume when owned; do not holder-check here.
+    hasLiveHolder: () => false,
   });
   return { ...resolved, storedSessionId };
 }

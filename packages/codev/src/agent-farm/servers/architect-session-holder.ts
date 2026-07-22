@@ -243,6 +243,7 @@ export async function reapShellpers(
     kill?: (pid: number, signal: NodeJS.Signals) => void;
     wait?: (ms: number) => Promise<void>;
     graceMs?: number;
+    killGraceMs?: number;
     pollMs?: number;
   },
 ): Promise<void> {
@@ -251,19 +252,28 @@ export async function reapShellpers(
   const kill = opts?.kill ?? killProcessGroup;
   const wait = opts?.wait ?? sleep;
   const graceMs = opts?.graceMs ?? 3000;
+  const killGraceMs = opts?.killGraceMs ?? 2000;
   const pollMs = opts?.pollMs ?? 100;
 
+  const pollUntilDead = async (deadlineMs: number): Promise<void> => {
+    let waited = 0;
+    while (waited < deadlineMs && pids.some((pid) => isAlive(pid))) {
+      await wait(pollMs);
+      waited += pollMs;
+    }
+  };
+
   for (const pid of pids) kill(pid, 'SIGTERM');
+  await pollUntilDead(graceMs);
 
-  const deadline = graceMs;
-  let waited = 0;
-  while (waited < deadline && pids.some((pid) => isAlive(pid))) {
-    await wait(pollMs);
-    waited += pollMs;
-  }
-
-  for (const pid of pids) {
-    if (isAlive(pid)) kill(pid, 'SIGKILL');
+  const survivors = pids.filter((pid) => isAlive(pid));
+  if (survivors.length > 0) {
+    for (const pid of survivors) kill(pid, 'SIGKILL');
+    // Confirm SIGKILL actually took effect before returning: the caller resumes
+    // `claude --resume <id>` next, and a holder still in the kernel's exit path
+    // has not yet released the session lock — returning early would re-open the
+    // very collision race this reap exists to close (codex review, Issue #1224).
+    await pollUntilDead(killGraceMs);
   }
 }
 

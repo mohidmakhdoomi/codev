@@ -171,6 +171,28 @@ describe('reapShellpers (Issue #1224)', () => {
     await reapShellpers([], { kill, isAlive: () => false, wait: async () => {} });
     expect(kill).not.toHaveBeenCalled();
   });
+
+  it('confirms death after SIGKILL before resolving (no resume race)', async () => {
+    // The holder survives SIGTERM and even the first poll after SIGKILL, then
+    // dies. reapShellpers must not resolve until it observes the death — a
+    // premature return would let the caller resume while the lock is still held.
+    let aliveChecks = 0;
+    const kill = vi.fn();
+    const waits: number[] = [];
+    await reapShellpers([20], {
+      kill,
+      // alive for SIGTERM grace + one post-SIGKILL poll, dead thereafter.
+      isAlive: () => { aliveChecks += 1; return aliveChecks <= 5; },
+      wait: async (ms) => { waits.push(ms); },
+      graceMs: 300,
+      killGraceMs: 400,
+      pollMs: 100,
+    });
+    expect(kill).toHaveBeenCalledWith(20, 'SIGTERM');
+    expect(kill).toHaveBeenCalledWith(20, 'SIGKILL');
+    // It kept polling after SIGKILL rather than returning immediately.
+    expect(waits.length).toBeGreaterThan(3);
+  });
 });
 
 describe('reconcileArchitectSessionHolder (Issue #1224)', () => {
