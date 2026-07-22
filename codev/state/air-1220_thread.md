@@ -30,3 +30,10 @@ Open loop: run the test file green, then porch check → done → PR.
 - porch check (build, tests) ✓; PR phase check (pr_exists, e2e_tests) ✓.
 - Opened PR #1221 with review embedded in the body (AIR: no separate review file).
 - Reached `pr` gate → STOP, waiting for human approval. Not running porch gate.
+
+### 2026-07-22 — pr gate approved, merge blocked by branch protection
+- Human approved via architect relay; ran `porch approve 1220 pr --a-human-explicitly-approved-this` → gate approved, checks green.
+- `gh pr merge 1221 --merge` BLOCKED: base branch policy. mergeStateStatus=BLOCKED, reviewDecision=REVIEW_REQUIRED, CI checks pending.
+- `--auto` rejected: repo has auto-merge disabled (enablePullRequestAutoMerge).
+- Did NOT use `--admin` (won't bypass branch protection without explicit go-ahead).
+- Reported to architect; awaiting a GitHub review approval + CI green, or an explicit --admin instruction.
