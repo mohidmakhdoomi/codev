@@ -36,3 +36,27 @@ No "Baked Decisions" section in the issue → free to explore the design.
   **quiet by default** — prints nothing unless a shadow exists OR skeleton is behind. Staleness is
   silent when up-to-date/offline; warns only when genuinely behind (the issue's sibling failure mode).
   Re-running plan consult after the fix.
+
+## Implement
+- Worktree had NO node_modules on spawn — ran `pnpm install` + built `@cluesmith/codev-core` first
+  (its .d.ts are needed or tsc floods with module-not-found). Noting for siblings.
+- Phase 1 [done]: `lib/protocol-drift-audit.ts` — `auditProtocolDrift(root?, skeletonDir?)`,
+  `hasFrameworkShadows`, `checkSkeletonStaleness(fetchLatest?)` + formatters. All injectable for tests.
+  Raw-byte SHA-256 compare; scan set protocols/consult-types/roles; staleness via `npm view` (2.5s,
+  offline→null). tsc clean, `npm run build` ✓, full suite 3555 passing. Committed. Phase_1 3-way consult running.
+
+- Phase 1 iter2: codex REQUEST_CHANGES (used custom walk instead of `listSkeletonFiles`) → fixed
+  (reuse `listSkeletonFiles(sub)` filtered to .md/.json). Re-consult: unanimous APPROVE. Committed.
+- Phase 2 [done]: wired "Framework Drift" section into doctor.ts — quiet-by-default (prints only if a
+  shadow exists OR skeleton behind). Manually verified against THIS repo's real codev/ overrides:
+  differs→⚠ warnings, identical→○ redundant-copy info, staleness "up to date", `[resolved — live]`
+  marker all render. e2e doctor tests unaffected (they run in an empty sandbox, no codev/ project).
+  Committed. Next: phase_2 build+test checks + 3-way consult.
+
+- Phase 2 iter2: codex REQUEST_CHANGES ×2 (differs line lacked skeleton version; header parenthetical
+  false in staleness-only path) → both fixed (version threaded via staleness.installed; subtitle
+  adapts). Re-consult: unanimous APPROVE.
+- Phase 3 [done]: unit test (19 cases: identical/differs/no-copy/both-tiers/resources-excluded/
+  EOL/no-op/staleness behind|uptodate|offline|throws/formatters/no-mutation/scan-set integrity) +
+  e2e (3 cases). e2e forces unreachable npm registry so staleness is deterministic ("could not
+  check") — keeps the no-overrides no-op assertion stable & offline. Unit 19/19, e2e 3/3. Committed.
