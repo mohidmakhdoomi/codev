@@ -20,7 +20,7 @@ import {
   type HelloMessage,
   type WelcomeMessage,
 } from '../shellper-protocol.js';
-import { ShellperClient } from '../shellper-client.js';
+import { ShellperClient, LEGACY_REPLAY_TIMEOUT_MS } from '../shellper-client.js';
 
 // Helper: create a temp socket path
 function tmpSocketPath(): string {
@@ -614,7 +614,11 @@ describe('ShellperClient', () => {
         socket.pipe(parser);
         parser.on('data', (frame: ParsedFrame) => {
           if (frame.type === FrameType.HELLO) {
-            socket.write(encodeWelcome({ version: PROTOCOL_VERSION, pid: 1, cols: 80, rows: 24, startTime: Date.now() }));
+            // #1215: alwaysSendsReplay: true — this is the new-shellper race
+            // #1198 fixed (delayed REPLAY on a separate read), which uses the
+            // full timeoutMs. A legacy peer's shortened wait is covered
+            // separately below.
+            socket.write(encodeWelcome({ version: PROTOCOL_VERSION, pid: 1, cols: 80, rows: 24, startTime: Date.now(), alwaysSendsReplay: true }));
             // Delay REPLAY to simulate split reads
             setTimeout(() => {
               socket.write(encodeReplay(Buffer.from('delayed replay\r\n')));
@@ -648,6 +652,75 @@ describe('ShellperClient', () => {
       // Server never sends REPLAY — should timeout
       const replay = await client.waitForReplay(100);
       expect(replay.length).toBe(0);
+    });
+
+    // #1215: an idle old-binary shellper's WELCOME omits alwaysSendsReplay
+    // and it never sends REPLAY (no buffered data) — waitForReplay() must
+    // not burn the full caller-supplied timeout for it.
+    it('caps the wait at LEGACY_REPLAY_TIMEOUT_MS for a peer that did not advertise alwaysSendsReplay', async () => {
+      // welcomeMsg intentionally omits alwaysSendsReplay (legacy WELCOME)
+      const shellper = createMiniShellper(socketPath);
+      cleanup.push(shellper.close);
+
+      const client = new ShellperClient(socketPath);
+      cleanup.push(() => client.disconnect());
+      await client.connect();
+
+      const start = Date.now();
+      // Caller asks for the full 500ms default — a legacy peer should still
+      // resolve near LEGACY_REPLAY_TIMEOUT_MS, not wait out the full ask.
+      const replay = await client.waitForReplay(500);
+      const elapsed = Date.now() - start;
+
+      expect(replay.length).toBe(0);
+      expect(elapsed).toBeLessThan(500);
+      // Generous upper bound to absorb scheduler jitter without asserting
+      // an exact timer value.
+      expect(elapsed).toBeLessThan(LEGACY_REPLAY_TIMEOUT_MS + 200);
+    });
+
+    it('still picks up a REPLAY frame from a legacy peer if it arrives within the shortened window', async () => {
+      const server = net.createServer((socket) => {
+        const parser = createFrameParser();
+        socket.pipe(parser);
+        parser.on('data', (frame: ParsedFrame) => {
+          if (frame.type === FrameType.HELLO) {
+            // No alwaysSendsReplay — legacy WELCOME
+            socket.write(encodeWelcome({ version: PROTOCOL_VERSION, pid: 1, cols: 80, rows: 24, startTime: Date.now() }));
+            // Arrives well inside the shortened legacy window
+            setTimeout(() => {
+              socket.write(encodeReplay(Buffer.from('legacy replay\r\n')));
+            }, 10);
+          }
+        });
+      });
+      server.listen(socketPath);
+      cleanup.push(() => { server.close(); });
+
+      const client = new ShellperClient(socketPath);
+      cleanup.push(() => client.disconnect());
+      await client.connect();
+
+      const replay = await client.waitForReplay();
+      expect(replay.toString()).toBe('legacy replay\r\n');
+    });
+
+    it('emits replay-timeout with alwaysSendsReplay=false when a legacy peer times out', async () => {
+      const shellper = createMiniShellper(socketPath);
+      cleanup.push(shellper.close);
+
+      const client = new ShellperClient(socketPath);
+      cleanup.push(() => client.disconnect());
+      await client.connect();
+
+      const timeoutEvent = new Promise<{ alwaysSendsReplay: boolean; timeoutMs: number }>((resolve) => {
+        client.once('replay-timeout', resolve);
+      });
+
+      await client.waitForReplay(500);
+      const info = await timeoutEvent;
+      expect(info.alwaysSendsReplay).toBe(false);
+      expect(info.timeoutMs).toBe(LEGACY_REPLAY_TIMEOUT_MS);
     });
   });
 
