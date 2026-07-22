@@ -725,7 +725,7 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
 
   // Probe shellper sockets in parallel with bounded concurrency (Spec 0122 Phase 2)
   const CONCURRENCY_LIMIT = 5;
-  type ProbeResult = { dbSession: DbTerminalSession; client: import('../../terminal/shellper-client.js').IShellperClient | null; restartOptions?: ReconnectRestartOptions };
+  type ProbeResult = { dbSession: DbTerminalSession; client: import('../../terminal/shellper-client.js').IShellperClient | null; replayData: Buffer | null; restartOptions?: ReconnectRestartOptions };
   const probeResults: ProbeResult[] = [];
 
   for (let i = 0; i < probeTasks.length; i += CONCURRENCY_LIMIT) {
@@ -739,7 +739,20 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
           task.dbSession.shellper_start_time!,
           task.restartOptions,
         );
-        return { dbSession: task.dbSession, client, restartOptions: task.restartOptions };
+        if (!client) {
+          return { dbSession: task.dbSession, client: null, replayData: null, restartOptions: task.restartOptions };
+        }
+        // #1198: the REPLAY frame often arrives in a separate socket read
+        // after WELCOME, so a synchronous getReplayData() here raced it and
+        // adopted terminals rendered blank until new output arrived. Wait
+        // briefly for it. #1215: run this wait inside the same bounded-
+        // concurrency batch as the connect, so waits for up to
+        // CONCURRENCY_LIMIT sessions overlap instead of stacking in the
+        // sequential loop below (worst case for a mostly-idle, pre-upgrade
+        // fleet of shellpers was ~10s serialized; see waitForReplay() for
+        // how the per-session cost itself is also bounded for legacy peers).
+        const replayData = capRingSeed(await client.waitForReplay(), task.dbSession.id);
+        return { dbSession: task.dbSession, client, replayData, restartOptions: task.restartOptions };
       }),
     );
 
@@ -756,7 +769,7 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
   }
 
   // Process probe results sequentially (shared state mutations)
-  for (const { dbSession, client } of probeResults) {
+  for (const { dbSession, client, replayData } of probeResults) {
     if (!client) {
       _deps.log('INFO', `Shellper session ${dbSession.id} is stale (PID/socket dead) — will clean up`);
       continue; // Will be cleaned up in Phase 2
@@ -764,10 +777,6 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
 
     const workspacePath = dbSession.workspace_path;
     const sessionCwd = dbSession.cwd ?? workspacePath;
-    // #1198: the REPLAY frame often arrives in a separate socket read after
-    // WELCOME, so a synchronous getReplayData() here raced it and adopted
-    // terminals rendered blank until new output arrived. Wait briefly for it.
-    const replayData = capRingSeed(await client.waitForReplay(), dbSession.id);
     const label = dbSession.label || (dbSession.type === 'architect' ? 'Architect' : (dbSession.role_id || 'unknown'));
 
     // Create a PtySession backed by the reconnected shellper client.
@@ -779,7 +788,10 @@ async function _reconcileTerminalSessionsInner(): Promise<void> {
     const ptySession = manager.getSession(session.id);
     if (ptySession) {
       const shellperSessId = extractShellperSessionId(dbSession.shellper_socket) ?? dbSession.id;
-      ptySession.attachShellper(client, replayData, dbSession.shellper_pid!, shellperSessId);
+      // replayData is only null when client is null (probe batch above),
+      // which the `if (!client)` guard already excluded — fall back to
+      // empty defensively rather than asserting.
+      ptySession.attachShellper(client, replayData ?? Buffer.alloc(0), dbSession.shellper_pid!, shellperSessId);
       // Architect sessions have auto-restart — keep WebSocket clients connected on exit
       if (dbSession.type === 'architect') {
         ptySession.restartOnExit = true;
