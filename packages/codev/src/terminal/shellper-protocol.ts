@@ -88,6 +88,19 @@ export interface WelcomeMessage {
    * process running and still tracking).
    */
   lastDataAt?: number;
+  /**
+   * Whether this shellper guarantees sending a REPLAY frame immediately
+   * after WELCOME, even when the replay buffer is empty (#1215).
+   *
+   * Optional for backward compatibility, same pattern as `lastDataAt`: an
+   * older shellper doesn't know this field exists and simply omits it,
+   * which Tower treats as `false` — it only sends REPLAY when it has
+   * buffered data, so `waitForReplay()` can't assume an empty reply is
+   * coming and must fall back to a short bounded wait instead of the full
+   * timeout. The behavior itself (`#1198`, commit `7a2f8053`) predates this
+   * flag; this just makes it discoverable by the client instead of PROTOCOL_VERSION.
+   */
+  alwaysSendsReplay?: boolean;
 }
 
 export interface SpawnMessage {

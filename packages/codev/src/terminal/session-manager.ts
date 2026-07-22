@@ -326,6 +326,14 @@ export class SessionManager extends EventEmitter {
       this.log(`Session ${sessionId} skipped oversized frame (type=${info.type}, ${info.size} bytes)`);
     });
 
+    // #1215: surfaces when waitForReplay() actually burned its timeout
+    // instead of getting a REPLAY frame — observability for the next
+    // shellper/Tower protocol-behavior skew, so it shows up in logs
+    // instead of presenting as unexplained adoption lag.
+    client.on('replay-timeout', (info: { alwaysSendsReplay: boolean; timeoutMs: number }) => {
+      this.log(`Session ${sessionId} waitForReplay timed out after ${info.timeoutMs}ms (alwaysSendsReplay=${info.alwaysSendsReplay})`);
+    });
+
     // Socket closed without an EXIT frame. Historically treated as "shellper
     // crashed", but #1198 showed it also fires for a transient socket error
     // against a perfectly healthy shellper, so try to reconnect in place
