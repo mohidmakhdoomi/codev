@@ -76,3 +76,56 @@ No REQUEST_CHANGES. Requested the `pr` gate via `porch done`; awaiting human app
 Note for follow-up: consult's project auto-detect fails from a builder worktree that carries the
 full `codev/projects/` tree ("Multiple projects found"); had to pin `--issue 1224 --project-id
 bugfix-1224`. Worth a separate issue if it recurs.
+
+## PR iteration 2 — architect requested 3 changes (approved scope expansion)
+
+Gate NOT approved. Waleed wants (all in this PR):
+1. **JSON-argv parent needles** — a remnant *shellper* carries the id as `"--session-id","<id>"`
+   in its config JSON; the crash-looping child is dead <8s/respawn so the space/`=` needles miss
+   the incident-1 holder during most of its life. Add JSON forms.
+2. **Mint-or-RECLAIM** — when the holder is verifiably OUR OWN superseded shellper (shellper-main.js
+   + same session id + same cwd + same CODEV_ARCHITECT_NAME, not self), kill its process group
+   (SIGTERM→SIGKILL) and RESUME. Foreign holders never touched. Test never-kill-foreign explicitly.
+3. **Symptom B** — (a) add/launch reconcile with an existing live shellper for the identity
+   (reap, don't spawn a duplicate); (b) crash-loop give-up deregisters cleanly + reaps husk;
+   (c) remove-architect clears live-process-no-row zombies; (d) capture dying child stderr/exit.
+
+### Design
+- New module `servers/architect-session-holder.ts`: `sessionIdNeedles` (space/`=`/JSON forms),
+  `cmdlineHoldsSession`, `listProcessEntries` (ps -ww -eo pid=,args=), `classifyArchitectSessionHolder`
+  → `{reclaimable: pid[], foreign: bool}` (reclaimable = shellper-main.js whose JSON has matching
+  sessionId+cwd+CODEV_ARCHITECT_NAME), `findOwnArchitectShellpers` (identity w/o session, for
+  remove-architect), and async `reclaimSupersededShellpers` (kill group + poll-for-death, injectable
+  seams). Decision: foreign → mint fresh; else reclaimable → kill+resume; else resume.
+- `sessionHasLiveHolder` (tower-utils) delegates to the shared needle helper (gets JSON forms).
+- Wire async reconcile into `addArchitect` + `launchInstance` main before `resolveArchitectLaunch`,
+  passing `hasLiveHolder: () => foreignHolder`.
+- `removeArchitect` not-found branch: reap a matching live zombie shellper → success.
+- SessionManager maxRestarts give-up: logStderrTail (capture child reason) + kill shellper group
+  (reap husk) so give-up leaves no row-gone/process-alive zombie.
+
+Root-cause mapping to forensic timeline (issue comments): incident 1 = self stale remnant →
+reclaim; incident 3 foreign = user's tty claude → mint fresh (never touch); incident 3
+wedge-after-free + silent-dereg → give-up reap + stderr capture + remove-architect zombie reap.
+
+### Implemented (iteration 2)
+- `servers/architect-session-holder.ts` (new): needles (+JSON parent form), `isOwnArchitectShellper`
+  (shellper-main.js + cwd + CODEV_ARCHITECT_NAME identity gate), `classifyArchitectSessionHolder`
+  (own→reclaimable / foreign), `findOwnArchitectShellpers`, `reapShellpers` (group SIGTERM→SIGKILL,
+  poll-for-death), `reconcileArchitectSessionHolder` (foreign→mint-fresh / own→reap+resume).
+- `tower-utils.sessionHasLiveHolder` delegates to shared needles (gains JSON form + `ps -ww`).
+- `addArchitect` + `launchInstance` main: async reconcile before `resolveArchitectLaunch`
+  (`hasLiveHolder: () => foreignHolder`).
+- `removeArchitect`: reaps live-process-no-row zombies (identity match).
+- `session-manager` give-up: stderr capture + process-group SIGTERM husk reap.
+
+Validation: full build ✓; full suite **3582 passed / 48 skipped, 0 failed** (30s); tsc clean.
+Tests: architect-session-holder.test.ts (needles/identity/classify/reap/reconcile incl. explicit
+never-kill-foreign) + session-manager give-up husk-reap. Net add this iteration ≫300 LOC — expected
+for the architect-approved scope expansion.
+
+Honesty note for PR: the wedge-after-free deeper cause (children dying <8s with the session
+demonstrably free) — claude's own error surfaces via the PTY data/ring buffer, not shellper stderr,
+so give-up now logs exit code/signal + shellper stderr for diagnosis and reaps the husk so the loop
+can't persist; the definitive root cause of that specific datapoint is captured-for-diagnosis, not
+claimed-fixed (per architect's "document rather than chase blind").
