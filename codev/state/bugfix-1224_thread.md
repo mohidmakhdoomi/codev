@@ -129,3 +129,18 @@ demonstrably free) — claude's own error surfaces via the PTY data/ring buffer,
 so give-up now logs exit code/signal + shellper stderr for diagnosis and reaps the husk so the loop
 can't persist; the definitive root cause of that specific datapoint is captured-for-diagnosis, not
 claimed-fixed (per architect's "document rather than chase blind").
+
+### CMAP iteration 2
+- claude = APPROVE (HIGH, no issues).
+- codex = REQUEST_CHANGES: (1) `reapShellpers` didn't confirm death AFTER SIGKILL → resume could
+  race the still-exiting holder → **fixed** (post-SIGKILL `killGraceMs` poll + test). (2) status.yaml
+  + thread.md in the PR → **rebutted with evidence**: status.yaml is committed by porch's own
+  `chore(porch)` commits (builders must not touch it; prior merged bugfixes e.g. #1220 carry the
+  identical commits), and the thread is committed by builder-role design (ships to main). Deferring
+  the final call to the architect at the gate.
+- Also self-caught + fixed a regression: `resolveArchitectRestart` was self-detecting the very
+  shellper being reconnected (its child's argv holds `--resume <id>`) → would bake fresh restart
+  args on every healthy reconnect and drop conversation on next crash. Now `hasLiveHolder:()=>false`
+  on the restart-bake path (collision-avoidance is at add/launch reconcile + #1149 runtime fallback).
+
+Validation after fixes: full build ✓; full suite **3583 passed / 48 skipped / 0 failed**; tsc clean.
