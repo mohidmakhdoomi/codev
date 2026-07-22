@@ -1085,7 +1085,23 @@ export class SessionManager extends EventEmitter {
 
       const maxRestarts = session.options.maxRestarts ?? 50;
       if (session.restartCount >= maxRestarts) {
-        this.log(`Session ${sessionId} exhausted max restarts (${maxRestarts})`);
+        this.log(`Session ${sessionId} exhausted max restarts (${maxRestarts}); giving up (last exit code=${exit.code ?? -1}, signal=${exit.signal ?? null})`);
+        // Issue #1224: capture the dying child's stderr for the wedge-after-free
+        // diagnosis. Reset the once-only guard so the give-up tail logs even if
+        // an earlier failing exit already emitted one — the give-up child's
+        // reason is the one worth having.
+        session.stderrTailLogged = false;
+        this.logStderrTail(sessionId, session, exit.code ?? -1);
+        // Issue #1224 (symptom B): reap the crash-looped shellper husk so
+        // give-up does not leave a live-process-without-a-registry-row zombie
+        // (the divergence remove-architect then failed to clear). Kill the whole
+        // process group — the shellper is a detached group leader; the periodic
+        // orphan sweep SIGKILLs any survivor.
+        try {
+          process.kill(-session.pid, 'SIGTERM');
+        } catch {
+          /* already gone or not permitted */
+        }
         this.emit('session-error', sessionId, new Error(`Max restarts (${maxRestarts}) exceeded`));
         // Remove the exhausted session from the map
         this.removeDeadSession(sessionId);

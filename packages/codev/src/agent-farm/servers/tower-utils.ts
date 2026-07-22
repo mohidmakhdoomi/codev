@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import type { ServerResponse } from 'node:http';
 import type { RateLimitEntry } from './tower-types.js';
 import crypto from 'node:crypto';
@@ -17,6 +18,7 @@ import { getArchitectHarness } from '../utils/config.js';
 import type { HarnessProvider } from '../utils/harness.js';
 import { getArchitectByName, setArchitectSessionId } from '../state.js';
 import type { CrashLoopFallback } from '../../terminal/session-manager.js';
+import { cmdlineHoldsSession } from './architect-session-holder.js';
 
 // ============================================================================
 // Rate Limiting
@@ -212,6 +214,58 @@ function sessionIsOwned(
 }
 
 /**
+ * Snapshot every running process's command line (argv joined). Used to detect a
+ * live holder of a conversation session id (Issue #1224). `ps -A -o args=` is
+ * accepted by both BSD (macOS) and coreutils (Linux) `ps`; the empty header
+ * (`args=`) yields one command line per line. A missing/failing `ps` throws,
+ * which the caller treats as "could not determine" (see `sessionHasLiveHolder`).
+ */
+function listProcessCommandLines(): string[] {
+  const out = execFileSync('ps', ['-ww', '-A', '-o', 'args='], {
+    encoding: 'utf-8',
+    timeout: 5000,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return out.split('\n').filter((line) => line.trim() !== '');
+}
+
+/**
+ * Issue #1224: true when some live process is already running with `sessionId`
+ * as a session-flag argument — a claude child (`--session-id <id>` / `--resume
+ * <id>`, incl. the `=`-joined forms) OR a shellper parent whose JSON config
+ * carries it (`"--session-id","<id>"`). The shellper-parent form matters because
+ * a crash-looping remnant's claude child is dead most of the time; the parent's
+ * argv is the durable evidence. Resuming a held id bakes `claude --resume <id>`,
+ * which dies instantly with "Session ID is already in use" and crash-loops the
+ * shellper forever.
+ *
+ * The match is anchored to the launch flags (see `sessionIdNeedles`) rather than
+ * a bare substring: a session id is short in tests and could otherwise coincide
+ * with an unrelated path in the process table.
+ *
+ * This is the simple boolean guard used on the restart-bake path (mint fresh on
+ * any holder). The richer own-vs-foreign classification and mint-or-reclaim
+ * policy lives in `architect-session-holder.ts` and is wired into the
+ * add-architect / launch paths.
+ *
+ * On any scan failure (`ps` unavailable/timeout) it returns `false`: this guard
+ * is purely additive — it diverts to fresh ONLY on positive evidence of a live
+ * holder, and never makes an un-held resume worse than today's behavior. The
+ * `list` seam exists for tests.
+ */
+export function sessionHasLiveHolder(
+  sessionId: string,
+  opts?: { list?: () => string[] },
+): boolean {
+  const list = opts?.list ?? listProcessCommandLines;
+  try {
+    return list().some((cmdline) => cmdlineHoldsSession(cmdline, sessionId));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Issue #1150: decide whether a persisted sibling architect row still deserves
  * a respawn, absent any live-terminal evidence (the caller checks
  * `terminal_sessions` first; this covers the session-artifact half).
@@ -284,6 +338,13 @@ export function resolveArchitectLaunch(opts: {
   storedSessionId?: string | null;
   /** Test seam: pins the home dir the ownership check resolves the session store under. */
   homeDir?: string;
+  /**
+   * Issue #1224 test seam: override the live-holder detector. Defaults to
+   * scanning the real process table via `sessionHasLiveHolder`.
+   */
+  hasLiveHolder?: (sessionId: string) => boolean;
+  /** Optional logger, so the divert-to-fresh decision (Issue #1224) is diagnosable. */
+  log?: (level: 'INFO' | 'WARN' | 'ERROR', message: string) => void;
 }): {
   args: string[];
   env: Record<string, string>;
@@ -292,6 +353,7 @@ export function resolveArchitectLaunch(opts: {
   fallback?: ArchitectLaunchFallback;
 } {
   const { workspacePath, baseArgs, storedSessionId, homeDir } = opts;
+  const hasLiveHolder = opts.hasLiveHolder ?? sessionHasLiveHolder;
   const harness = getArchitectHarness(workspacePath);
 
   // 1. No resumable-session support → plain fresh, nothing to persist.
@@ -306,10 +368,18 @@ export function resolveArchitectLaunch(opts: {
   const skipResume = process.env['CODEV_SKIP_RESUME'] === '1';
 
   // 2. Resume the persisted conversation (role injection skipped) — but only
-  // when the session still exists on disk for this workspace. A failed or
-  // throwing check falls through to a fresh spawn (Issue #1145: a stored id
-  // can outlive its jsonl, and resuming it would crash-loop the restart).
-  if (!skipResume && storedSessionId && sessionIsOwned(harness, storedSessionId, workspacePath, homeDir)) {
+  // when the session still exists on disk for this workspace (Issue #1145: a
+  // stored id can outlive its jsonl) AND no live process is currently holding
+  // it (Issue #1224). A held id — a stale pre-restart shellper's claude child or
+  // an unrelated foreground claude — makes `claude --resume <id>` die with
+  // "Session ID is already in use" and crash-loop the shellper forever; the
+  // #1145 existence check can't catch it, because a held session's jsonl exists
+  // precisely because the holder is writing it. Either failure mints fresh.
+  const canResume = !skipResume && storedSessionId
+    && sessionIsOwned(harness, storedSessionId, workspacePath, homeDir);
+  if (canResume && hasLiveHolder(storedSessionId!)) {
+    opts.log?.('WARN', `Architect '${opts.name}' stored session ${storedSessionId!.slice(0, 8)}… is held by a live process; minting a fresh session to avoid a collision crash loop in ${workspacePath}`);
+  } else if (canResume) {
     const fallbackSessionId = crypto.randomUUID();
     const fresh = buildArchitectArgs(
       [...baseArgs, ...harness.session.newSessionArgs(fallbackSessionId)],
@@ -348,7 +418,7 @@ export function resolveArchitectRestart(
   workspacePath: string,
   architectName: string,
   baseArgs: string[],
-  opts?: { homeDir?: string },
+  opts?: { homeDir?: string; log?: (level: 'INFO' | 'WARN' | 'ERROR', message: string) => void },
 ): {
   args: string[];
   env: Record<string, string>;
@@ -359,7 +429,16 @@ export function resolveArchitectRestart(
 } {
   const storedSessionId = getArchitectByName(workspacePath, architectName)?.sessionId ?? null;
   const resolved = resolveArchitectLaunch({
-    workspacePath, name: architectName, baseArgs, storedSessionId, homeDir: opts?.homeDir,
+    workspacePath, name: architectName, baseArgs, storedSessionId, homeDir: opts?.homeDir, log: opts?.log,
+    // Issue #1224: never run the live-holder check on the restart-bake path. The
+    // holder of this session at bake time is THIS shellper's own child (its argv
+    // carries --resume <id>), so a self-detection would bake fresh restart args
+    // on every healthy reconnect and lose conversation continuity on the next
+    // child crash. Collision-avoidance for a genuinely-held id belongs at the
+    // add-architect / main-launch reconcile layer (mint-or-reclaim), and the
+    // #1149 crash-loop fallback is the runtime backstop if a baked resume does
+    // collide. So resume when owned; do not holder-check here.
+    hasLiveHolder: () => false,
   });
   return { ...resolved, storedSessionId };
 }
