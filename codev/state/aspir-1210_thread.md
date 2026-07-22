@@ -60,3 +60,20 @@ No "Baked Decisions" section in the issue → free to explore the design.
   EOL/no-op/staleness behind|uptodate|offline|throws/formatters/no-mutation/scan-set integrity) +
   e2e (3 cases). e2e forces unreachable npm registry so staleness is deterministic ("could not
   check") — keeps the no-overrides no-op assertion stable & offline. Unit 19/19, e2e 3/3. Committed.
+
+- Phase 3 iter1: codex REQUEST_CHANGES + claude COMMENT (same gap): plan's e2e deliverable
+  "no overrides + skeleton behind → staleness section shown" was unreachable because e2e forced npm
+  offline everywhere. Fixed with a documented `CODEV_DOCTOR_FAKE_LATEST` env seam in doctor.ts →
+  added e2e for the staleness-only behind branch; asserted identical=info-only (no adjudicate line);
+  made EOL unit precondition explicit. Unit 19/19, e2e 4/4. Re-consult (iter2) running.
+
+- Phase 3 iter2: codex REQUEST_CHANGES (MEDIUM) — plan's 2nd non-functional assertion (staleness
+  bounded-when-offline) missing; only stub-offline covered. Fixed: exported real `fetchLatestVersion`
+  + `NPM_LATEST_TIMEOUT_MS`; added unit test hitting unreachable registry asserting null + bounded
+  time. Unit 20/20. iter3 re-consult running.
+
+- Phase 3 iter3: unanimous APPROVE. All 3 implement phases done.
+## Review
+- Wrote review (codev/reviews/1210-...md) with Architecture Updates (cold: no change — faithful
+  instance of the doctor audit-lib pattern) + Lessons Learned Updates (cold/Testing: test the real
+  timeout path, not a stub). Creating PR next; will STOP at pr gate for human approval.
