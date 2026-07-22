@@ -23,4 +23,10 @@ No "Baked Decisions" section in the issue → free to explore the design.
 - Installed pkg version: `version.ts` (reads package.json). No npm-latest check exists anywhere yet.
 
 ## Progress
-- [in progress] Specify phase — writing spec.
+- [done] Specify — spec drafted + committed. 3-way spec consult: gemini APPROVE, claude APPROVE,
+  codex COMMENT. Folded codex/gemini tightenings into spec: explicit scan set, dual override roots
+  (both `.codev/` and `codev/` reported, winner marked), staleness reports explicit `installed X;
+  latest Y` (not "N behind"), item-2 marked non-blocking, ~2.5s timeout, raw-byte compare for EOL.
+- [done] Plan — 3 phases: (1) `lib/protocol-drift-audit.ts` (shadow drift + staleness), (2) wire
+  into doctor.ts, (3) unit + e2e tests. Item 2 (historical-hash known-default) deferred to follow-up;
+  `codev update` wiring deferred (spec: optional). Checks pass. Signaling plan done next.
