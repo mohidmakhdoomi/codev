@@ -32,7 +32,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { getSkeletonDir, resolveCodevFile, findWorkspaceRoot } from './skeleton.js';
+import { getSkeletonDir, listSkeletonFiles, resolveCodevFile, findWorkspaceRoot } from './skeleton.js';
 import { version as installedVersion } from '../version.js';
 
 /**
@@ -90,18 +90,15 @@ function hashBytes(filePath: string): string {
   return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
-/** Recursively collect framework files (relative to `rootDir`) under `rootDir/sub`. */
-function collectFrameworkFiles(rootDir: string, sub: string, out: string[]): void {
-  const base = path.join(rootDir, sub);
-  if (!fs.existsSync(base)) return;
-  for (const entry of fs.readdirSync(base, { withFileTypes: true })) {
-    const rel = path.join(sub, entry.name);
-    if (entry.isDirectory()) {
-      collectFrameworkFiles(rootDir, rel, out);
-    } else if (entry.isFile() && FRAMEWORK_EXTS.has(path.extname(entry.name))) {
-      out.push(rel);
-    }
-  }
+/**
+ * Skeleton-relative framework files under a scan-set subtree, filtered to
+ * framework extensions. Enumerated via the resolver's own `listSkeletonFiles`
+ * (over `getSkeletonDir()`) so this audit and runtime resolution agree on exactly
+ * what the skeleton is. Returned paths (e.g. `protocols/spir/protocol.md`) are
+ * both the skeleton-relative and the override-relative path.
+ */
+function skeletonFrameworkFiles(sub: string): string[] {
+  return listSkeletonFiles(sub).filter((rel) => FRAMEWORK_EXTS.has(path.extname(rel)));
 }
 
 /**
@@ -113,20 +110,14 @@ function collectFrameworkFiles(rootDir: string, sub: string, out: string[]): voi
  * one finding per local copy (so a file present in BOTH tiers yields two findings).
  *
  * @param workspaceRoot - project root (auto-detected via findWorkspaceRoot if omitted)
- * @param skeletonDir   - skeleton root (defaults to the installed skeleton; injectable for tests)
  */
-export function auditProtocolDrift(
-  workspaceRoot?: string,
-  skeletonDir: string = getSkeletonDir(),
-): DriftFinding[] {
+export function auditProtocolDrift(workspaceRoot?: string): DriftFinding[] {
   const root = workspaceRoot ?? findWorkspaceRoot();
+  const skeletonDir = getSkeletonDir();
   const findings: DriftFinding[] = [];
 
   for (const sub of FRAMEWORK_DRIFT_DIRS) {
-    const skeletonFiles: string[] = [];
-    collectFrameworkFiles(skeletonDir, sub, skeletonFiles);
-
-    for (const rel of skeletonFiles) {
+    for (const rel of skeletonFrameworkFiles(sub)) {
       const skeletonPath = path.join(skeletonDir, rel);
       let skeletonHash: string;
       try {
@@ -164,15 +155,10 @@ export function auditProtocolDrift(
  * the existing `hasLocalOverride()` only checks tier-2 `codev/`, so drift detection
  * must check both tiers itself.
  */
-export function hasFrameworkShadows(
-  workspaceRoot?: string,
-  skeletonDir: string = getSkeletonDir(),
-): boolean {
+export function hasFrameworkShadows(workspaceRoot?: string): boolean {
   const root = workspaceRoot ?? findWorkspaceRoot();
   for (const sub of FRAMEWORK_DRIFT_DIRS) {
-    const skeletonFiles: string[] = [];
-    collectFrameworkFiles(skeletonDir, sub, skeletonFiles);
-    for (const rel of skeletonFiles) {
+    for (const rel of skeletonFrameworkFiles(sub)) {
       for (const tier of OVERRIDE_TIERS) {
         if (fs.existsSync(path.join(root, tier, rel))) return true;
       }
