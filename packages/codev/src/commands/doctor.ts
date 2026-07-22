@@ -810,7 +810,13 @@ export async function doctor(): Promise<number> {
     const drift = auditProtocolDrift(workspaceRoot);
     const staleness = checkSkeletonStaleness();
     if (drift.length > 0 || staleness.behind) {
-      console.log(chalk.bold('Framework Drift') + ' (local copies shadowing the installed skeleton)');
+      // Header parenthetical reflects the actual finding: the shadowing subtitle is only accurate
+      // when a local shadow exists; in the staleness-only path (no shadows, skeleton behind) it
+      // would be false, so use a staleness-specific subtitle instead.
+      const subtitle = drift.length > 0
+        ? 'local copies shadowing the installed skeleton'
+        : 'installed skeleton is behind npm latest';
+      console.log(chalk.bold('Framework Drift') + ` (${subtitle})`);
       console.log('');
 
       // Staleness line. Only `behind` is a warning; up-to-date / uncheckable lines are informational
@@ -828,19 +834,22 @@ export async function doctor(): Promise<number> {
       }
 
       // Shadow drift. `differs` => adjudicate warning; `identical` => informational (redundant copy).
+      // The skeleton version IS the installed package version (the skeleton ships with the
+      // package), which staleness already resolved — name it in each drift line per the spec.
+      const skeletonVersion = staleness.installed;
       const differs = drift.filter((f) => f.status === 'differs');
       const identical = drift.filter((f) => f.status === 'identical');
       for (const f of differs) {
-        console.log(`  ${chalk.yellow('⚠')} ${formatDriftFinding(f)}`);
+        console.log(`  ${chalk.yellow('⚠')} ${formatDriftFinding(f, skeletonVersion)}`);
         warnings++;
         warningDetails.push({
           name: 'Framework drift',
-          issue: `${f.tier}/${f.relativePath} differs from installed skeleton (customized or stale?)`,
+          issue: `${f.tier}/${f.relativePath} differs from installed skeleton v${skeletonVersion} (customized or stale?)`,
           recommendation: 'review vs the installed skeleton; if unintentional, remove the local copy so resolution falls back to the package',
         });
       }
       for (const f of identical) {
-        console.log(`  ${chalk.dim('○')} ${formatDriftFinding(f)}`);
+        console.log(`  ${chalk.dim('○')} ${formatDriftFinding(f, skeletonVersion)}`);
       }
       console.log('');
     }

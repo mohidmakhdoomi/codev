@@ -226,14 +226,21 @@ export function checkSkeletonStaleness(
   return { installed, latest, behind: versionLt(installed, latest) };
 }
 
-/** Render a shadow-drift finding for doctor output. */
-export function formatDriftFinding(f: DriftFinding): string {
+/**
+ * Render a shadow-drift finding for doctor output.
+ *
+ * @param skeletonVersion - installed skeleton/package version; when provided it is
+ *   named in the line so the human can tell WHICH skeleton the local copy diverged
+ *   from (the spec requires the adjudication warning to name the package version).
+ */
+export function formatDriftFinding(f: DriftFinding, skeletonVersion?: string): string {
   const loc = `${f.tier}/${f.relativePath}`;
+  const ver = skeletonVersion ? ` v${skeletonVersion}` : '';
   if (f.status === 'identical') {
-    return `${loc} — byte-identical redundant copy of the installed skeleton; safe to remove (resolution then falls back to the package)`;
+    return `${loc} — byte-identical redundant copy of the installed skeleton${ver}; safe to remove (resolution then falls back to the package)`;
   }
   const winner = f.isResolvedWinner ? ' [resolved — this copy is live]' : '';
-  return `${loc} — differs from installed skeleton; customized or stale? — adjudicate${winner}`;
+  return `${loc} — differs from installed skeleton${ver}; customized or stale? — adjudicate${winner}`;
 }
 
 /** Render the staleness result for doctor output. */
