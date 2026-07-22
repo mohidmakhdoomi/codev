@@ -34,6 +34,11 @@ import {
   type SpawnMessage,
 } from './shellper-protocol.js';
 
+// Default bound for waitForReplay() against a shellper that advertised
+// `alwaysSendsReplay` on WELCOME — long enough to cover a slow/large REPLAY
+// send (see REPLAY_PAYLOAD_MAX) without the caller having to think about it.
+export const DEFAULT_REPLAY_TIMEOUT_MS = 500;
+
 // #1215: bound on how long waitForReplay() waits for a shellper that hasn't
 // advertised `alwaysSendsReplay` on WELCOME. Short enough that an idle
 // pre-#1215-behavior shellper's stall is negligible even across many
@@ -357,13 +362,14 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
    *
    * #1215: a shellper that didn't advertise `alwaysSendsReplay` on WELCOME
    * only sends REPLAY when it has buffered data — an idle one never sends
-   * it at all, so waiting the full `timeoutMs` (500ms by default) for every
-   * such session is pure stall. Bound the wait to LEGACY_REPLAY_TIMEOUT_MS
-   * instead: short enough to keep idle-session cost low, long enough to
-   * still catch a busy legacy shellper's REPLAY arriving on the later
-   * socket read this method exists to wait for in the first place (#1198).
+   * it at all, so waiting the full `timeoutMs` (DEFAULT_REPLAY_TIMEOUT_MS
+   * by default) for every such session is pure stall. Bound the wait to
+   * LEGACY_REPLAY_TIMEOUT_MS instead: short enough to keep idle-session
+   * cost low, long enough to still catch a busy legacy shellper's REPLAY
+   * arriving on the later socket read this method exists to wait for in
+   * the first place (#1198).
    */
-  waitForReplay(timeoutMs: number = 500): Promise<Buffer> {
+  waitForReplay(timeoutMs: number = DEFAULT_REPLAY_TIMEOUT_MS): Promise<Buffer> {
     if (this.replayData !== null) {
       return Promise.resolve(this.replayData);
     }
