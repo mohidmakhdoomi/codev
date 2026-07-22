@@ -24,3 +24,9 @@ no runtime code. Two-tree rule: instance + skeleton SKILL.md byte-identical.
 - Installing workspace deps (fresh worktree, no node_modules) to run vitest.
 
 Open loop: run the test file green, then porch check → done → PR.
+
+### 2026-07-22 — PR ready, at pr gate
+- tsc clean, 19/19 skill tests pass, byte-identity verified.
+- porch check (build, tests) ✓; PR phase check (pr_exists, e2e_tests) ✓.
+- Opened PR #1221 with review embedded in the body (AIR: no separate review file).
+- Reached `pr` gate → STOP, waiting for human approval. Not running porch gate.
