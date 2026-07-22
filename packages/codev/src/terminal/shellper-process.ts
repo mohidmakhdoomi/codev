@@ -374,6 +374,9 @@ export class ShellperProcess extends EventEmitter {
       rows: this.rows,
       startTime: this.startTime,
       lastDataAt: this.lastDataAt,
+      // #1215: this build always sends REPLAY below, even when empty —
+      // advertise that guarantee so the client can skip its full wait.
+      alwaysSendsReplay: true,
     });
     socket.write(welcome);
     this.log(`WELCOME sent: pid=${pid}, version=${PROTOCOL_VERSION}`);

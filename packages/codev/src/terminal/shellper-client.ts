@@ -34,6 +34,19 @@ import {
   type SpawnMessage,
 } from './shellper-protocol.js';
 
+// Default bound for waitForReplay() against a shellper that advertised
+// `alwaysSendsReplay` on WELCOME — long enough to cover a slow/large REPLAY
+// send (see REPLAY_PAYLOAD_MAX) without the caller having to think about it.
+export const DEFAULT_REPLAY_TIMEOUT_MS = 500;
+
+// #1215: bound on how long waitForReplay() waits for a shellper that hasn't
+// advertised `alwaysSendsReplay` on WELCOME. Short enough that an idle
+// pre-#1215-behavior shellper's stall is negligible even across many
+// sessions; long enough to still catch a busy legacy shellper's REPLAY
+// frame arriving on a later socket read (same-process reads are normally
+// sub-millisecond) — see waitForReplay() for the full rationale.
+export const LEGACY_REPLAY_TIMEOUT_MS = 50;
+
 export interface IShellperClient extends EventEmitter {
   connect(): Promise<WelcomeMessage>;
   disconnect(): void;
@@ -86,6 +99,11 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
   // own `lastDataAt`; from there, PtySession owns the read side and
   // /api/overview enrichment uses ptySession.lastDataAt.
   private _lastDataAt: number = Date.now();
+  // #1215: whether the connected shellper guarantees a REPLAY frame right
+  // after WELCOME, even when empty. False until WELCOME says otherwise —
+  // an older shellper never sends this field, so waitForReplay() must not
+  // assume an empty REPLAY is coming for it.
+  private _alwaysSendsReplay = false;
 
   constructor(
     private readonly socketPath: string,
@@ -223,6 +241,10 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
               if (typeof welcome.lastDataAt === 'number') {
                 this._lastDataAt = welcome.lastDataAt;
               }
+              // #1215: hydrate the REPLAY guarantee flag. Old shellpers omit
+              // it (falsy default stands); waitForReplay() uses this to pick
+              // its timeout.
+              this._alwaysSendsReplay = welcome.alwaysSendsReplay === true;
               // Replay any buffered frames received before WELCOME
               for (const buffered of preWelcomeBuffer) {
                 this.handleFrame(buffered);
@@ -337,16 +359,29 @@ export class ShellperClient extends EventEmitter implements IShellperClient {
    * The shellper sends REPLAY immediately after WELCOME, but they may
    * arrive in separate reads. Returns the replay data, or empty Buffer
    * if no REPLAY arrives within the timeout (shellper had nothing to replay).
+   *
+   * #1215: a shellper that didn't advertise `alwaysSendsReplay` on WELCOME
+   * only sends REPLAY when it has buffered data — an idle one never sends
+   * it at all, so waiting the full `timeoutMs` (DEFAULT_REPLAY_TIMEOUT_MS
+   * by default) for every such session is pure stall. Bound the wait to
+   * LEGACY_REPLAY_TIMEOUT_MS instead: short enough to keep idle-session
+   * cost low, long enough to still catch a busy legacy shellper's REPLAY
+   * arriving on the later socket read this method exists to wait for in
+   * the first place (#1198).
    */
-  waitForReplay(timeoutMs: number = 500): Promise<Buffer> {
+  waitForReplay(timeoutMs: number = DEFAULT_REPLAY_TIMEOUT_MS): Promise<Buffer> {
     if (this.replayData !== null) {
       return Promise.resolve(this.replayData);
     }
+    const effectiveTimeoutMs = this._alwaysSendsReplay
+      ? timeoutMs
+      : Math.min(timeoutMs, LEGACY_REPLAY_TIMEOUT_MS);
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.removeListener('replay', onReplay);
+        this.emit('replay-timeout', { alwaysSendsReplay: this._alwaysSendsReplay, timeoutMs: effectiveTimeoutMs });
         resolve(Buffer.alloc(0));
-      }, timeoutMs);
+      }, effectiveTimeoutMs);
       const onReplay = (data: Buffer) => {
         clearTimeout(timer);
         resolve(data);
