@@ -1,8 +1,9 @@
 /**
  * codev adopt - Add codev to an existing project
  *
- * Creates a codev structure with protocols, roles, consult-types, and
- * resource templates copied from the embedded skeleton.
+ * Creates the minimal user-owned Codev structure and materializes missing
+ * provider skills, root instructions, and governance starters from the
+ * embedded skeleton. Framework files resolve from the package at runtime.
  */
 
 import * as fs from 'node:fs';
@@ -131,14 +132,14 @@ export async function adopt(options: AdoptOptions = {}): Promise<void> {
   // They resolve at runtime from the installed npm package via the unified file resolver.
   // Existing local copies in codev/ are left in place — they take precedence via the resolution chain.
 
-  // Copy .claude/skills/ - skip existing (preserve user customizations)
+  // Copy provider-native skills, preserving existing skill directories.
   const skillsResult = copySkills(targetDir, skeletonDir, { skipExisting: true });
-  if (skillsResult.directoryCreated) {
-    console.log(chalk.green('  +'), '.claude/skills/');
+  for (const directory of skillsResult.directoriesCreated) {
+    console.log(chalk.green('  +'), directory);
     fileCount++;
   }
   for (const skill of skillsResult.copied) {
-    console.log(chalk.green('  +'), `.claude/skills/${skill}/`);
+    console.log(chalk.green('  +'), skill);
     fileCount++;
   }
 

@@ -49,6 +49,18 @@ describe('codev init (CLI)', () => {
     expect(existsSync(join(env.dir, 'my-project/AGENTS.md'))).toBe(true);
   });
 
+  it('creates Claude and Codex skills from the packaged skeleton', () => {
+    const result = runCodev(['init', 'my-project', '--yes'], env.dir, env.env);
+    const base = join(env.dir, 'my-project');
+    const claudeSkill = join(base, '.claude/skills/codev/SKILL.md');
+    const codexSkill = join(base, '.codex/skills/codev/SKILL.md');
+
+    expect(result.status).toBe(0);
+    expect(existsSync(claudeSkill)).toBe(true);
+    expect(existsSync(codexSkill)).toBe(true);
+    expect(readFileSync(codexSkill, 'utf-8')).toBe(readFileSync(claudeSkill, 'utf-8'));
+  });
+
   it('creates .gitignore', () => {
     runCodev(['init', 'my-project', '--yes'], env.dir, env.env);
     expect(existsSync(join(env.dir, 'my-project/.gitignore'))).toBe(true);

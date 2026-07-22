@@ -306,7 +306,10 @@ project-root/
 │       ├── lessons-learned.md   # Engineering wisdom (COLD reference; maintained during MAINTAIN)
 │       └── lessons-critical.md  # Engineering wisdom HOT tier — capped, always-injected (Spec 987)
 ├── .claude/
-│   └── agents/             # AI agent definitions (custom project agents)
+│   ├── agents/             # AI agent definitions (custom project agents)
+│   └── skills/             # Claude-native Codev skills
+├── .codex/
+│   └── skills/             # Codex-native Codev skills
 ├── AGENTS.md              # Universal AI agent instructions (AGENTS.md standard)
 ├── CLAUDE.md              # This file (Claude Code-specific, identical to AGENTS.md)
 └── [project code]

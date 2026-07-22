@@ -1,0 +1,30 @@
+id: '1196'
+title: ship-codex-skills-in-the-skele
+protocol: pir
+phase: verified
+plan_phases: []
+current_plan_phase: null
+gates:
+  plan-approval:
+    status: approved
+    requested_at: '2026-07-18T06:29:49.252Z'
+    approved_at: '2026-07-18T06:33:24.369Z'
+  dev-approval:
+    status: approved
+    requested_at: '2026-07-18T06:45:27.775Z'
+    approved_at: '2026-07-18T07:08:00.955Z'
+  pr:
+    status: approved
+    requested_at: '2026-07-18T07:24:18.724Z'
+    approved_at: '2026-07-18T07:51:10.277Z'
+iteration: 1
+build_complete: true
+history: []
+started_at: '2026-07-18T06:26:40.103Z'
+updated_at: '2026-07-18T07:51:30.422Z'
+pr_history:
+  - phase: review
+    pr_number: 1197
+    branch: builder/pir-1196
+    created_at: '2026-07-18T07:19:59.767Z'
+pr_ready_for_human: false

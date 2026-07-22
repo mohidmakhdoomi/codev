@@ -100,6 +100,28 @@ describe('update command', () => {
       expect(result.rootConflicts).toHaveLength(0);
     });
 
+    it('adds missing Codex skills without overwriting an existing customized skill', async () => {
+      const projectDir = path.join(testBaseDir, 'codex-skills');
+      const customized = path.join(projectDir, '.codex', 'skills', 'arch-init');
+      fs.mkdirSync(path.join(projectDir, 'codev'), { recursive: true });
+      fs.mkdirSync(customized, { recursive: true });
+      fs.writeFileSync(path.join(customized, 'SKILL.md'), 'user-customized codex skill');
+
+      process.chdir(projectDir);
+
+      const { update } = await import('../commands/update.js');
+      const result = await update({ agent: true });
+
+      expect(fs.readFileSync(path.join(customized, 'SKILL.md'), 'utf-8')).toBe(
+        'user-customized codex skill'
+      );
+      expect(
+        fs.existsSync(path.join(projectDir, '.codex', 'skills', 'afx', 'SKILL.md'))
+      ).toBe(true);
+      expect(result.newFiles).toContain('.codex/skills/afx/');
+      expect(result.newFiles).not.toContain('.codex/skills/arch-init/');
+    });
+
     it('should return UpdateResult from update()', async () => {
       const projectDir = path.join(testBaseDir, 'return-test');
       fs.mkdirSync(path.join(projectDir, 'codev'), { recursive: true });
@@ -237,6 +259,7 @@ describe('update command', () => {
       for (const file of result.newFiles) {
         expect(file).not.toMatch(/^codev\/consult-types\//);
         expect(file).not.toMatch(/^\.claude\/skills\//);
+        expect(file).not.toMatch(/^\.codex\/skills\//);
       }
     });
 
@@ -264,7 +287,11 @@ describe('update command', () => {
       // All template files should have codev/ prefix
       for (const file of result.newFiles) {
         expect(
-          file.startsWith('codev/') || file.startsWith('.claude/') || file === 'CLAUDE.md' || file === 'AGENTS.md'
+          file.startsWith('codev/') ||
+          file.startsWith('.claude/') ||
+          file.startsWith('.codex/') ||
+          file === 'CLAUDE.md' ||
+          file === 'AGENTS.md'
         ).toBe(true);
       }
       for (const file of result.updated) {

@@ -1,5 +1,5 @@
 /**
- * codev update - Migrate config and refresh Claude-specific files.
+ * codev update - Migrate config and refresh AI-assistant integration files.
  *
  * Two responsibilities:
  * A. One-time migration (runs once, skipped on subsequent runs):
@@ -8,8 +8,8 @@
  *    3. Preserve user-modified files as local overrides
  *    4. Remove .update-hashes.json
  *
- * B. Claude-specific file refresh (runs every time):
- *    1. Update CLAUDE.md, AGENTS.md, .claude/skills/ from package
+ * B. AI-assistant file refresh (runs every time):
+ *    1. Update CLAUDE.md, AGENTS.md, and provider skill trees from package
  */
 
 import * as fs from 'node:fs';
@@ -167,7 +167,7 @@ function runMigration(
 }
 
 /**
- * Update codev — migrate config and refresh Claude-specific files.
+ * Update codev — migrate config and refresh AI-assistant integration files.
  */
 export async function update(options: UpdateOptions = {}): Promise<UpdateResult> {
   const { dryRun = false, force = false, agent = false } = options;
@@ -213,21 +213,19 @@ export async function update(options: UpdateOptions = {}): Promise<UpdateResult>
       log(chalk.dim('  Migration already complete.'));
     }
 
-    // --- B. Claude-specific file refresh (runs every time) ---
+    // --- B. AI-assistant file refresh (runs every time) ---
     log('');
-    log(chalk.bold('Refreshing Claude-specific files...'));
+    log(chalk.bold('Refreshing AI-assistant files...'));
     log('');
 
     const templatesDir = getTemplatesDir();
 
-    // Update .claude/skills/
+    // Add missing provider-native skills without replacing customizations.
     if (!dryRun) {
-      // Update skills — add new ones but preserve user-customized existing skills
       const skillsResult = copySkills(targetDir, templatesDir, { skipExisting: true });
       for (const skill of skillsResult.copied) {
-        const fullPath = `.claude/skills/${skill}/`;
-        result.newFiles.push(fullPath);
-        log(chalk.green('  + (new)'), fullPath);
+        result.newFiles.push(skill);
+        log(chalk.green('  + (new)'), skill);
       }
     }
 
