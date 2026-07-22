@@ -1,7 +1,7 @@
 id: '1215'
 title: tower-upgrade-stalls-terminal-
 protocol: pir
-phase: implement
+phase: review
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -19,4 +19,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-22T00:36:12.124Z'
-updated_at: '2026-07-22T08:01:48.240Z'
+updated_at: '2026-07-22T08:08:56.847Z'
