@@ -507,8 +507,11 @@ describe('spawn-worktree', () => {
       // PR #1203 review regression: this is exactly the `--builder-cmd kimi`
       // bare-spawn shape. Without the marker, pacing resolution falls back to
       // the workspace's config harness (claude in an override spawn) and the
-      // swallowed-Enter bug this feature fixes comes back.
+      // swallowed-Enter bug this feature fixes comes back. The touch must
+      // precede the loop so the marker exists before the first send can land.
       expect(script).toContain('touch .builder-kimi-session');
+      expect(script.indexOf('touch .builder-kimi-session'))
+        .toBeLessThan(script.indexOf('while true'));
     });
   });
 

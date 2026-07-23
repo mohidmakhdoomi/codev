@@ -511,8 +511,12 @@ describe('harness', () => {
         // PR #1203 review regression: EVERY Kimi launch shape must persist
         // .builder-kimi-session — the pacing probe keys off its existence, so
         // a bare override spawn without it resolves the config harness's
-        // Enter timing and sends get swallowed by paste detection.
+        // Enter timing and sends get swallowed by paste detection. The touch
+        // must also PRECEDE the loop, so the marker exists for the whole TUI
+        // lifetime (a touch after/inside the loop could race the first send).
         expect(script).toContain(`touch ${KIMI_SESSION_FILE}`);
+        expect(script.indexOf(`touch ${KIMI_SESSION_FILE}`))
+          .toBeLessThan(script.indexOf('while true'));
       });
 
       it('does not duplicate --yolo when the user already passed it', () => {
