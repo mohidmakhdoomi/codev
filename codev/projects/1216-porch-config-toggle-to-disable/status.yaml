@@ -23,8 +23,9 @@ gates:
     requested_at: '2026-07-23T03:37:38.866Z'
     approved_at: '2026-07-23T03:39:23.666Z'
   pr:
-    status: pending
+    status: approved
     requested_at: '2026-07-23T04:39:07.667Z'
+    approved_at: '2026-07-23T04:39:38.716Z'
   verify-approval:
     status: pending
 iteration: 1
@@ -79,5 +80,5 @@ history:
         file: >-
           /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-worktree_local_config-iter1-claude.txt
 started_at: '2026-07-23T03:24:00.433Z'
-updated_at: '2026-07-23T04:39:07.667Z'
-pr_ready_for_human: true
+updated_at: '2026-07-23T04:39:38.716Z'
+pr_ready_for_human: false
