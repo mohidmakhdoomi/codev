@@ -5,14 +5,14 @@ phase: implement
 plan_phases:
   - id: porch_toggle
     title: Producer-Side Porch Toggle
-    status: in_progress
+    status: complete
   - id: worktree_local_config
     title: Safe Builder Personal-Config Snapshot
-    status: pending
+    status: in_progress
   - id: documentation_verification
     title: Documentation and End-to-End Verification
     status: pending
-current_plan_phase: porch_toggle
+current_plan_phase: worktree_local_config
 gates:
   spec-approval:
     status: approved
@@ -26,8 +26,8 @@ gates:
     status: pending
   verify-approval:
     status: pending
-iteration: 3
-build_complete: true
+iteration: 1
+build_complete: false
 history:
   - iteration: 1
     plan_phase: porch_toggle
@@ -62,4 +62,4 @@ history:
         file: >-
           /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-porch_toggle-iter2-claude.txt
 started_at: '2026-07-23T03:24:00.433Z'
-updated_at: '2026-07-23T04:00:55.180Z'
+updated_at: '2026-07-23T04:03:16.652Z'
