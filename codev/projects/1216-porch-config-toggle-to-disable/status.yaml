@@ -27,7 +27,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 2
-build_complete: false
+build_complete: true
 history:
   - iteration: 1
     plan_phase: porch_toggle
@@ -46,4 +46,4 @@ history:
         file: >-
           /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-porch_toggle-iter1-claude.txt
 started_at: '2026-07-23T03:24:00.433Z'
-updated_at: '2026-07-23T03:52:36.893Z'
+updated_at: '2026-07-23T03:53:41.088Z'
