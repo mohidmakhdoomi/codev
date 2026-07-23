@@ -1,8 +1,9 @@
 /**
  * codev init - Create a new codev project
  *
- * Creates a codev structure with protocols, roles, consult-types, and
- * resource templates copied from the embedded skeleton.
+ * Creates the minimal user-owned Codev structure and materializes provider
+ * skills, root instructions, and governance starters from the embedded
+ * skeleton. Framework files resolve from the package at runtime.
  */
 
 import * as fs from 'node:fs';
@@ -95,14 +96,14 @@ export async function init(projectName?: string, options: InitOptions = {}): Pro
   // Framework files (protocols, roles, consult-types, templates) are NOT copied.
   // They resolve at runtime from the installed npm package via the unified file resolver.
 
-  // Copy .claude/skills/ (Claude Code slash commands — must exist on disk)
+  // Copy provider-native skills (must exist on disk for tool discovery).
   const skillsResult = copySkills(targetDir, skeletonDir);
-  if (skillsResult.directoryCreated) {
-    console.log(chalk.green('  +'), '.claude/skills/');
+  for (const directory of skillsResult.directoriesCreated) {
+    console.log(chalk.green('  +'), directory);
     fileCount++;
   }
   for (const skill of skillsResult.copied) {
-    console.log(chalk.green('  +'), `.claude/skills/${skill}/`);
+    console.log(chalk.green('  +'), skill);
     fileCount++;
   }
 

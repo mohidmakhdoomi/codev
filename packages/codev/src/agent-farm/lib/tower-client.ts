@@ -15,6 +15,9 @@ export {
   type TowerTunnelStatus,
   type TowerStatus,
   type TowerTerminal,
+  type HuskCandidate,
+  type HuskPreview,
+  type HuskSweepResult,
   type SeedKickRequest,
 } from '@cluesmith/codev-core/tower-client';
 

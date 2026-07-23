@@ -349,14 +349,22 @@ interface CopySkillsOptions {
 }
 
 interface CopySkillsResult {
+  /** Project-relative provider-qualified paths, including a trailing slash. */
   copied: string[];
+  /** Project-relative provider-qualified paths, including a trailing slash. */
   skipped: string[];
-  directoryCreated: boolean;
+  /** Project-relative provider skill roots that were created. */
+  directoriesCreated: string[];
 }
 
+export const SKILL_PROVIDERS = ['claude', 'codex'] as const;
+
 /**
- * Copy .claude/skills/ from skeleton to project root.
- * Skills are Claude Code slash commands that provide contextual guidance.
+ * Copy provider-native skill trees from the skeleton to the project root.
+ *
+ * Each skill directory is the preservation boundary: skipExisting leaves an
+ * existing skill completely untouched while still backfilling missing skills
+ * for either provider.
  */
 export function copySkills(
   targetDir: string,
@@ -364,41 +372,40 @@ export function copySkills(
   options: CopySkillsOptions = {}
 ): CopySkillsResult {
   const { skipExisting = false } = options;
-  const skillsDir = path.join(targetDir, '.claude', 'skills');
-  const srcDir = path.join(skeletonDir, '.claude', 'skills');
   const copied: string[] = [];
   const skipped: string[] = [];
-  let directoryCreated = false;
+  const directoriesCreated: string[] = [];
 
-  // Ensure .claude/skills directory exists
-  if (!fs.existsSync(skillsDir)) {
-    fs.mkdirSync(skillsDir, { recursive: true });
-    directoryCreated = true;
-  }
+  for (const provider of SKILL_PROVIDERS) {
+    const relativeSkillsDir = `.${provider}/skills`;
+    const skillsDir = path.join(targetDir, relativeSkillsDir);
+    const srcDir = path.join(skeletonDir, relativeSkillsDir);
 
-  // If source directory doesn't exist, return early
-  if (!fs.existsSync(srcDir)) {
-    return { copied, skipped, directoryCreated };
-  }
-
-  // Copy each skill directory
-  const skills = fs.readdirSync(srcDir, { withFileTypes: true });
-  for (const entry of skills) {
-    if (!entry.isDirectory()) continue;
-
-    const destSkillDir = path.join(skillsDir, entry.name);
-    const srcSkillDir = path.join(srcDir, entry.name);
-
-    if (skipExisting && fs.existsSync(destSkillDir)) {
-      skipped.push(entry.name);
-      continue;
+    if (!fs.existsSync(skillsDir)) {
+      fs.mkdirSync(skillsDir, { recursive: true });
+      directoriesCreated.push(`${relativeSkillsDir}/`);
     }
 
-    copyDirRecursive(srcSkillDir, destSkillDir);
-    copied.push(entry.name);
+    // Older/corrupt skeletons may not provide every configured provider.
+    if (!fs.existsSync(srcDir)) continue;
+
+    for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+
+      const destSkillDir = path.join(skillsDir, entry.name);
+      const relativeSkillDir = `${relativeSkillsDir}/${entry.name}/`;
+
+      if (skipExisting && fs.existsSync(destSkillDir)) {
+        skipped.push(relativeSkillDir);
+        continue;
+      }
+
+      copyDirRecursive(path.join(srcDir, entry.name), destSkillDir);
+      copied.push(relativeSkillDir);
+    }
   }
 
-  return { copied, skipped, directoryCreated };
+  return { copied, skipped, directoriesCreated };
 }
 
 interface CopyRolesOptions {

@@ -89,6 +89,25 @@ describe('adopt command', () => {
       expect(fs.existsSync(path.join(projectDir, 'codev', 'resources', 'lessons-learned.md'))).toBe(true);
     });
 
+    it('adds missing Codex skills without overwriting an existing customized skill', async () => {
+      const projectDir = path.join(testBaseDir, 'codex-skills-project');
+      const customized = path.join(projectDir, '.codex', 'skills', 'arch-init');
+      fs.mkdirSync(customized, { recursive: true });
+      fs.writeFileSync(path.join(customized, 'SKILL.md'), 'user-customized codex skill');
+
+      process.chdir(projectDir);
+
+      const { adopt } = await import('../commands/adopt.js');
+      await adopt({ yes: true });
+
+      expect(fs.readFileSync(path.join(customized, 'SKILL.md'), 'utf-8')).toBe(
+        'user-customized codex skill'
+      );
+      expect(
+        fs.existsSync(path.join(projectDir, '.codex', 'skills', 'afx', 'SKILL.md'))
+      ).toBe(true);
+    });
+
     it('should throw error if codev directory already exists', async () => {
       const projectDir = path.join(testBaseDir, 'has-codev');
       fs.mkdirSync(path.join(projectDir, 'codev'), { recursive: true });

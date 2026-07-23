@@ -64,6 +64,12 @@ describe('init command', () => {
         expect(fs.existsSync(path.join(projectDir, 'CLAUDE.md'))).toBe(true);
         expect(fs.existsSync(path.join(projectDir, 'AGENTS.md'))).toBe(true);
         expect(fs.existsSync(path.join(projectDir, '.gitignore'))).toBe(true);
+        expect(
+          fs.existsSync(path.join(projectDir, '.claude', 'skills', 'arch-init', 'SKILL.md'))
+        ).toBe(true);
+        expect(
+          fs.existsSync(path.join(projectDir, '.codex', 'skills', 'arch-init', 'SKILL.md'))
+        ).toBe(true);
 
         // Verify user data directories (minimal structure)
         expect(fs.existsSync(path.join(projectDir, 'codev', 'specs'))).toBe(true);

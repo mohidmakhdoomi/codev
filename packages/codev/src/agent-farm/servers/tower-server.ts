@@ -18,6 +18,7 @@ import { WebSocketServer } from 'ws';
 import { SessionManager } from '../../terminal/session-manager.js';
 import type { SSEClient } from './tower-types.js';
 import { startRateLimitCleanup } from './tower-utils.js';
+import { sweepShellperHusks, resolveHuskGraceMs } from './shellper-husk-sweep.js';
 import {
   initTunnel,
   shutdownTunnel,
@@ -65,6 +66,7 @@ const rateLimitCleanupInterval = startRateLimitCleanup();
 // Shellper session manager (initialized at startup)
 let shellperManager: SessionManager | null = null;
 let shellperCleanupInterval: NodeJS.Timeout | null = null;
+let shellperHuskSweepInterval: NodeJS.Timeout | null = null;
 let terminalPartialMonitorInterval: NodeJS.Timeout | null = null;
 
 // Observability for Issue #1047: the ring-buffer partial is kept whole (no
@@ -165,6 +167,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   // 4. Stop rate limit cleanup, shellper periodic cleanup, and SSE heartbeat
   clearInterval(rateLimitCleanupInterval);
   if (shellperCleanupInterval) clearInterval(shellperCleanupInterval);
+  if (shellperHuskSweepInterval) clearInterval(shellperHuskSweepInterval);
   if (terminalPartialMonitorInterval) clearInterval(terminalPartialMonitorInterval);
   clearInterval(sseHeartbeatInterval);
 
@@ -376,6 +379,33 @@ server.listen(port, bindHost, async () => {
     nodeExecutable: process.execPath,
     logger: (msg: string) => log('INFO', msg),
   });
+
+  // #1198: a shellper connection that dies must leave a trace. Before this
+  // subscription existed, 'session-error' had no consumer anywhere, so a
+  // failed reconnect was completely invisible in the Tower log.
+  shellperManager.on('session-error', (sessionId: string, err: Error) => {
+    log('ERROR', `Shellper session ${sessionId}: ${err.message}`);
+  });
+
+  // #1198: SessionManager re-established a session's connection in place
+  // after an unexpected socket close. Re-attach the replacement client to the
+  // PtySession so viewer I/O resumes (attachShellper is idempotent and
+  // cancels the pending close-grace teardown). Replay is deliberately empty:
+  // the ring buffer already holds the session history.
+  shellperManager.on('session-reconnected', (sessionId: string, client: import('../../terminal/shellper-client.js').IShellperClient) => {
+    const ptySession = getTerminalManager().findByShellperSessionId(sessionId);
+    if (!ptySession) {
+      log('WARN', `Shellper session ${sessionId} reconnected but no matching terminal session found`);
+      return;
+    }
+    const info = shellperManager!.getSessionInfo(sessionId);
+    let pid = -1;
+    if (info) {
+      pid = info.pid;
+    }
+    ptySession.attachShellper(client, Buffer.alloc(0), pid, ptySession.shellperSessionId ?? sessionId);
+    log('INFO', `Shellper session ${sessionId} re-attached to terminal ${ptySession.id}`);
+  });
   const staleCleaned = await shellperManager.cleanupStaleSockets();
   if (staleCleaned > 0) {
     log('INFO', `Cleaned up ${staleCleaned} stale shellper socket(s)`);
@@ -393,6 +423,34 @@ server.listen(port, bindHost, async () => {
       log('ERROR', `Periodic shellper cleanup failed: ${(err as Error).message}`);
     }
   }, cleanupIntervalMs);
+
+  // Issue #1227: husk sweep — a stricter second pass that reaps shellpers
+  // killOrphanedShellpers() can never reach, because it unconditionally
+  // protects any shellper whose socket still responds. A husk (child exited,
+  // shellper still listening) answers its socket, so it needs the stricter
+  // unregistered+childless+aged predicate instead. See shellper-husk-sweep.ts.
+  const huskGraceMs = resolveHuskGraceMs();
+  const parsedHuskSweepIntervalMs = parseInt(process.env.SHELLPER_HUSK_SWEEP_INTERVAL_MS || '3600000', 10);
+  const huskSweepIntervalMs = Math.max(
+    Number.isNaN(parsedHuskSweepIntervalMs) ? 3600000 : parsedHuskSweepIntervalMs,
+    1000,
+  );
+  const runHuskSweep = async (): Promise<void> => {
+    try {
+      const result = await sweepShellperHusks({
+        socketDir,
+        db: getGlobalDb(),
+        graceMs: huskGraceMs,
+        log: (msg: string) => log('INFO', msg),
+      });
+      if (result.swept > 0) {
+        log('INFO', `Husk sweep: reaped ${result.swept} shellper husk(s)`);
+      }
+    } catch (err) {
+      log('ERROR', `Husk sweep failed: ${(err as Error).message}`);
+    }
+  };
+  shellperHuskSweepInterval = setInterval(runHuskSweep, huskSweepIntervalMs);
 
   log('INFO', 'Shellper session manager initialized');
 
@@ -461,6 +519,11 @@ server.listen(port, bindHost, async () => {
   if (orphansKilled > 0) {
     log('INFO', `Killed ${orphansKilled} orphaned shellper process(es)`);
   }
+
+  // Issue #1227: run the stricter husk sweep once at startup too, same
+  // ordering requirement as killOrphanedShellpers (must run after
+  // reconciliation so a reconnected session's shellper is registered).
+  await runHuskSweep();
 
   // Spec 0105 Phase 3: Initialize instance lifecycle module.
   // Placed after reconciliation so getInstances() returns [] during startup

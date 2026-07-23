@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -955,6 +956,144 @@ describe('SessionManager', () => {
         shellper.shutdown();
       }
     });
+  });
+
+  describe('in-place reconnect on unexpected close (#1198)', () => {
+    async function startMockShellper(socketPath: string): Promise<ShellperProcess> {
+      const shellper = new ShellperProcess(
+        () => new MockPty(),
+        socketPath,
+        100,
+      );
+      await shellper.start('/bin/bash', [], '/tmp', {}, 80, 24);
+      return shellper;
+    }
+
+    function makeManager(): SessionManager {
+      return new SessionManager({
+        socketDir,
+        shellperScript: '/nonexistent/shellper.js',
+        nodeExecutable: process.execPath,
+      });
+    }
+
+    /** Destroy the Tower-side socket with an error: the production failure mode. */
+    function killClientConnection(client: ShellperClient): void {
+      const socket = (client as unknown as { socket: net.Socket }).socket;
+      socket.destroy(new Error('transient socket error'));
+    }
+
+    it('re-establishes the connection while the shellper stays alive', async () => {
+      const socketPath = path.join(socketDir, 'shellper-recover.sock');
+      const shellper = await startMockShellper(socketPath);
+      cleanupFns.push(() => shellper.shutdown());
+
+      const manager = makeManager();
+      cleanupFns.push(() => manager.shutdown());
+
+      const startTime = (await getProcessStartTime(process.pid))!;
+      const client = await manager.reconnectSession('recover-test', socketPath, process.pid, startTime);
+      expect(client).not.toBeNull();
+
+      const deadErrors: Error[] = [];
+      manager.on('session-error', (_id: string, err: Error) => {
+        if (err.message.includes('Shellper disconnected unexpectedly')) deadErrors.push(err);
+      });
+      const reconnectedPromise = new Promise<{ id: string; newClient: ShellperClient }>((resolve) => {
+        manager.on('session-reconnected', (id: string, newClient: ShellperClient) => resolve({ id, newClient }));
+      });
+
+      killClientConnection(client as ShellperClient);
+
+      const evt = await Promise.race([
+        reconnectedPromise,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout waiting for session-reconnected')), 8000)),
+      ]);
+
+      expect(evt.id).toBe('recover-test');
+      expect(evt.newClient.connected).toBe(true);
+      expect(manager.listSessions().has('recover-test')).toBe(true);
+      // The live shellper's socket file must not have been unlinked.
+      expect(fs.existsSync(socketPath)).toBe(true);
+      expect(deadErrors).toEqual([]);
+    }, 15_000);
+
+    it('declares the session dead when the shellper is unreachable', async () => {
+      const socketPath = path.join(socketDir, 'shellper-recover-dead.sock');
+      const shellper = await startMockShellper(socketPath);
+      cleanupFns.push(() => shellper.shutdown());
+
+      const manager = makeManager();
+      cleanupFns.push(() => manager.shutdown());
+
+      const startTime = (await getProcessStartTime(process.pid))!;
+      const client = await manager.reconnectSession('recover-dead', socketPath, process.pid, startTime);
+      expect(client).not.toBeNull();
+
+      const deadPromise = new Promise<Error>((resolve) => {
+        manager.on('session-error', (_id: string, err: Error) => {
+          if (err.message.includes('Shellper disconnected unexpectedly')) resolve(err);
+        });
+      });
+
+      // Remove the socket file so recovery cannot possibly reach the shellper.
+      fs.unlinkSync(socketPath);
+      killClientConnection(client as ShellperClient);
+
+      const err = await Promise.race([
+        deadPromise,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout waiting for session-error')), 8000)),
+      ]);
+
+      expect(err.message).toContain('Shellper disconnected unexpectedly');
+      expect(manager.listSessions().has('recover-dead')).toBe(false);
+    }, 15_000);
+
+    it('gives up after exhausting reconnect attempts against a broken socket', async () => {
+      const socketPath = path.join(socketDir, 'shellper-recover-exhaust.sock');
+      const shellper = await startMockShellper(socketPath);
+      cleanupFns.push(() => shellper.shutdown());
+
+      const manager = makeManager();
+      cleanupFns.push(() => manager.shutdown());
+
+      const startTime = (await getProcessStartTime(process.pid))!;
+      const client = await manager.reconnectSession('recover-exhaust', socketPath, process.pid, startTime);
+      expect(client).not.toBeNull();
+
+      // Swap the healthy shellper for a rogue server that accepts and
+      // immediately destroys each connection, so every reconnect attempt
+      // fails its handshake.
+      await shellper.shutdown();
+      try { fs.unlinkSync(socketPath); } catch { /* already gone */ }
+      const rogue = net.createServer((socket) => socket.destroy());
+      rogue.listen(socketPath);
+      cleanupFns.push(() => new Promise<void>((resolve) => rogue.close(() => resolve())));
+
+      const deadPromise = new Promise<Error>((resolve) => {
+        manager.on('session-error', (_id: string, err: Error) => {
+          if (err.message.includes('Shellper disconnected unexpectedly')) resolve(err);
+        });
+      });
+
+      killClientConnection(client as ShellperClient);
+
+      const err = await Promise.race([
+        deadPromise,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout waiting for session-error')), 12_000)),
+      ]);
+
+      expect(err.message).toContain('Shellper disconnected unexpectedly');
+      expect(manager.listSessions().has('recover-exhaust')).toBe(false);
+      // #1198 incident hardening: the process behind this session (the test
+      // process stands in for a live shellper) is alive with a matching
+      // start time, so the dead declaration must NOT unlink the socket — an
+      // unlinked socket flags a live shellper for the orphan sweeper's kill
+      // path. The cleanup decision is async; give a delayed unlink time to
+      // (wrongly) fire before asserting.
+      await new Promise((r) => setTimeout(r, 300));
+      expect(fs.existsSync(socketPath)).toBe(true);
+    }, 20_000);
   });
 
   describe('natural exit cleanup (no auto-restart)', () => {
@@ -2101,5 +2240,75 @@ describe('schema migration', () => {
     expect(GLOBAL_SCHEMA).toContain('shellper_socket TEXT');
     expect(GLOBAL_SCHEMA).toContain('shellper_pid INTEGER');
     expect(GLOBAL_SCHEMA).toContain('shellper_start_time INTEGER');
+  });
+});
+
+describe('crash-loop give-up (Issue #1224)', () => {
+  // Drive the setupAutoRestart exit handler to the maxRestarts give-up branch
+  // and assert it reaps the shellper husk (process-group SIGTERM) so give-up
+  // leaves no live-process-without-a-registry-row zombie.
+  function fakeSession(pid: number, socketDir: string) {
+    const client = new EventEmitter() as any;
+    client.spawn = vi.fn();
+    return {
+      client,
+      socketPath: path.join(socketDir, 'giveup.sock'),
+      pid,
+      startTime: 0,
+      options: {
+        sessionId: 'giveup-1',
+        command: 'claude',
+        args: [],
+        cwd: '/tmp',
+        env: {},
+        restartOnExit: true,
+        restartDelay: 1,
+        maxRestarts: 1,
+      },
+      restartCount: 1, // already at the cap → next failing exit gives up
+      restartResetTimer: null,
+      failingExitTimes: [] as number[],
+      stderrBuffer: null,
+      stderrStream: null,
+      stderrTailLogged: false,
+      recoveryRounds: 0,
+      lastRecoveryAt: 0,
+    };
+  }
+
+  it('SIGTERMs the shellper process group on give-up', () => {
+    const socketDir = tmpDir();
+    const HUSK_PID = 424242;
+    const manager = new SessionManager({
+      socketDir,
+      shellperScript: '/nonexistent/shellper.js',
+      nodeExecutable: process.execPath,
+    });
+    const session = fakeSession(HUSK_PID, socketDir);
+    (manager as any).sessions.set('giveup-1', session);
+
+    const killed: Array<[number, string | number | undefined]> = [];
+    const originalKill = process.kill;
+    process.kill = ((pid: number, signal?: string | number) => {
+      killed.push([pid, signal]);
+      return true;
+    }) as typeof process.kill;
+
+    const errors: string[] = [];
+    manager.on('session-error', (_id, err) => errors.push(err.message));
+
+    try {
+      (manager as any).setupAutoRestart(session, 'giveup-1');
+      session.client.emit('exit', { code: 1, signal: null });
+
+      // The whole process group is signalled (negative pid).
+      expect(killed).toContainEqual([-HUSK_PID, 'SIGTERM']);
+      // Give-up surfaced as a session-error, and the session was dropped.
+      expect(errors.some((m) => m.includes('Max restarts'))).toBe(true);
+      expect((manager as any).sessions.has('giveup-1')).toBe(false);
+    } finally {
+      process.kill = originalKill;
+      rmrf(socketDir);
+    }
   });
 });
