@@ -3,7 +3,7 @@
 ## Metadata
 
 - **ID**: 1216
-- **Status**: draft — the SPIR Specify phase must still review and finalize this artifact
+- **Status**: reviewed — awaiting human specification approval
 - **Created**: 2026-07-22
 - **Issue**: [cluesmith/codev#1216](https://github.com/cluesmith/codev/issues/1216)
 - **Area**: Porch orchestration and configuration
@@ -62,7 +62,7 @@ The unified configuration loader already supports layered global, project, and p
 - The unified configuration loader remains the source of truth for precedence and parsing behavior.
 - Builder execution must observe the personal layer without requiring users to copy it manually or introducing a second, Porch-specific precedence contract.
 - If worktree setup is changed, it remains idempotent for both newly spawned builders and `afx setup` applied to an existing builder.
-- A project-local config is personal and gitignored; making it visible in a worktree must not turn it into committed project data.
+- A project-local config is personal and gitignored; making it visible in a worktree must not turn it into committed project data or a builder-writable shared file whose edits mutate the main workspace's personal configuration.
 - The dashboard's current behavior for genuinely new tabs is intentional and remains unchanged.
 
 ## Baked Decisions
@@ -136,6 +136,8 @@ The key MUST participate in the existing merged configuration precedence. At min
 
 Higher-precedence values override lower-precedence values according to the existing loader contract. Builder-worktree execution MUST observe the same effective project and project-local value as the main workspace.
 
+The chosen worktree mechanism MUST preserve the personal file's ownership and mutation boundary: builder reads may use the effective value, but builder-side writes MUST NOT alter the main workspace's `.codev/config.local.json`.
+
 ### FR5: Manual and dashboard behavior remain unchanged
 
 A user-issued `afx open` MUST continue to create/focus a file tab as it does today. New builders, architects, shells, and other newly created Tower tabs MUST retain their existing dashboard focus behavior.
@@ -173,13 +175,15 @@ Any shipped framework documentation changed for this feature MUST be kept synchr
 2. With `porch.autoOpenArtifacts: true`, the mapped artifact opens exactly as before.
 3. With `porch.autoOpenArtifacts: false`, presenting specification, plan, and review gates creates no automatic file tab and does not steal dashboard focus.
 4. In the disabled case, the pending gate, Porch audit commit, artifact path output, approval instructions, and later approval flow remain correct.
-5. A personal opt-out in the main workspace's `.codev/config.local.json` is honored when `porch gate` runs from a spawned builder worktree.
-6. A higher-precedence local value overrides a conflicting shared/global value according to existing config precedence.
-7. Manual `afx open` and the dashboard's generic new-tab auto-focus behavior are unchanged.
-8. User-facing docs include the opt-out example and are mirrored where framework documentation is shipped from both trees.
-9. Automated tests cover default, explicit true, explicit false, missing artifact, and builder-worktree/project-local behavior.
-10. An end-to-end or equivalent integration verification confirms the disabled setting prevents creation of the Tower file tab; unit tests that only assert a boolean helper are insufficient by themselves.
-11. Existing relevant Porch, config-loader, worktree-setup, build, and test suites pass.
+5. A personal opt-out in the main workspace's `.codev/config.local.json` is honored when `porch gate` runs from a freshly spawned builder worktree.
+6. Running `afx setup` against an existing builder makes a newly added or changed main-workspace personal preference effective without duplicate files, precedence drift, or loss of idempotency.
+7. Builder-side writes cannot mutate the main workspace's personal configuration through the propagation mechanism.
+8. A higher-precedence local value overrides a conflicting shared/global value according to existing config precedence.
+9. Manual `afx open` and the dashboard's generic new-tab auto-focus behavior are unchanged.
+10. User-facing docs include the opt-out example and are mirrored where framework documentation is shipped from both trees.
+11. Automated tests cover default, explicit true, explicit false, missing artifact, and builder-worktree/project-local behavior.
+12. An end-to-end or equivalent integration verification confirms the disabled setting prevents creation of the Tower file tab; unit tests that only assert a boolean helper are insufficient by themselves.
+13. Existing relevant Porch, config-loader, worktree-setup, build, and test suites pass.
 
 ## Test Scenarios
 
@@ -190,7 +194,9 @@ Any shipped framework documentation changed for this feature MUST be kept synchr
 3. `false` in project config resolves to disabled behavior.
 4. `false` in global config applies across projects unless overridden.
 5. A project-local value overrides a conflicting project/global value.
-6. A main-workspace project-local value is observed from a newly created or reconfigured builder worktree.
+6. A main-workspace project-local value is observed from a freshly spawned builder worktree.
+7. Adding or changing that value and running `afx setup` makes it effective in an existing builder without duplication or precedence drift; a repeated setup remains a no-op.
+8. An attempted builder-side write through the propagation path does not change the main workspace's personal config.
 
 ### Porch gate behavior
 
@@ -237,7 +243,7 @@ A browser-local focus preference would leave unwanted server-side tabs, apply on
 ## Consultation Log
 
 - **Pre-SPIR investigation (Gemini, Codex, Claude):** All three reviewers favored suppressing the producer-side `afx open` action rather than changing the dashboard's generic tab-focus behavior. The draft adopted that recommendation as Option A and made backward-compatible opt-out semantics explicit.
-- **SPIR specification review:** Pending Porch-managed three-way consultation.
+- **SPIR specification review (Gemini, Codex, Claude):** Gemini and Claude approved the specification. Codex returned a high-confidence comment requesting explicit protection against unintended builder mutation of personal config and direct fresh-spawn plus `afx setup` coverage. Both clarifications were incorporated into the constraints, FR4, acceptance criteria, and configuration test scenarios.
 
 ## Contribution Delivery Constraints
 
