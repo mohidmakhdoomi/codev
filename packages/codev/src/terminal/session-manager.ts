@@ -1105,8 +1105,15 @@ export class SessionManager extends EventEmitter {
         // Issue #1224 (symptom B): reap the crash-looped shellper husk so
         // give-up does not leave a live-process-without-a-registry-row zombie
         // (the divergence remove-architect then failed to clear). Kill the whole
-        // process group — the shellper is a detached group leader; the periodic
-        // orphan sweep SIGKILLs any survivor.
+        // process group — the shellper is a detached group leader. This SIGTERM
+        // is the only signal sent here (no SIGKILL escalation): the
+        // terminal_sessions row is NOT cleared at give-up time, so a rare
+        // SIGTERM-ignoring survivor stays DB-registered and is NOT eligible for
+        // Issue #1227's husk sweep (which only reaps unregistered shellpers). It
+        // is caught on the next Tower restart's reconciliation +
+        // killOrphanedShellpers pass, or immediately for architects via `afx
+        // workspace remove-architect`'s identity-matched zombie reap
+        // (tower-instances.ts).
         try {
           process.kill(-session.pid, 'SIGTERM');
         } catch {
