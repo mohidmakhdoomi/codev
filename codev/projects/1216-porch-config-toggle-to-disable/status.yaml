@@ -1,7 +1,7 @@
 id: '1216'
 title: porch-config-toggle-to-disable
 protocol: spir
-phase: implement
+phase: review
 plan_phases:
   - id: porch_toggle
     title: Producer-Side Porch Toggle
@@ -11,8 +11,8 @@ plan_phases:
     status: complete
   - id: documentation_verification
     title: Documentation and End-to-End Verification
-    status: in_progress
-current_plan_phase: documentation_verification
+    status: complete
+current_plan_phase: null
 gates:
   spec-approval:
     status: approved
@@ -27,7 +27,7 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
+build_complete: false
 history:
   - iteration: 1
     plan_phase: porch_toggle
@@ -78,4 +78,4 @@ history:
         file: >-
           /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-worktree_local_config-iter1-claude.txt
 started_at: '2026-07-23T03:24:00.433Z'
-updated_at: '2026-07-23T04:26:11.831Z'
+updated_at: '2026-07-23T04:31:02.765Z'
