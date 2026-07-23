@@ -84,6 +84,28 @@ describe('resolvePacingForSession', () => {
     expect(resolvePacingForSession({ id: 'ghost', cwd: '/wt' })).toBeUndefined();
   });
 
+  it('bare override-spawn marker (empty file, as `touch` creates) → kimi pacing over claude config', async () => {
+    // PR #1203 review regression: the bare launch shape persists the marker
+    // EMPTY (no seeded id). The probe must key off existence, not content —
+    // a content-based probe would send a bare `--builder-cmd kimi` builder
+    // back to claude's Enter timing. Real fs, real empty file.
+    const realFs = await vi.importActual<typeof import('node:fs')>('node:fs');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const dir = realFs.mkdtempSync(join(tmpdir(), 'pacing-bare-'));
+    try {
+      realFs.writeFileSync(join(dir, '.builder-kimi-session'), '');
+      existsSyncMock.mockImplementation(realFs.existsSync);
+      getTerminalSessionByIdMock.mockReturnValue({
+        id: 't8', workspace_path: '/ws', type: 'builder', cwd: dir,
+      });
+      expect(resolvePacingForSession({ id: 't8', cwd: dir })).toBe(KIMI_HARNESS.messagePacing);
+      expect(getBuilderHarnessMock).not.toHaveBeenCalled();
+    } finally {
+      realFs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('a throwing harness resolution (unknown explicit name) degrades to default pacing', () => {
     getTerminalSessionByIdMock.mockReturnValue({
       id: 't6', workspace_path: '/ws', type: 'builder', cwd: '/wt',

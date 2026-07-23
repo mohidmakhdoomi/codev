@@ -262,7 +262,12 @@ export const OPENCODE_HARNESS: HarnessProvider = {
  */
 export const KIMI_SEED_SENTINEL = '__CODEV_KIMI_SEED_DONE__';
 
-/** File in the worktree persisting the seeded Kimi session id. */
+/**
+ * File in the worktree persisting the seeded Kimi session id. Doubles as the
+ * Kimi-shape marker for Tower's pacing probe (message-pacing.ts), so EVERY
+ * launch shape persists it: seed and resume write the captured id; the bare
+ * no-role/no-prompt shape touches it empty (there is no id to pin).
+ */
 export const KIMI_SESSION_FILE = '.builder-kimi-session';
 
 /**
@@ -425,9 +430,16 @@ ${loop}`;
 
     // Nothing to seed (no role, no prompt): plain TUI loop. No session
     // pinning — restarts start fresh, matching the bare-mode behavior of
-    // other harnesses.
+    // other harnesses. The marker file is still persisted (empty — no id to
+    // pin) so Tower's pacing probe recognizes the worktree as Kimi-shaped;
+    // without it an override-spawned bare builder (`--builder-cmd kimi` in a
+    // claude-configured workspace) resolves the config harness's Enter timing
+    // and `afx send` payloads are swallowed by paste detection. `touch`
+    // preserves a previously seeded id, and an empty file keeps both the seed
+    // guard (`! -s`) and buildResume's empty-id fallthrough intact.
     return `#!/bin/bash
 cd "${ctx.worktreePath}"
+touch ${KIMI_SESSION_FILE}
 while true; do
   ${tuiCmd}
   echo ""

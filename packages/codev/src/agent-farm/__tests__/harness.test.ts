@@ -9,6 +9,7 @@ import {
   OPENCODE_HARNESS,
   KIMI_HARNESS,
   KIMI_SEED_SENTINEL,
+  KIMI_SESSION_FILE,
   buildCustomHarnessProvider,
   validateCustomHarnessConfig,
   resolveHarness,
@@ -502,11 +503,16 @@ describe('harness', () => {
         expect(script).not.toContain('--append-system-prompt');
       });
 
-      it('bare (nothing to seed): plain TUI loop', () => {
+      it('bare (nothing to seed): plain TUI loop that still persists the pacing marker', () => {
         const script = KIMI_HARNESS.buildBuilderLaunchScript!({ ...ctxBase, seedFile: null });
         expect(script).toContain('kimi --yolo');
         expect(script).not.toContain('-S');
         expect(script).not.toContain('stream-json');
+        // PR #1203 review regression: EVERY Kimi launch shape must persist
+        // .builder-kimi-session — the pacing probe keys off its existence, so
+        // a bare override spawn without it resolves the config harness's
+        // Enter timing and sends get swallowed by paste detection.
+        expect(script).toContain(`touch ${KIMI_SESSION_FILE}`);
       });
 
       it('does not duplicate --yolo when the user already passed it', () => {

@@ -499,12 +499,16 @@ describe('spawn-worktree', () => {
       expect(seed).not.toContain('BEGIN');
     });
 
-    it('no role, no prompt → bare TUI loop without a seed', () => {
+    it('no role, no prompt (override spawn) → bare TUI loop without a seed, marker still persisted', () => {
       getBuilderHarnessMock.mockReturnValueOnce(KIMI_HARNESS);
       const script = buildWorktreeLaunchScript('/tmp/worktree', 'kimi', null, '/tmp/ws');
       expect(script).toContain('kimi --yolo');
       expect(script).not.toContain('stream-json');
-      expect(script).not.toContain('.builder-kimi-session');
+      // PR #1203 review regression: this is exactly the `--builder-cmd kimi`
+      // bare-spawn shape. Without the marker, pacing resolution falls back to
+      // the workspace's config harness (claude in an override spawn) and the
+      // swallowed-Enter bug this feature fixes comes back.
+      expect(script).toContain('touch .builder-kimi-session');
     });
   });
 

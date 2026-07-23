@@ -7,11 +7,14 @@
  * writing.
  *
  * Resolution order:
- *  1. Worktree marker — a Kimi builder's launch script persists
- *     `.builder-kimi-session` in its cwd. This is deliberately checked FIRST:
- *     it is override-proof (correct even when the builder was spawned via
- *     `--builder-cmd kimi` against a workspace whose config says claude) and
- *     survives Tower restarts, since it lives on disk next to the session.
+ *  1. Worktree marker — every Kimi launch shape persists
+ *     `.builder-kimi-session` in its cwd (seed/resume write the session id;
+ *     the bare no-role/no-prompt shape touches it empty). This is
+ *     deliberately checked FIRST: it is override-proof (correct even when the
+ *     builder was spawned via `--builder-cmd kimi` against a workspace whose
+ *     config says claude) and survives Tower restarts, since it lives on disk
+ *     next to the session. The probe is existence-based, NOT content-based —
+ *     an empty marker (bare shape) must still resolve Kimi pacing.
  *  2. Config-resolved harness for the terminal's registered role (builder /
  *     architect) in its workspace — covers config-driven spawns and any future
  *     harness that sets `messagePacing`.
