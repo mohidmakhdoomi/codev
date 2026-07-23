@@ -1,7 +1,7 @@
 id: '1216'
 title: porch-config-toggle-to-disable
 protocol: spir
-phase: review
+phase: verify
 plan_phases:
   - id: porch_toggle
     title: Producer-Side Porch Toggle
@@ -29,56 +29,8 @@ gates:
   verify-approval:
     status: pending
 iteration: 1
-build_complete: true
-history:
-  - iteration: 1
-    plan_phase: porch_toggle
-    build_output: ''
-    reviews:
-      - model: gemini
-        verdict: APPROVE
-        file: >-
-          /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-porch_toggle-iter1-gemini.txt
-      - model: codex
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-porch_toggle-iter1-codex.txt
-      - model: claude
-        verdict: COMMENT
-        file: >-
-          /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-porch_toggle-iter1-claude.txt
-  - iteration: 2
-    plan_phase: porch_toggle
-    build_output: ''
-    reviews:
-      - model: gemini
-        verdict: APPROVE
-        file: >-
-          /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-porch_toggle-iter2-gemini.txt
-      - model: codex
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-porch_toggle-iter2-codex.txt
-      - model: claude
-        verdict: APPROVE
-        file: >-
-          /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-porch_toggle-iter2-claude.txt
-  - iteration: 1
-    plan_phase: worktree_local_config
-    build_output: ''
-    reviews:
-      - model: gemini
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-worktree_local_config-iter1-gemini.txt
-      - model: codex
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-worktree_local_config-iter1-codex.txt
-      - model: claude
-        verdict: REQUEST_CHANGES
-        file: >-
-          /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-worktree_local_config-iter1-claude.txt
+build_complete: false
+history: []
 started_at: '2026-07-23T03:24:00.433Z'
-updated_at: '2026-07-23T04:39:38.716Z'
+updated_at: '2026-07-23T04:40:03.717Z'
 pr_ready_for_human: false
