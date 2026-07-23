@@ -15,6 +15,15 @@ When `porch gate` presents an existing specification, plan, or review artifact f
 
 This behavior is currently unconditional. Users who review artifacts in an editor, from the terminal, or at a time of their choosing cannot prevent Porch from creating the Tower tab.
 
+## Stakeholders and Desired State
+
+- **Architects and reviewers** need gates to remain visible and actionable without losing the dashboard context they are currently using.
+- **Builders** need the same effective preference when Porch runs in an isolated Agent Farm worktree, without copying personal configuration into every worktree.
+- **Teams** need an opt-out that can be shared project-wide while still allowing an engineer-specific override.
+- **Existing users** need an unchanged default so an upgrade does not silently remove the current review convenience.
+
+In the desired state, Porch still records and presents every gate exactly as it does today. It also reports the mapped artifact path, but creates a Tower file tab only when the effective preference permits the convenience action.
+
 ## Current Behavior
 
 The behavior is produced by a chain of otherwise independent components:
@@ -46,6 +55,15 @@ The unified configuration loader already supports layered global, project, and p
 - Changing which phases have artifacts, gate lifecycle semantics, approval requirements, or automatic gate-request commits.
 - Solving unrelated file-tab creation or focus behavior outside Porch's automatic gate artifact open.
 - Changing pre-existing cross-root artifact resolution behavior when `porch gate` is invoked from a workspace other than the project-owning worktree.
+
+## Constraints and Assumptions
+
+- Gate persistence is authoritative; automatic opening is a best-effort convenience and must remain downstream of the state update.
+- The unified configuration loader remains the source of truth for precedence and parsing behavior.
+- Builder execution must observe the personal layer without requiring users to copy it manually or introducing a second, Porch-specific precedence contract.
+- If worktree setup is changed, it remains idempotent for both newly spawned builders and `afx setup` applied to an existing builder.
+- A project-local config is personal and gitignored; making it visible in a worktree must not turn it into committed project data.
+- The dashboard's current behavior for genuinely new tabs is intentional and remains unchanged.
 
 ## Baked Decisions
 
@@ -135,6 +153,14 @@ User-facing configuration documentation MUST explain:
 
 Any shipped framework documentation changed for this feature MUST be kept synchronized between the Codev project copy and `codev-skeleton/`.
 
+## Non-Functional Requirements
+
+- **Compatibility:** Existing projects and configurations require no migration; only explicit `false` changes behavior.
+- **Reliability:** Suppressing the convenience action cannot prevent, roll back, or corrupt a successfully requested gate.
+- **Isolation:** Builder-worktree support must preserve the existing configuration precedence instead of introducing a Porch-specific merge path.
+- **Maintainability:** The decision to open must be covered at the gate-command boundary, and worktree propagation must be covered at the shared setup boundary used by both spawn and reconfiguration.
+- **Performance:** Reading the preference and evaluating the condition must add no network request or meaningful delay to gate presentation.
+
 ## Error Handling
 
 - A failure to launch `afx open` while the feature is enabled retains the current best-effort, detached behavior and must not corrupt gate state.
@@ -191,6 +217,12 @@ This is authoritative, client-independent, and preserves the semantics of manual
 
 A browser-local focus preference would leave unwanted server-side tabs, apply only to one client, and require the dashboard to distinguish automatic Porch opens from voluntary manual opens. It can be considered separately if users later want a general per-browser file-tab focus policy.
 
+## Open Questions
+
+- **Critical:** None. The producer-side toggle, key ownership, default, and project-local requirement are fixed.
+- **Important:** The implementation plan must choose how the main workspace's personal layer reaches builder execution, identify the canonical user-facing configuration reference to update, and select the narrowest integration boundary that proves no `afx open` request is emitted.
+- **Nice-to-know:** A future dashboard preference could independently control focus for all file tabs, but that behavior is outside this specification.
+
 ## Risks and Mitigations
 
 | Risk | Impact | Mitigation |
@@ -201,6 +233,11 @@ A browser-local focus preference would leave unwanted server-side tabs, apply on
 | Broad dashboard change breaks focus for other new tabs | Medium | Do not modify generic dashboard auto-focus behavior |
 | Worktree config propagation affects unrelated config | Medium | Preserve existing precedence and add focused regression tests for setup/config behavior |
 | Gate state is coupled to best-effort UI convenience | High | Keep state persistence independent and unchanged |
+
+## Consultation Log
+
+- **Pre-SPIR investigation (Gemini, Codex, Claude):** All three reviewers favored suppressing the producer-side `afx open` action rather than changing the dashboard's generic tab-focus behavior. The draft adopted that recommendation as Option A and made backward-compatible opt-out semantics explicit.
+- **SPIR specification review:** Pending Porch-managed three-way consultation.
 
 ## Contribution Delivery Constraints
 
