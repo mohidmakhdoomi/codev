@@ -24,7 +24,11 @@
 import { logger } from '../utils/logger.js';
 import { getConfig, getWorktreeConfig } from '../utils/index.js';
 import { findBuilderById } from '../lib/builder-lookup.js';
-import { runPostSpawnHooks, symlinkConfigFiles } from './spawn-worktree.js';
+import {
+  runPostSpawnHooks,
+  symlinkConfigFiles,
+  syncLocalConfigSnapshot,
+} from './spawn-worktree.js';
 
 export interface SetupOptions {
   builderId?: string;
@@ -48,12 +52,13 @@ export async function setup(options: SetupOptions): Promise<void> {
 
   logger.info(`Applying symlinks for ${builder.id}...`);
   symlinkConfigFiles(config, builder.worktree);
+  const localConfigSynced = syncLocalConfigSnapshot(config, builder.worktree);
 
   if (postSpawn.length === 0) {
-    if (symlinks.length === 0) {
+    if (symlinks.length === 0 && !localConfigSynced) {
       logger.info('No worktree.symlinks or worktree.postSpawn configured. Nothing further to do.');
     } else {
-      logger.success(`Setup complete for ${builder.id} (symlinks only — no postSpawn configured)`);
+      logger.success(`Setup complete for ${builder.id} (no postSpawn configured)`);
     }
     return;
   }
