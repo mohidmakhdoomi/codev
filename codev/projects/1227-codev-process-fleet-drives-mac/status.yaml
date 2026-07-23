@@ -1,7 +1,7 @@
 id: '1227'
 title: codev-process-fleet-drives-mac
 protocol: pir
-phase: plan
+phase: implement
 plan_phases: []
 current_plan_phase: null
 gates:
@@ -17,4 +17,4 @@ iteration: 1
 build_complete: false
 history: []
 started_at: '2026-07-22T23:43:23.652Z'
-updated_at: '2026-07-23T01:16:10.326Z'
+updated_at: '2026-07-23T01:17:20.674Z'
