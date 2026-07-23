@@ -29,3 +29,9 @@
 - Review documented full spec compliance, consultation responses, tests, and the
   fork-push limitation. Worktree snapshot mechanics were routed to the COLD
   architecture and lessons archives; no HOT-tier update was warranted.
+- PR #1231 opened against upstream from the fork. Architect integration review
+  approved with no implementation changes, then requested the remaining
+  project protocol artifacts be committed. Those artifacts are now tracked;
+  builder harness inputs remain intentionally excluded. The first Porch PR
+  consultation produced two approvals and a Codex process-only request, which
+  was addressed/rebutted without product changes.

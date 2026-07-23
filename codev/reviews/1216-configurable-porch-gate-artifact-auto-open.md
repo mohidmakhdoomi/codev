@@ -216,6 +216,30 @@ worktree/config recipe, not a universal behavior-changing rule.
 - No concerns raised — Gemini, Codex, and Claude approved the synchronized
   documentation and recorded Tower/manual-open verification.
 
+### Review / PR (Round 1)
+
+#### Gemini
+
+- No concerns raised (APPROVE).
+
+#### Codex
+
+- **Concern**: A supplemental builder-thread checkpoint did not use the
+  implementation-phase commit format.
+  - **Rebutted**: The phase-qualified form applies to implementation commits;
+    the checkpoint only updated documentation and all product-phase commits
+    use the required format. Rewriting published history would invalidate
+    recorded hashes without changing product traceability.
+- **Concern**: Agent Farm harness inputs and protocol context files left the
+  worktree dirty.
+  - **Addressed**: Committed all remaining `codev/projects/1216-*` Markdown
+    protocol artifacts at architect request and intentionally excluded only
+    the generated builder harness files from this PR.
+
+#### Claude
+
+- No concerns raised (APPROVE).
+
 ## Technical Debt
 
 - Porch's fixed `git push -u origin HEAD` policy does not support contributors
