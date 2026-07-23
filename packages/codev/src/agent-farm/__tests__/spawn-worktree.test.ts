@@ -510,6 +510,7 @@ describe('spawn-worktree', () => {
       // swallowed-Enter bug this feature fixes comes back. The touch must
       // precede the loop so the marker exists before the first send can land.
       expect(script).toContain('touch .builder-kimi-session');
+      expect(script).toContain('while true');
       expect(script.indexOf('touch .builder-kimi-session'))
         .toBeLessThan(script.indexOf('while true'));
     });

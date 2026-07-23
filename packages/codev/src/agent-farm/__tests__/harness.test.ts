@@ -485,6 +485,9 @@ describe('harness', () => {
         expect(script).toContain('kimi --yolo -S "$SID"');
         expect(script).toContain('while true');
         // Seed failure exits BEFORE the loop — surfaced, never restart-looped.
+        // toContain guards the ordering check against a vacuous pass: without
+        // it, removing `exit 1` makes indexOf return -1, and -1 < anything.
+        expect(script).toContain('exit 1');
         expect(script.indexOf('exit 1')).toBeLessThan(script.indexOf('while true'));
         // The #929/#1062 regression class: no claude-shaped flags, no
         // positional prompt appended to the CLI.
@@ -515,6 +518,7 @@ describe('harness', () => {
         // must also PRECEDE the loop, so the marker exists for the whole TUI
         // lifetime (a touch after/inside the loop could race the first send).
         expect(script).toContain(`touch ${KIMI_SESSION_FILE}`);
+        expect(script).toContain('while true');
         expect(script.indexOf(`touch ${KIMI_SESSION_FILE}`))
           .toBeLessThan(script.indexOf('while true'));
       });
