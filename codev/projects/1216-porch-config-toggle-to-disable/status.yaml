@@ -26,8 +26,8 @@ gates:
     status: pending
   verify-approval:
     status: pending
-iteration: 2
-build_complete: true
+iteration: 3
+build_complete: false
 history:
   - iteration: 1
     plan_phase: porch_toggle
@@ -45,5 +45,21 @@ history:
         verdict: COMMENT
         file: >-
           /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-porch_toggle-iter1-claude.txt
+  - iteration: 2
+    plan_phase: porch_toggle
+    build_output: ''
+    reviews:
+      - model: gemini
+        verdict: APPROVE
+        file: >-
+          /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-porch_toggle-iter2-gemini.txt
+      - model: codex
+        verdict: REQUEST_CHANGES
+        file: >-
+          /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-porch_toggle-iter2-codex.txt
+      - model: claude
+        verdict: APPROVE
+        file: >-
+          /home/user/code/codev_root/codev/.builders/spir-1216/codev/projects/1216-porch-config-toggle-to-disable/1216-porch_toggle-iter2-claude.txt
 started_at: '2026-07-23T03:24:00.433Z'
-updated_at: '2026-07-23T03:53:41.088Z'
+updated_at: '2026-07-23T03:57:43.347Z'
