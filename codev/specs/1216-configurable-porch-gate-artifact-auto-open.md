@@ -3,7 +3,7 @@
 ## Metadata
 
 - **ID**: 1216
-- **Status**: reviewed — awaiting human specification approval
+- **Status**: implemented — pending PR review
 - **Created**: 2026-07-22
 - **Issue**: [cluesmith/codev#1216](https://github.com/cluesmith/codev/issues/1216)
 - **Area**: Porch orchestration and configuration

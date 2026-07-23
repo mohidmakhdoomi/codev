@@ -3,7 +3,7 @@
 ## Metadata
 
 - **ID**: 1216
-- **Status**: reviewed — awaiting human plan approval
+- **Status**: implemented — all phases complete
 - **Specification**: [codev/specs/1216-configurable-porch-gate-artifact-auto-open.md](../specs/1216-configurable-porch-gate-artifact-auto-open.md)
 - **Created**: 2026-07-22
 
@@ -15,14 +15,14 @@ For Agent Farm builders, synchronize the main workspace's gitignored `.codev/con
 
 ## Success Metrics
 
-- [ ] Unset and explicit `true` preserve the existing automatic open.
-- [ ] Explicit `false` prevents the real gate command from spawning `afx open` for specification, plan, and review artifacts.
-- [ ] Gate state, audit commits, artifact-path output, approval instructions, missing-artifact behavior, manual `afx open`, and dashboard focus behavior remain unchanged.
-- [ ] Global, project, and project-local precedence is preserved.
-- [ ] Fresh spawn and `afx setup` refresh the builder's personal-config snapshot without linking writes back to main.
-- [ ] Behavioral tests cover the actual gate-command boundary, not only a boolean helper.
-- [ ] Relevant build, Porch, config-loader, worktree-setup, and full test suites pass.
-- [ ] User documentation is updated in both the project and shipped skeleton trees.
+- [x] Unset and explicit `true` preserve the existing automatic open.
+- [x] Explicit `false` prevents the real gate command from spawning `afx open` for specification, plan, and review artifacts.
+- [x] Gate state, audit commits, artifact-path output, approval instructions, missing-artifact behavior, manual `afx open`, and dashboard focus behavior remain unchanged.
+- [x] Global, project, and project-local precedence is preserved.
+- [x] Fresh spawn and `afx setup` refresh the builder's personal-config snapshot without linking writes back to main.
+- [x] Behavioral tests cover the actual gate-command boundary, not only a boolean helper.
+- [x] Relevant build, Porch, config-loader, worktree-setup, and full test suites pass.
+- [x] User documentation is updated in both the project and shipped skeleton trees.
 
 ## Phases (Machine Readable)
 
@@ -40,7 +40,7 @@ For Agent Farm builders, synchronize the main workspace's gitignored `.codev/con
 
 ### Phase 1: Producer-Side Porch Toggle
 
-**Status**: pending  
+**Status**: completed
 **Dependencies**: None
 
 #### Objective
@@ -64,12 +64,12 @@ Add the public configuration key and enforce it at the sole automatic producer w
 
 #### Acceptance Criteria
 
-- [ ] Unset and `true` each launch one `afx open` for an existing mapped artifact.
-- [ ] `false` launches no child for specification, plan, or review artifacts and emits no inaccurate opening message.
-- [ ] Missing/unmapped artifacts launch no child regardless of configuration.
-- [ ] Disabled execution still records the pending gate and prints the artifact path plus approval instructions.
-- [ ] Config-layer tests prove global/project/local override behavior for the new boolean.
-- [ ] Targeted Porch and config tests pass.
+- [x] Unset and `true` each launch one `afx open` for an existing mapped artifact.
+- [x] `false` launches no child for specification, plan, or review artifacts and emits no inaccurate opening message.
+- [x] Missing/unmapped artifacts launch no child regardless of configuration.
+- [x] Disabled execution still records the pending gate and prints the artifact path plus approval instructions.
+- [x] Config-layer tests prove global/project/local override behavior for the new boolean.
+- [x] Targeted Porch and config tests pass.
 
 #### Test Plan
 
@@ -92,7 +92,7 @@ Revert the config type, gate conditional, and focused tests together; the pre-fe
 
 ### Phase 2: Safe Builder Personal-Config Snapshot
 
-**Status**: pending  
+**Status**: completed
 **Dependencies**: Phase 1
 
 #### Objective
@@ -116,12 +116,12 @@ Make the main workspace's per-engineer preference available in Agent Farm builde
 
 #### Acceptance Criteria
 
-- [ ] A fresh builder receives a non-symlink personal-config snapshot when the main file exists.
-- [ ] The snapshot participates in the existing layer-5 loader and yields the same effective opt-out as main immediately after spawn/setup.
-- [ ] Reconfiguration refreshes an existing snapshot without duplicate files or precedence drift; repeating it with unchanged input is behaviorally idempotent.
-- [ ] Editing the builder snapshot cannot mutate the main workspace's personal file, and the next setup refresh restores the authoritative main value.
-- [ ] An absent main personal file causes no new snapshot and does not delete an existing builder-local preference.
-- [ ] Existing worktree symlink and post-spawn behavior remains green.
+- [x] A fresh builder receives a non-symlink personal-config snapshot when the main file exists.
+- [x] The snapshot participates in the existing layer-5 loader and yields the same effective opt-out as main immediately after spawn/setup.
+- [x] Reconfiguration refreshes an existing snapshot without duplicate files or precedence drift; repeating it with unchanged input is behaviorally idempotent.
+- [x] Editing the builder snapshot cannot mutate the main workspace's personal file, and the next setup refresh restores the authoritative main value.
+- [x] An absent main personal file causes no new snapshot and does not delete an existing builder-local preference.
+- [x] Existing worktree symlink and post-spawn behavior remains green.
 
 #### Test Plan
 
@@ -146,7 +146,7 @@ Remove the snapshot helper and its spawn/setup calls. Existing shared `.codev/co
 
 ### Phase 3: Documentation and End-to-End Verification
 
-**Status**: pending  
+**Status**: completed
 **Dependencies**: Phases 1 and 2
 
 #### Objective
@@ -169,12 +169,12 @@ Document the public setting and prove the complete disabled flow creates no Towe
 
 #### Acceptance Criteria
 
-- [ ] Both documentation copies contain equivalent public guidance and a valid opt-out example.
-- [ ] Automated focused suites, full tests, and build pass.
-- [ ] Disabled `porch gate` creates no Tower file tab and does not change the active dashboard tab.
-- [ ] Manual `afx open` still creates/focuses a file tab.
-- [ ] The builder-worktree flow honors a preference sourced only from the main workspace's personal config after fresh setup and reconfiguration.
-- [ ] No dashboard source is modified; Playwright is not required unless implementation unexpectedly changes UI code.
+- [x] Both documentation copies contain equivalent public guidance and a valid opt-out example.
+- [x] Automated focused suites, full tests, and build pass.
+- [x] Disabled `porch gate` creates no Tower file tab and does not change the active dashboard tab.
+- [x] Manual `afx open` still creates/focuses a file tab.
+- [x] The builder-worktree flow honors a preference sourced only from the main workspace's personal config after fresh setup and reconfiguration.
+- [x] No dashboard source is modified; Playwright is not required unless implementation unexpectedly changes UI code.
 
 #### Test Plan
 
@@ -237,13 +237,13 @@ Phase 3: Documentation + End-to-End Verification
 
 ## Documentation Updates Required
 
-- [ ] Exact `porch.autoOpenArtifacts` JSON example.
-- [ ] Unset/true/false semantics and default enabled behavior.
-- [ ] Scope limited to Porch's automatic gate artifact action.
-- [ ] Manual `afx open` remains unchanged.
-- [ ] Global, shared project, and personal project configuration locations and precedence.
-- [ ] Builder snapshot and `afx setup` refresh behavior.
-- [ ] Equivalent updates in both `codev/` and `codev-skeleton/` command references.
+- [x] Exact `porch.autoOpenArtifacts` JSON example.
+- [x] Unset/true/false semantics and default enabled behavior.
+- [x] Scope limited to Porch's automatic gate artifact action.
+- [x] Manual `afx open` remains unchanged.
+- [x] Global, shared project, and personal project configuration locations and precedence.
+- [x] Builder snapshot and `afx setup` refresh behavior.
+- [x] Equivalent updates in both `codev/` and `codev-skeleton/` command references.
 
 ## Expert Review
 
@@ -254,7 +254,7 @@ Phase 3: Documentation + End-to-End Verification
 
 - [x] Specification approved
 - [x] Three-way plan consultation complete
-- [ ] Human plan approval
+- [x] Human plan approval
 
 ## Change Log
 

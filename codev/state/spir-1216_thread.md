@@ -26,3 +26,6 @@
 - Focused Vitest coverage passed (140 tests), the package-wide suite passed (3,638 tests; 48 existing skips), and the monorepo build passed.
 - A disposable Porch project plus a headless Tower dashboard verified the integration boundary: a non-symlink personal-config snapshot with the opt-out produced zero new file tabs and left Work active at the gate; a subsequent manual `afx open` created a file tab and focused it normally. The fixture, snapshot, and tab were removed afterward.
 - Phase 3 received APPROVE verdicts from Gemini, Codex, and Claude. Porch advanced to Review; its automatic upstream push was denied again while the local transition remained committed.
+- Review documented full spec compliance, consultation responses, tests, and the
+  fork-push limitation. Worktree snapshot mechanics were routed to the COLD
+  architecture and lessons archives; no HOT-tier update was warranted.
