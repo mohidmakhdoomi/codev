@@ -142,17 +142,42 @@ second pass (`sweepShellperHusks`) covering exactly the gap the first one leaves
   can shorten the interval via the env var the same way
   `shellper-cleanup.e2e.test.ts:20` does for the existing cleanup timer.
 - **(c) On-demand** — new Tower API endpoint `POST /api/shellpers/sweep-husks`, added to
-  the exact-match `ROUTES` table in `packages/codev/src/agent-farm/servers/tower-routes.ts:161-185`,
-  returning `{ swept: number, pids: number[] }`. Exposed via a new `afx tower sweep-husks`
-  CLI command (`packages/codev/src/agent-farm/cli.ts`, added to the existing `towerCmd`
-  group alongside `start`/`stop`/`log` at `:729-783`), implemented in
-  `packages/codev/src/agent-farm/commands/tower.ts` via a new `TowerClient.sweepHusks()`
-  method (`packages/core/src/tower-client.ts`, next to `getHealth()` at `:197-200`).
+  the exact-match `ROUTES` table in `packages/codev/src/agent-farm/servers/tower-routes.ts:161-185`.
+  Exposed via a new `afx tower sweep-husks` CLI command
+  (`packages/codev/src/agent-farm/cli.ts`, added to the existing `towerCmd` group
+  alongside `start`/`stop`/`log` at `:729-783`), implemented in a new
+  `packages/codev/src/agent-farm/commands/tower-sweep-husks.ts` via a new
+  `TowerClient.findHuskCandidates()` / `TowerClient.sweepHusks()` pair
+  (`packages/core/src/tower-client.ts`, next to `getHealth()` at `:197-200`).
   **Chose `afx tower` over `codev doctor`**: `doctor.ts` today is a pure
   environment/dependency checker (Node/git/CLI versions, AI-model auth) with zero Tower
   or process coupling (`packages/codev/src/commands/doctor.ts`) — wiring a Tower-client
   dependency into it is a bigger shift than adding one command to `afx tower`, which
   already speaks Tower's HTTP API for every other subcommand.
+
+  **Dry-run by default, mirroring `afx workspace recover`**
+  (`packages/codev/src/agent-farm/commands/workspace-recover.ts`) exactly — same UX
+  precedent already established for a destructive, irreversible fleet-wide operation:
+  - No flags → **preview only**. The endpoint splits into two:
+    `POST /api/shellpers/sweep-husks/preview` (or a `?dryRun=1`-style single endpoint —
+    finalize the exact shape in implement) runs `findHuskShellpers()` and returns
+    candidates (pid, socketPath/cwd if resolvable, age, rss) **without killing
+    anything**. The CLI renders them in a table (same `logger.row`/`printPreview` idiom
+    as `workspace-recover.ts:255-276`) and prints
+    `"Run with --apply to reap N husk shellper(s)."` (mirrors `workspace-recover.ts:406`).
+  - `--apply` — actually reaps the previewed candidates via `sweepShellperHusks()`
+    (SIGTERM→poll→SIGKILL through the existing `reapShellpers`).
+  - `-y, --yes` — skip the confirmation prompt when `--apply` is set (mirrors
+    `workspace-recover.ts:410-416`'s `--apply` + `!options.yes` + `confirm(...)` gate,
+    reusing the same `confirm()` helper from `packages/codev/src/lib/cli-prompts.ts`).
+  - Without `--yes`, `--apply` still prompts
+    `"Proceed to reap N husk shellper(s)?"` before killing, defaulting to **no**
+    (`confirm(question, false)`, same default-false the recover command uses for a
+    destructive default).
+  - The **startup and hourly triggers are unaffected** by this — they have no interactive
+    operator to prompt, so they call `sweepShellperHusks()` directly (apply-equivalent,
+    log-only, as designed above). The dry-run/`--apply` gate is specific to the one
+    trigger a human actually invokes.
 
 ### 4. Observability: fleet RSS + unregistered-shellper count
 
@@ -190,14 +215,17 @@ make the cost/benefit of a hibernation policy measurable.
 - `packages/codev/src/agent-farm/servers/tower-server.ts` — startup sweep call
   (near `:487-490`), new periodic-timer handle + `setInterval` (near `:67`, `:411-422`),
   add to `gracefulShutdown` clear-list (`:167`).
-- `packages/codev/src/agent-farm/servers/tower-routes.ts` — new
-  `POST /api/shellpers/sweep-husks` route (`:161-185`) + handler; extend
-  `handleHealthCheck` (`:297-315`) with `fleetRssKb`/`unregisteredShellperCount`.
+- `packages/codev/src/agent-farm/servers/tower-routes.ts` — new husk-preview/sweep
+  route(s) (`:161-185`) + handler(s); extend `handleHealthCheck` (`:297-315`) with
+  `fleetRssKb`/`unregisteredShellperCount`.
 - `packages/core/src/tower-client.ts` — extend `TowerHealth` (`:73-88`); add
-  `sweepHusks()` method (near `:197-200`).
+  `findHuskCandidates()` (preview) and `sweepHusks()` (apply) methods (near `:197-200`).
 - `packages/codev/src/agent-farm/cli.ts` — new `afx tower sweep-husks` command
-  (near `:729-783`).
-- `packages/codev/src/agent-farm/commands/tower.ts` — `towerSweepHusks()` implementation.
+  (near `:729-783`), with `--apply` / `-y, --yes` options matching
+  `workspace recover`'s (`:137-159`).
+- `packages/codev/src/agent-farm/commands/tower-sweep-husks.ts` — new. CLI
+  implementation: preview table by default, `--apply` to reap, `confirm()` gate unless
+  `--yes` — structured like `workspace-recover.ts:316-438`.
 - `packages/codev/src/agent-farm/commands/status.ts` — surface new fields in human
   output (`:203`) and JSON (`:117-151`).
 - `packages/codev/src/terminal/session-manager.ts:1098` — the existing comment there
@@ -251,11 +279,17 @@ make the cost/benefit of a hibernation policy measurable.
 - **Integration — `/health` + `afx status`**: assert `fleetRssKb` and
   `unregisteredShellperCount` appear in both the raw `/health` JSON and `afx status
   --json` output.
+- **Unit — `afx tower sweep-husks` CLI**: no flags → preview table printed, nothing
+  killed (assert `sweepHusks`/reap seam not invoked); `--apply --yes` → reaps without
+  prompting; `--apply` alone → prompts via `confirm()`, declining aborts with nothing
+  killed (mirrors the equivalent `workspace-recover` test coverage pattern).
 - **Manual**: spin up Tower locally; deliberately orphan a shellper (kill its PTY child
   without killing the shellper, and deregister its DB row); confirm `afx status` reports
-  it under `unregisteredShellperCount`; run `afx tower sweep-husks` and confirm it's
+  it under `unregisteredShellperCount`; run `afx tower sweep-husks` with no flags and
+  confirm it only previews (process still alive); run again with `--apply` and confirm
+  the prompt, decline it, confirm it's still alive; run `--apply --yes` and confirm it's
   reaped and the count drops; confirm the startup and hourly paths independently exercise
-  the same result via their own tests.
+  the same reap via their own tests (no dry-run gate on those two).
 - **Regression**: existing `killOrphanedShellpers` tests
   (`session-manager.test.ts:383-620`) and `shellper-cleanup.e2e.test.ts` continue to pass
   unmodified — the new sweep is additive, not a replacement.
